@@ -1,0 +1,97 @@
+"use client";
+
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "../ui/button";
+
+const incompleteSchema = z.object({
+  reason: z.string().min(1, "Reason is required"),
+});
+
+type IncompleteFormValues = z.infer<typeof incompleteSchema>;
+
+interface MarkIncompleteModalProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}
+
+export function MarkIncompleteModal({
+  open,
+  onClose,
+  onConfirm,
+}: MarkIncompleteModalProps) {
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isValid },
+  } = useForm<IncompleteFormValues>({
+    resolver: zodResolver(incompleteSchema),
+    mode: "onChange",
+  });
+
+  if (!open) return null;
+
+  const onSubmit = (data: IncompleteFormValues) => {
+    onConfirm(data.reason);
+    reset();
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+      <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+
+        <button
+          onClick={handleClose}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        >
+          ✕
+        </button>
+
+        <h2 className="text-lg font-semibold text-[#953002]">
+          Mark as Incomplete
+        </h2>
+
+        <p className="text-sm text-gray-500 mt-1">
+          Provide a reason for marking this request as incomplete.
+        </p>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
+          <div>
+            <textarea
+              {...register("reason")}
+              placeholder="Reason..."
+              className="w-full min-h-[100px] rounded-md border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]"
+            />
+            {errors.reason && (
+              <p className="text-red-500 text-sm mt-1">
+                {errors.reason.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" onClick={handleClose} variant="secondary">
+              Cancel
+            </Button>
+
+            <Button
+              type="submit"
+              disabled={!isValid}
+              className="bg-[#953002] text-white hover:bg-[#672102]"
+            >
+              Confirm
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
