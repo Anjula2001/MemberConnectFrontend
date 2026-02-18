@@ -117,7 +117,7 @@ function MultiSelect({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegistrationStatus = "DRAFT" | "PENDING_BOARD" | "SUBMITTED";
+type RegistrationStatus = "DRAFT" | "PENDING_BOARD" | "SUBMITTED" | "NEW";
 
 interface Registration {
   appId: string;
@@ -160,7 +160,7 @@ const mockData: Registration[] = [
     appliedDate: "2026-02-05",
     district: "Colombo",
     zone: "Colombo South",
-    status: "SUBMITTED",
+    status: "NEW",
     selectable: true,
   },
 ];
@@ -169,6 +169,14 @@ const statusBadgeClass: Record<RegistrationStatus, string> = {
   DRAFT: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
   PENDING_BOARD: "bg-amber-500 text-white border-transparent hover:bg-amber-500",
   SUBMITTED: "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  NEW: "bg-green-100 text-green-700 border border-green-300 hover:bg-green-100",
+};
+
+const statusFilterMap: Record<string, RegistrationStatus> = {
+  new: "NEW",
+  submitted: "SUBMITTED",
+  board: "PENDING_BOARD",
+  draft: "DRAFT",
 };
 
 export default function NewRegistrationsPage() {
@@ -176,6 +184,11 @@ export default function NewRegistrationsPage() {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
+  const [sortBy, setSortBy] = useState("applied-date");
+  const [sortAsc, setSortAsc] = useState(true);
+  const [displayData, setDisplayData] = useState<Registration[]>([]);
+  const [hasRetrieved, setHasRetrieved] = useState(false);
 
   const locationOptions = [
     { value: "colombo", label: "Colombo" },
@@ -200,6 +213,77 @@ export default function NewRegistrationsPage() {
         ? prev.filter((id) => id !== appId)
         : [...prev, appId]
     );
+  };
+
+  const handleRetrieve = () => {
+    let filtered = [...mockData];
+
+    // Filter by location/district
+    if (selectedLocations.length > 0) {
+      filtered = filtered.filter((row) =>
+        selectedLocations.some(
+          (loc) =>
+            row.district.toLowerCase().replace(/\s+/g, "-") === loc ||
+            row.district.toLowerCase() === loc
+        )
+      );
+    }
+
+    // Filter by status
+    if (selectedStatuses.length > 0) {
+      filtered = filtered.filter((row) =>
+        selectedStatuses.some((s) => statusFilterMap[s] === row.status)
+      );
+    }
+
+    // Filter by application received date
+    const now = new Date();
+    if (applicationReceivedOn === "thisMonth") {
+      filtered = filtered.filter((row) => {
+        if (!row.appliedDate) return false;
+        const d = new Date(row.appliedDate);
+        return (
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth()
+        );
+      });
+    } else if (applicationReceivedOn === "thisAndLastMonth") {
+      filtered = filtered.filter((row) => {
+        if (!row.appliedDate) return false;
+        const d = new Date(row.appliedDate);
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return d >= lastMonth;
+      });
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (row) =>
+          row.fullName.toLowerCase().includes(q) ||
+          row.nic.toLowerCase().includes(q) ||
+          row.appId.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "applied-date") {
+        cmp = (a.appliedDate ?? "").localeCompare(b.appliedDate ?? "");
+      } else if (sortBy === "status") {
+        cmp = a.status.localeCompare(b.status);
+      } else if (sortBy === "district") {
+        cmp = a.district.localeCompare(b.district);
+      } else if (sortBy === "zone") {
+        cmp = a.zone.localeCompare(b.zone);
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+
+    setDisplayData(filtered);
+    setHasRetrieved(true);
   };
 
   return (
@@ -243,7 +327,7 @@ export default function NewRegistrationsPage() {
               <label className="text-xs font-medium text-gray-600">
                 Application Received On
               </label>
-              <Select>
+              <Select value={applicationReceivedOn} onValueChange={setApplicationReceivedOn}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="All Days" />
                 </SelectTrigger>
@@ -298,7 +382,7 @@ export default function NewRegistrationsPage() {
                 Sort By
               </label>
               <div className="flex items-center gap-2">
-                <Select>
+                <Select value={sortBy} onValueChange={setSortBy}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Applied Date" />
                   </SelectTrigger>
@@ -309,10 +393,13 @@ export default function NewRegistrationsPage() {
                     <SelectItem value="zone">Zone</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline" size="icon">
-                  <ArrowUp size={16} />
+                <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
+                  <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
                 </Button>
-                <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap">
+                <Button
+                  className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap"
+                  onClick={handleRetrieve}
+                >
                   <RotateCcw size={14} />
                   Retrieve
                 </Button>
@@ -355,7 +442,17 @@ export default function NewRegistrationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {mockData.map((row) => (
+            {hasRetrieved && displayData.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={9}
+                  className="px-4 py-8 text-center text-gray-400 text-sm"
+                >
+                  No records found. Adjust your filters and click Retrieve.
+                </TableCell>
+              </TableRow>
+            )}
+            {displayData.map((row) => (
               <TableRow key={row.appId}>
                 {/* Checkbox */}
                 <TableCell className="px-4">
