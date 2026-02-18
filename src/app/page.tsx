@@ -1,5 +1,5 @@
-import StatsCards from "@/src/components/StatsCards"
-import BottomSection from "@/src/components/BottomSection"
+import StatsCards from "@/src/components/Dashboard/StatsCards"
+import BottomSection from "@/src/components/Dashboard/BottomSection"
 
 
 export default function Home() {

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Button } from "@/src/components/ui/button"
 import { Activity, ClipboardList } from "lucide-react"
 
@@ -85,7 +86,18 @@ export default function BottomSection() {
               <p className="font-medium text-sm">Review New Member Applications</p>
               <p className="text-sm text-muted-foreground">2 application(s) waiting for review.</p>
             </div>
-            <Button size="sm" style={{ backgroundColor: '#953002', borderRadius: '8px', flexShrink: 0 }}>View</Button>
+            <Button
+              asChild
+              size="sm"
+              style={{
+               backgroundColor: "#953002",
+               borderRadius: "8px",
+               flexShrink: 0,
+               }}>
+              <Link href="/membership/new-registrations">
+                View
+              </Link>
+             </Button>
           </div>
 
           <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
@@ -93,7 +105,18 @@ export default function BottomSection() {
               <p className="font-medium text-sm">Process Scholarship Requests</p>
               <p className="text-sm text-muted-foreground">2 request(s) need attention.</p>
             </div>
-            <Button size="sm" style={{ backgroundColor: '#953002', borderRadius: '8px', flexShrink: 0 }}>View</Button>
+            <Button
+              asChild
+              size="sm"
+              style={{
+               backgroundColor: "#953002",
+               borderRadius: "8px",
+               flexShrink: 0,
+               }}>
+              <Link href="/scholarships/grade-5">
+                View
+              </Link>
+             </Button>
           </div>
 
           <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
@@ -101,7 +124,18 @@ export default function BottomSection() {
               <p className="font-medium text-sm">Review Termination Requests</p>
               <p className="text-sm text-muted-foreground">2 request(s) pending.</p>
             </div>
-            <Button size="sm" style={{ backgroundColor: '#953002', borderRadius: '8px', flexShrink: 0 }}>View</Button>
+            <Button
+              asChild
+              size="sm"
+              style={{
+               backgroundColor: "#953002",
+               borderRadius: "8px",
+               flexShrink: 0,
+               }}>
+              <Link href="/membership/termination">
+                View
+              </Link>
+             </Button>
           </div>
 
           <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
@@ -109,7 +143,18 @@ export default function BottomSection() {
               <p className="font-medium text-sm">Death Donation Approvals</p>
               <p className="text-sm text-muted-foreground">3 request(s) awaiting approval.</p>
             </div>
-            <Button size="sm" style={{ backgroundColor: '#953002', borderRadius: '8px', flexShrink: 0 }}>View</Button>
+            <Button
+              asChild
+              size="sm"
+              style={{
+               backgroundColor: "#953002",
+               borderRadius: "8px",
+               flexShrink: 0,
+               }}>
+              <Link href="/death-donation">
+                View
+              </Link>
+             </Button>
           </div>
 
           <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
@@ -117,7 +162,18 @@ export default function BottomSection() {
               <p className="font-medium text-sm">Profile Change Requests</p>
               <p className="text-sm text-muted-foreground">2 request(s) pending update.</p>
             </div>
-            <Button size="sm" style={{ backgroundColor: '#953002', borderRadius: '8px', flexShrink: 0 }}>View</Button>
+            <Button
+              asChild
+              size="sm"
+              style={{
+               backgroundColor: "#953002",
+               borderRadius: "8px",
+               flexShrink: 0,
+               }}>
+              <Link href="/membership/profile-changes">
+                View
+              </Link>
+             </Button>
           </div>
         </div>
       </div>
