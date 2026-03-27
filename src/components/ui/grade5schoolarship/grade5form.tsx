@@ -48,11 +48,11 @@ const districtCutOffMapping: Record<string, Record<number, number>> = {
   Polonnaruwa: { 2025: 143, 2024: 135 },
   Puttalama: { 2025: 138, 2024: 125 },
   Mullaitivu: { 2025: 171, 2024: 165 },
-  Vauniya: { 2025: 156, 2024: 145 },
+  Vavuniya: { 2025: 156, 2024: 145 },
   Rathnepura: { 2025: 147, 2024: 135 },
   Monaragala: { 2025: 133, 2024: 125 },
   NuvaraEliya: { 2025: 177, 2024: 165 },
-  Trincoomalee: { 2025: 179, 2024: 165 },
+  Trincomalee: { 2025: 179, 2024: 165 },
 };
 
 const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
@@ -169,11 +169,11 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
             <option>Badulla</option>
             <option>Batticaloa</option>
             <option>Gampaha</option>
-            <option>Hambanthota</option>
+            <option>Hambantota</option>
             <option>Jaffna</option>
             <option>Kurunegala</option>
             <option>Kaluthara</option>
-            <option>Kegalla</option>
+            <option>Kegalle</option>
             <option>Kilinochchi</option>
             <option>Mathale</option>
             <option>Mannar</option>
