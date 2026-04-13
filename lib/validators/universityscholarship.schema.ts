@@ -2,9 +2,23 @@ import { z } from "zod";
 
 export const universityScholarshipSchema = z.object({
   requestDate: z
-    .string()
-    .min(1, "Request date is required")
-    .transform((val) => new Date(val)),
+  .string()
+  .min(1, "Request date is required")
+  .transform((val) => new Date(val))
+  .refine((date) => {
+    const today = new Date();
+
+    // Compare only the date part
+    const inputDate = new Date(date);
+    inputDate.setHours(0, 0, 0, 0);
+
+    const currentDate = new Date(today);
+    currentDate.setHours(0, 0, 0, 0);
+
+    return inputDate.getTime() <= currentDate.getTime();
+  }, {
+    message: "Request date cannot be a future date"
+  }),
 
   studentName: z.string().min(1, "Student name is required"),
   nic: z.string().min(10, "NIC is required"),
