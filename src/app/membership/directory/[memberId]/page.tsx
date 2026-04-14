@@ -1,4 +1,8 @@
+"use client";
+
+import { use } from "react";
 import { ChevronDown, User } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { notFound } from "next/navigation";
 
 import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
@@ -125,17 +129,37 @@ function SectionTitle({ title }: { title: string }) {
 	return <p className="text-sm font-semibold text-[#b2410f]">{title}</p>;
 }
 
-export default async function MemberProfilePage({
+export default function MemberProfilePage({
 	params,
 }: {
 	params: Promise<{ memberId: string }>;
 }) {
-	const { memberId } = await params;
+	const router = useRouter();
+	const { memberId } = use(params);
 	const profile = memberProfiles[decodeURIComponent(memberId)];
 
 	if (!profile) {
 		notFound();
 	}
+
+	const handleActionClick = (action: string) => {
+		const routeMap: Record<string, string> = {
+			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
+			"Change Name": "/membership/directory/change-name",
+			"Change Remittance": "/membership/directory/change-remittance",
+			"Change Nominee": "/membership/directory/change-nominee",
+			"Grade 5 Scholarship": "/membership/directory/grade-5-scholarship",
+			"University Scholarship": "/membership/directory/university-scholarship",
+			"Request Termination": "/membership/directory/request-termination",
+			"Death Donation Request": "/membership/directory/death-donation-request",
+			"Add Documents": "/membership/directory/add-documents",
+		};
+
+		const route = routeMap[action];
+		if (route) {
+			router.push(route);
+		}
+	};
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
@@ -165,12 +189,13 @@ export default async function MemberProfilePage({
 									<p className="text-2xl font-semibold text-neutral-800">Profile Requests</p>
 								</div>
 
-								<div className="border-b border-neutral-300 px-5 py-2">
+								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
 									{actionGroups.profileRequests.map((item) => (
 										<button
 											key={item}
 											type="button"
-											className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-neutral-700 transition-colors hover:text-[#9d3602]"
+											onClick={() => handleActionClick(item)}
+											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
 										>
 											{item}
 										</button>
@@ -180,18 +205,20 @@ export default async function MemberProfilePage({
 								<div className="border-b border-neutral-300 px-5 py-2">
 									<button
 										type="button"
-										className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-red-600 transition-colors hover:text-red-700"
+										onClick={() => handleActionClick("Request Termination")}
+										className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
 									>
 										Request Termination
 									</button>
 								</div>
 
-								<div className="px-5 py-2">
+								<div className="px-5 py-2 space-y-1">
 									{actionGroups.secondary.map((item) => (
 										<button
 											key={item}
+											onClick={() => handleActionClick(item)}
 											type="button"
-											className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-neutral-700 transition-colors hover:text-[#9d3602]"
+											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
 										>
 											{item}
 										</button>
