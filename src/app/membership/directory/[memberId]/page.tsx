@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 
 import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
 import { Badge } from "@/src/components/ui/badge";
-import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
@@ -101,6 +100,18 @@ const detailTabs = [
 	"Progress",
 ];
 
+const actionGroups = {
+	profileRequests: [
+		"Basic Profile Changes",
+		"Change Name",
+		"Change Remittance",
+		"Change Nominee",
+		"Grade 5 Scholarship",
+		"University Scholarship",
+	],
+	secondary: ["Death Donation Request", "Add Documents"],
+};
+
 function Field({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="space-y-1">
@@ -143,10 +154,51 @@ export default async function MemberProfilePage({
 					</div>
 
 					<div className="flex items-center gap-2">
-						<Button variant="outline" className="h-9 border-neutral-300 bg-white text-neutral-700">
-							Actions
-							<ChevronDown className="h-4 w-4" />
-						</Button>
+						<details className="group relative">
+							<summary className="flex h-9 min-w-[120px] cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+								Actions
+								<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+							</summary>
+
+							<div className="absolute top-11 right-0 z-50 w-[340px] rounded-xl border border-neutral-300 bg-white shadow-xl">
+								<div className="border-b border-neutral-300 px-5 py-3">
+									<p className="text-2xl font-semibold text-neutral-800">Profile Requests</p>
+								</div>
+
+								<div className="border-b border-neutral-300 px-5 py-2">
+									{actionGroups.profileRequests.map((item) => (
+										<button
+											key={item}
+											type="button"
+											className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-neutral-700 transition-colors hover:text-[#9d3602]"
+										>
+											{item}
+										</button>
+									))}
+								</div>
+
+								<div className="border-b border-neutral-300 px-5 py-2">
+									<button
+										type="button"
+										className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-red-600 transition-colors hover:text-red-700"
+									>
+										Request Termination
+									</button>
+								</div>
+
+								<div className="px-5 py-2">
+									{actionGroups.secondary.map((item) => (
+										<button
+											key={item}
+											type="button"
+											className="block w-full py-1.5 text-left text-lg leading-7 font-medium whitespace-nowrap text-neutral-700 transition-colors hover:text-[#9d3602]"
+										>
+											{item}
+										</button>
+									))}
+								</div>
+							</div>
+						</details>
 						<Badge className="rounded-full bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-600">
 							ACTIVE
 						</Badge>
