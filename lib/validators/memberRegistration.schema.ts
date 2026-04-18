@@ -3,6 +3,7 @@ import { z } from "zod";
 export const memberRegistrationSchema = z.object({
   // Application Information
   applicationDate: z.string().min(1, "Application date is required"),
+  statusOverride: z.string().optional(),
 
   // Personal Information
   title: z.string().min(1, "Title is required"),

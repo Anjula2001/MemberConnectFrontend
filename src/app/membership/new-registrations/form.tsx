@@ -29,15 +29,25 @@ export function NewMemberRegistrationForm() {
   const {
     control,
     register,
+    setValue,
+    watch,
     handleSubmit,
     formState: { errors },
   } = useForm<MemberRegistration>({
     resolver: zodResolver(memberRegistrationSchema),
     defaultValues: {
       applicationDate: new Date().toISOString().split("T")[0],
+      statusOverride: "New",
+      title: "Mr",
       preferredLanguage: "English",
       gender: "Male",
       workingLocationType: "SCHOOL",
+      designation: "Teacher",
+      natureOfOccupation: "Permanent",
+      educationalDistrict: "Colombo",
+      educationalZone: "",
+      relationship: "",
+      identificationType: "NIC",
     },
   });
 
@@ -73,6 +83,16 @@ export function NewMemberRegistrationForm() {
     </div>
   );
 
+  const districtZoneMap: Record<string, string[]> = {
+    Colombo: ["Colombo South", "Colombo North", "Homagama"],
+    Kandy: ["Kandy", "Gampola", "Katugastota"],
+    Galle: ["Galle", "Elpitiya", "Ambalangoda"],
+    Matara: ["Matara", "Akuressa", "Weligama"],
+    Jaffna: ["Jaffna", "Nallur", "Chavakachcheri"],
+    Gampaha: ["Gampaha", "Negombo", "Minuwangoda"],
+  };
+  const selectedDistrict = watch("educationalDistrict");
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* Header */}
@@ -93,17 +113,39 @@ export function NewMemberRegistrationForm() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-5 pb-5">
-          <FormField
-            label="Application Date"
-            error={errors.applicationDate?.message}
-            required
-          >
-            <Input
-              type="date"
-              {...register("applicationDate")}
-              className="w-full"
-            />
-          </FormField>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              label="Application Date"
+              error={errors.applicationDate?.message}
+              required
+            >
+              <Input
+                type="date"
+                {...register("applicationDate")}
+                className="w-full"
+              />
+            </FormField>
+            <FormField label="Status (Override)">
+              <Controller
+                name="statusOverride"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="New">New</SelectItem>
+                      <SelectItem value="Submitted for Approval">Submitted for Approval</SelectItem>
+                      <SelectItem value="Added to Board Approval List">Added to Board Approval List</SelectItem>
+                      <SelectItem value="Rejected">Rejected</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </FormField>
+          </div>
         </CardContent>
       </Card>
 
@@ -127,14 +169,14 @@ export function NewMemberRegistrationForm() {
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Title" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="Rev.">Rev.</SelectItem>
                       <SelectItem value="Mr">Mr</SelectItem>
                       <SelectItem value="Mrs">Mrs</SelectItem>
-                      <SelectItem value="Ms">Ms</SelectItem>
-                      <SelectItem value="Dr">Dr</SelectItem>
+                      <SelectItem value="Miss">Miss</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
@@ -202,7 +244,7 @@ export function NewMemberRegistrationForm() {
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Gender" />
                     </SelectTrigger>
                     <SelectContent>
@@ -223,7 +265,7 @@ export function NewMemberRegistrationForm() {
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Language" />
                     </SelectTrigger>
                     <SelectContent>
@@ -271,7 +313,7 @@ export function NewMemberRegistrationForm() {
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -288,16 +330,46 @@ export function NewMemberRegistrationForm() {
               error={errors.designation?.message}
               required
             >
-              <Input {...register("designation")} placeholder="Designation" />
+              <Controller
+                name="designation"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Designation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Teacher">Teacher</SelectItem>
+                      <SelectItem value="Principal">Principal</SelectItem>
+                      <SelectItem value="Clerk">Clerk</SelectItem>
+                      <SelectItem value="Director">Director</SelectItem>
+                      <SelectItem value="Lecturer">Lecturer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </FormField>
             <FormField
               label="Nature of Occupation"
               error={errors.natureOfOccupation?.message}
               required
             >
-              <Input
-                {...register("natureOfOccupation")}
-                placeholder="Permanent"
+              <Controller
+                name="natureOfOccupation"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Occupation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Permanent">Permanent</SelectItem>
+                      <SelectItem value="Probation">Probation</SelectItem>
+                      <SelectItem value="Temporary">Temporary</SelectItem>
+                      <SelectItem value="Casual">Casual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               />
             </FormField>
           </div>
@@ -309,18 +381,60 @@ export function NewMemberRegistrationForm() {
               error={errors.educationalDistrict?.message}
               required
             >
-              <Input
-                {...register("educationalDistrict")}
-                placeholder="Colombo"
+              <Controller
+                name="educationalDistrict"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      const zones = districtZoneMap[value] ?? [];
+                      const firstZone = zones.length > 0 ? zones[0] : "";
+                      // Keep zone in sync with district selection for better UX.
+                      setValue("educationalZone", firstZone);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select District" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Colombo">Colombo</SelectItem>
+                      <SelectItem value="Kandy">Kandy</SelectItem>
+                      <SelectItem value="Galle">Galle</SelectItem>
+                      <SelectItem value="Matara">Matara</SelectItem>
+                      <SelectItem value="Jaffna">Jaffna</SelectItem>
+                      <SelectItem value="Gampaha">Gampaha</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               />
             </FormField>
             <FormField
               label="Educational Zone"
               error={errors.educationalZone?.message}
             >
-              <Input
-                {...register("educationalZone")}
-                placeholder="Select Zone"
+              <Controller
+                name="educationalZone"
+                control={control}
+                render={({ field }) => {
+                  const zones = districtZoneMap[selectedDistrict] ?? [];
+
+                  return (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select Zone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {zones.map((zone) => (
+                          <SelectItem key={zone} value={zone}>
+                            {zone}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                }}
               />
             </FormField>
           </div>
@@ -331,9 +445,21 @@ export function NewMemberRegistrationForm() {
               label="Working Location"
               error={errors.workingLocation?.message}
             >
-              <Input
-                {...register("workingLocation")}
-                placeholder="Working Location"
+              <Controller
+                name="workingLocation"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Colombo South School">Colombo South School</SelectItem>
+                      <SelectItem value="Colombo North School">Colombo North School</SelectItem>
+                      <SelectItem value="Homagama School">Homagama School</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               />
             </FormField>
             <FormField
@@ -516,9 +642,25 @@ export function NewMemberRegistrationForm() {
               error={errors.relationship?.message}
               required
             >
-              <Input
-                {...register("relationship")}
-                placeholder="Relationship"
+              <Controller
+                name="relationship"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Relationship" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Spouse">Spouse</SelectItem>
+                      <SelectItem value="Father">Father</SelectItem>
+                      <SelectItem value="Mother">Mother</SelectItem>
+                      <SelectItem value="Son">Son</SelectItem>
+                      <SelectItem value="Daughter">Daughter</SelectItem>
+                      <SelectItem value="Sibling">Sibling</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               />
             </FormField>
           </div>
@@ -535,7 +677,7 @@ export function NewMemberRegistrationForm() {
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -543,6 +685,9 @@ export function NewMemberRegistrationForm() {
                       <SelectItem value="PASSPORT">Passport</SelectItem>
                       <SelectItem value="DRIVING_LICENSE">
                         Driving License
+                      </SelectItem>
+                      <SelectItem value="BIRTH_CERTIFICATE">
+                        Birth Certificate
                       </SelectItem>
                     </SelectContent>
                   </Select>
