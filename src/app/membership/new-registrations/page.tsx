@@ -10,6 +10,7 @@ import {
   FileText,
   AlertCircle,
   ChevronDown,
+  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -37,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { NewMemberRegistrationForm } from "./form";
 
 // ── Multi-select dropdown ─────────────────────────────────────────────────────
 interface MultiSelectProps {
@@ -180,6 +182,7 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 };
 
 export default function NewRegistrationsPage() {
+  const [currentView, setCurrentView] = useState<"list" | "form">("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -286,6 +289,22 @@ export default function NewRegistrationsPage() {
     setHasRetrieved(true);
   };
 
+  if (currentView === "form") {
+    return (
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <Button
+          variant="ghost"
+          onClick={() => setCurrentView("list")}
+          className="w-fit text-[#953002] hover:text-[#7a2700] hover:bg-transparent mb-2"
+        >
+          <ArrowLeft size={16} />
+          Back to List
+        </Button>
+        <NewMemberRegistrationForm />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       {/* Page Header */}
@@ -293,7 +312,10 @@ export default function NewRegistrationsPage() {
         <h1 className="text-2xl font-bold text-[#953002]">
           New Member Registration Search
         </h1>
-        <Button className="bg-[#7a2700] hover:bg-[#953002] text-white">
+        <Button
+          className="bg-[#7a2700] hover:bg-[#953002] text-white"
+          onClick={() => setCurrentView("form")}
+        >
           <Plus />
           Create New Registration
         </Button>
