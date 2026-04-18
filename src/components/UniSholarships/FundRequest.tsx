@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -11,57 +11,42 @@ import { Separator } from "../ui/separator";
 import Document from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 
-/*ZOD SCHEMA*/
-const fundRequestSchema = z.object({
-  requestedDate: z.string().min(1, "Requested date is required"),
-  requestedPeriod: z.string().min(1, "Requested period is required"),
-  amount: z.string().min(1, "Amount is required"),
-});
+import { fundRequestSchema } from "@/lib/validators/fundrequestvalidation.schema";
 
-type FundRequestForm = z.infer<typeof fundRequestSchema>;
+type FundRequestSchema = ReturnType<typeof fundRequestSchema>;
+type FundRequestFormInput = z.input<FundRequestSchema>;
+type FundRequestFormOutput = z.output<FundRequestSchema>;
 
 export default function FundDisbursementRequest() {
   const [showIncomplete, setShowIncomplete] = useState(false);
-  const [reason, setReason] = useState("");
-  const [reasonError, setReasonError] = useState("");
 
+  const availableBalance = 200000;
+  
   const {
     register,
     handleSubmit,
     formState: { errors, isValid },
     reset,
-  } = useForm<FundRequestForm>({
-    resolver: zodResolver(fundRequestSchema),
+  } = useForm<FundRequestFormInput, unknown, FundRequestFormOutput>({
+    resolver: zodResolver(fundRequestSchema(availableBalance)),
     mode: "onChange",
   });
 
-  /*SUBMIT HANDLER*/
-  const onSubmit = (data: FundRequestForm) => {
+  const onSubmit = (data: FundRequestFormOutput) => {
     console.log("Submitted data:", data);
     reset();
   };
 
-  /*INCOMPLETE HANDLER*/
-  const handleIncompleteConfirm = () => {
-    if (!reason.trim()) {
-      setReasonError("Reason is required");
-      return;
-    }
-
+  const handleIncompleteConfirm = (reason: string) => {
     console.log("Marked as Incomplete");
     console.log("Reason:", reason);
-
-    setReason("");
-    setReasonError("");
     setShowIncomplete(false);
   };
 
   return (
     <>
       <div className="space-y-6">
-
-        {/* PAGE TITLE */}
-        <div className="flex items-center gap-2">
+        <div>
           <h1 className="text-2xl font-bold text-[#953002]">
             Fund Disbursement Request
           </h1>
@@ -69,50 +54,44 @@ export default function FundDisbursementRequest() {
 
         <Separator />
 
-        {/* MAIN CONTENT */}
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
-          {/* LEFT – REQUEST DETAILS */}
-          <section className="lg:col-span-2 rounded-lg border bg-white p-6 space-y-6">
-           <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[#953002]">
-                    Request Details
-                </h2>
-                
-                <Button variant="outline">Save</Button>
+          <section className="space-y-6 rounded-lg border bg-white p-6 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold text-[#953002]">
+                Request Information
+              </span>
+              <Button type="button" variant="outline">
+                Save
+              </Button>
             </div>
 
-            {/* AVAILABLE BALANCE */}
             <div className="rounded-md bg-gray-100 p-4">
               <p className="text-xs text-gray-500">Available Balance</p>
-              <p className="text-lg font-bold">LKR 200,000</p>
+              <p className="text-lg font-bold">LKR {availableBalance.toLocaleString()}</p>
             </div>
 
-            {/* FORM FIELDS */}
             <div className="space-y-4">
-
-              {/* REQUESTED DATE */}
-              <div className="space-y-1">
-                <label className="text-medium  text-black">
-                  Requested Date
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Requested Date <span className="text-red-500">*</span>
                 </label>
-                <Input type="date" {...register("requestedDate")} />
-                {errors.requestedDate && (
+                <Input type="date" {...register("requestDate")} />
+                {errors.requestDate && (
                   <p className="text-sm text-red-500">
-                    {errors.requestedDate.message}
+                    {errors.requestDate.message}
                   </p>
                 )}
               </div>
 
-              {/* REQUESTED PERIOD */}
-              <div className="space-y-1">
-                <label className="text-medium  text-black">
-                  Requested Period (e.g. Year 1 Sem 1)
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Requested Period <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  placeholder="Year 1 Sem 1"
+                  placeholder="e.g. Year 1 Semester 1"
                   {...register("requestedPeriod")}
                 />
                 {errors.requestedPeriod && (
@@ -122,40 +101,35 @@ export default function FundDisbursementRequest() {
                 )}
               </div>
 
-              {/* AMOUNT */}
-              <div className="space-y-1">
-                <label className="text-medium text-black">
-                  Amount
-                </label> 
-                <Input
-                  placeholder="Enter amount"
-                  {...register("amount")}
-                />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Requested Amount (LKR) <span className="text-red-500">*</span>
+                </label>
+                <Input placeholder="Enter amount" {...register("amount")} />
                 {errors.amount && (
                   <p className="text-sm text-red-500">
                     {errors.amount.message}
                   </p>
                 )}
               </div>
-
             </div>
           </section>
 
-          {/* RIGHT – DOCUMENTS */}
-          <section className="rounded-lg border bg-white p-6 space-y-4">
-
-            <div className="border border-dashed rounded-lg p-6 text-center text-sm text-gray-500">
+          <section className="space-y-4 rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
+              <p className="mb-2 font-medium text-gray-700">
+                Supporting Documents
+              </p>
               <Document />
             </div>
 
-            {/* ACTION BUTTONS */}
             <div className="flex justify-center gap-3 pt-4">
               <Button
                 type="button"
-                className="bg-[#D4183D] hover:bg-red-700 text-white"
+                className="bg-[#D4183D] text-white hover:bg-red-700"
                 onClick={() => setShowIncomplete(true)}
               >
-                Incomplete
+                Mark as Incomplete
               </Button>
 
               <Button
@@ -170,12 +144,11 @@ export default function FundDisbursementRequest() {
         </form>
       </div>
 
-      {/*INCOMPLETE POPUP*/}
-       <MarkIncompleteModal 
-              open={showIncomplete}
-              onClose={() => setShowIncomplete(false)}
-              onConfirm={handleIncompleteConfirm}
-            />
-        </>
+      <MarkIncompleteModal
+        open={showIncomplete}
+        onClose={() => setShowIncomplete(false)}
+        onConfirm={handleIncompleteConfirm}
+      />
+    </>
   );
 }
