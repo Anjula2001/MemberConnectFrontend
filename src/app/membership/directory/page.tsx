@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import {
-	ChevronDown,
 	ChevronsUpDown,
 	Filter,
 	ListFilter,
@@ -385,9 +385,11 @@ export default function MemberDirectoryPage() {
 									<TableCell className="px-4 py-4 text-neutral-700">{row.joinedDate}</TableCell>
 									<TableCell className="px-4 py-4 text-neutral-700">{row.location}</TableCell>
 									<TableCell className="px-4 py-4">
-										<Button variant="ghost" className="h-8 px-2 text-neutral-700 hover:bg-neutral-100">
-											<ListFilter className="h-4 w-4" />
-											View
+										<Button asChild variant="ghost" className="h-8 px-2 text-neutral-700 hover:bg-neutral-100">
+											<Link href={`/membership/directory/${row.memberId}`}>
+												<ListFilter className="h-4 w-4" />
+												View
+											</Link>
 										</Button>
 									</TableCell>
 								</TableRow>
