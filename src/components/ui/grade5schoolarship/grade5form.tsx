@@ -1,24 +1,80 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useEffect } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useEffect,
+  useState,
+} from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
 
+/**
+ * Form validation schema
+ */
 const grade5Schema = z.object({
-  requestedDate: z.string().min(1, "Requested date is required"),
+  requestedDate: z
+    .string()
+    .min(1, "Requested date is required")
+    .refine((dateStr) => {
+      const selectedDate = new Date(dateStr);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return selectedDate <= today;
+    }, "Requested date cannot be in the future"),
+
   studentName: z.string().min(1, "Student name is required"),
-  birthCertificateNo: z.string().min(1, "Birth certificate number is required"),
+
+  birthCertificateNo: z
+    .string()
+    .min(1, "Birth certificate number is required"),
+
   school: z.string().min(1, "School is required"),
+
   schoolDistrict: z.string().min(1, "District is required"),
-  examYear: z.number(),
-  examinationNumber: z.string().min(1, "Examination number is required"),
+
+  examYear: z
+  .number({
+    message: "Exam year is required",
+  })
+  .min(2000, "Invalid exam year")
+  .refine((year) => year <= new Date().getFullYear(), {
+    message: "Exam year cannot be a future year",
+  })
+  .optional(),
+
+marksObtained: z
+  .number({
+    message: "Marks obtained is required",
+  })
+  .min(0, "Marks must be at least 0")
+  .max(200, "Marks cannot exceed 200"),
+
+  examinationNumber: z
+    .string()
+    .min(1, "Examination number is required"),
+
   districtCutOff: z.string().optional(),
-  marksObtained: z.number()
-    .min(0, "Marks must be at least 0")
-    .max(200, "Marks cannot exceed 200"),
+}).superRefine((data, ctx) => {
+  const cutoffMark = data.districtCutOff
+    ? Number(data.districtCutOff)
+    : undefined;
+
+  if (
+    cutoffMark !== undefined &&
+    !Number.isNaN(cutoffMark) &&
+    data.marksObtained < cutoffMark
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["marksObtained"],
+      message:
+        "The Grade 5 Scholarship Request cannot be saved. The exam marks obtained by the student is less than the district cut-off mark.",
+    });
+  }
 });
 
 export type Grade5FormValues = z.infer<typeof grade5Schema>;
@@ -27,63 +83,226 @@ export interface Grade5FormRef {
   submitForm: () => void;
 }
 
-const districtCutOffMapping: Record<string, Record<number, number>> = {
-  Colombo: { 2025: 150, 2024: 145 },
-  Kandy: { 2025: 140, 2024: 135 },
-  Galle: { 2025: 130, 2024: 125 },
-  Matara: { 2025: 170, 2024: 165 },
-  Anuradhapura: { 2025: 155, 2024: 145 },
-  Ampara: { 2025: 142, 2024: 135 },
-  Badulla: { 2025: 139, 2024: 125 },
-  Batticaloa: { 2025: 174, 2024: 165 },
-  Gampaha: { 2025: 151, 2024: 145 },
-  Hambantota: { 2025: 148, 2024: 135 },
-  Jaffna: { 2025: 166, 2024: 125 },
-  Kurunegala: { 2025: 171, 2024: 165 },
-  Kaluthara: { 2025: 159, 2024: 145 },
-  Kegalle: { 2025: 145, 2024: 135 },
-  Kilinochchi: { 2025: 132, 2024: 125 },
-  Mannar: { 2025: 174, 2024: 165 },
-  Mathale: { 2025: 154, 2024: 145 },
-  Polonnaruwa: { 2025: 143, 2024: 135 },
-  Puttalama: { 2025: 138, 2024: 125 },
-  Mullaitivu: { 2025: 171, 2024: 165 },
-  Vavuniya: { 2025: 156, 2024: 145 },
-  Rathnepura: { 2025: 147, 2024: 135 },
-  Monaragala: { 2025: 133, 2024: 125 },
-  NuvaraEliya: { 2025: 177, 2024: 165 },
-  Trincomalee: { 2025: 179, 2024: 165 },
-};
-
 const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
-  const { register, handleSubmit, setValue, watch, formState: { errors } } =
-    useForm<Grade5FormValues>({
-      resolver: zodResolver(grade5Schema),
-      defaultValues: { examYear: 2025 },
-    });
+  /**
+   * React Hook Form setup
+   */
+  const {
+  register,
+  handleSubmit,
+  setValue,
+  watch,
+  setError,
+  clearErrors,
+  getValues,
+  formState: { errors },
+} = useForm<Grade5FormValues>({
+  resolver: zodResolver(grade5Schema),
+  mode: "onChange",
+  reValidateMode: "onChange",
+  defaultValues: {
+    examYear: undefined,
+    districtCutOff: "",
+  },
+});
 
+  /**
+   * Watched values
+   */
   const selectedDistrict = watch("schoolDistrict");
   const selectedYear = watch("examYear");
+  const examinationNumber = watch("examinationNumber");
 
-  // ✅ Auto-calculate district cut-off
   useEffect(() => {
-    if (selectedDistrict && selectedYear) {
-      const cutoff = districtCutOffMapping[selectedDistrict]?.[selectedYear];
-      if (cutoff !== undefined) {
-        setValue("districtCutOff", cutoff.toString());
+    setExamValidated(false);
+    clearErrors("examinationNumber");
+  }, [examinationNumber, clearErrors]);
+
+/**
+ * Local UI state
+ */
+const [checkingExamNo, setCheckingExamNo] = useState(false);
+
+const [examValidated, setExamValidated] = useState(false);
+
+
+/**
+ * If district changes AFTER cutoff has already loaded,
+ * clear Exam Year and District Cut-Off
+ */
+
+  /**
+   * Fetch district cutoff from backend
+   * Runs only when both district and exam year are available
+   */
+useEffect(() => {
+  if (!selectedDistrict || !selectedYear) {
+    setValue("districtCutOff", "");
+    return;
+  }
+
+  const timeout = setTimeout(() => {
+    const fetchCutoff = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/cutoff?district=${encodeURIComponent(
+            selectedDistrict
+          )}&year=${selectedYear}`
+        );
+
+        if (!res.ok) {
+          setValue("districtCutOff", "");
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data?.cutoffMarks !== undefined && data?.cutoffMarks !== null) {
+          setValue("districtCutOff", data.cutoffMarks.toString());
+        } else {
+          setValue("districtCutOff", "");
+        }
+      } catch (error) {
+        console.error("Error fetching cutoff:", error);
+        setValue("districtCutOff", "");
       }
+    };
+
+    fetchCutoff();
+  }, 300);
+
+  return () => clearTimeout(timeout);
+}, [selectedDistrict, selectedYear, setValue]);
+
+  /**
+   * Validate exam number duplication by calling backend
+   */
+  const validateExamNumber = async () => {
+    const examNo = getValues("examinationNumber");
+
+    if (!examNo?.trim()) {
+      setError("examinationNumber", {
+        type: "manual",
+        message: "Examination number is required",
+      });
+      setExamValidated(false);
+      return false;
     }
-  }, [selectedDistrict, selectedYear, setValue]);
 
-  const onValid = (data: Grade5FormValues) => {
-    console.log("Validated Data:", data);
+    try {
+      setCheckingExamNo(true);
+
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/exists?examNo=${encodeURIComponent(
+          examNo
+        )}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to validate examination number");
+      }
+
+      const data: { exists: boolean } = await res.json();
+
+      if (data.exists) {
+        setError("examinationNumber", {
+          type: "manual",
+          message:
+            "Entered Examination Number is duplicating with another Scholarship Request",
+        });
+        setExamValidated(false);
+        return false;
+      }
+
+      clearErrors("examinationNumber");
+      setExamValidated(true);
+      return true;
+    } catch (error) {
+      console.error("Validation error:", error);
+      setError("examinationNumber", {
+        type: "manual",
+        message: "Unable to validate examination number",
+      });
+      setExamValidated(false);
+      return false;
+    } finally {
+      setCheckingExamNo(false);
+    }
   };
-  const onInvalid = (errors: any) => {
-    console.log("Validation Errors:", errors);
+
+  /**
+   * Called when form is valid and user saves/submits
+   * Also re-checks duplicate exam number before saving
+   */
+  const onValid = async (data: Grade5FormValues) => {
+    const examOk = await validateExamNumber();
+    if (!examOk) return;
+
+    /**
+     * Map frontend field names to backend DTO field names
+     */
+    const payload = {
+      studentName: data.studentName,
+      birthCertificateNumber: data.birthCertificateNo,
+      studentSchool: data.school,
+      schoolDistrict: data.schoolDistrict,
+      examYear: data.examYear,
+      examinationNumber: data.examinationNumber,
+      districtCutOffMark: data.districtCutOff
+        ? Number(data.districtCutOff)
+        : null,
+      marksObtained: data.marksObtained,
+    };
+
+    try {
+     
+
+      const res = await fetch("http://localhost:8080/api/grade5/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+
+        if (
+          errorText.includes("Examination number already exists")
+        ) {
+          setError("examinationNumber", {
+            type: "manual",
+            message:
+              "Entered Examination Number is duplicating with another Scholarship Request",
+          });
+          setExamValidated(false);
+          return;
+        }
+
+        throw new Error(errorText || "Failed to save form");
+      }
+
+      const savedData = await res.json();
+      console.log("Saved successfully:", savedData);
+      alert("Form saved successfully");
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Failed to save form");
+    } 
   };
 
+  /**
+   * Called when frontend validation fails
+   */
+  const onInvalid = (formErrors: unknown) => {
+    console.log("Validation Errors:", formErrors);
+  };
 
-  /* Expose submit function to parent */
+  /**
+   * Expose submit function to parent component
+   * Parent page calls formRef.current?.submitForm()
+   */
   useImperativeHandle(ref, () => ({
     submitForm: () => {
       handleSubmit(onValid, onInvalid)();
@@ -92,18 +311,17 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
 
   return (
     <form className="space-y-6">
-      <p className="text-[#953002] text-xl font-bold">
-        Request Details
-      </p>
+      <p className="text-[#953002] text-xl font-bold">Request Details</p>
 
       <div className="grid grid-cols-2 gap-4">
-
         {/* Requested Date */}
         <div>
-          <label className="block font-medium mb-1">
-            Requested Date
-          </label>
-          <Input type="date" {...register("requestedDate")} />
+          <label className="block font-medium mb-1">Requested Date</label>
+          <Input
+            type="date"
+            {...register("requestedDate")}
+            max={new Date().toISOString().split("T")[0]}
+          />
           {errors.requestedDate && (
             <p className="text-red-500 text-sm">
               {errors.requestedDate.message}
@@ -113,9 +331,7 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
 
         {/* Student Name */}
         <div>
-          <label className="block font-medium mb-1">
-            Student Name
-          </label>
+          <label className="block font-medium mb-1">Student Name</label>
           <Input {...register("studentName")} />
           {errors.studentName && (
             <p className="text-red-500 text-sm">
@@ -124,7 +340,7 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
           )}
         </div>
 
-        {/* Birth Certificate */}
+        {/* Birth Certificate Number */}
         <div>
           <label className="block font-medium mb-1">
             Birth Certificate No
@@ -139,25 +355,25 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
 
         {/* School */}
         <div>
-          <label className="block font-medium mb-1">
-            School
-          </label>
+          <label className="block font-medium mb-1">School</label>
           <Input {...register("school")} />
           {errors.school && (
-            <p className="text-red-500 text-sm">
-              {errors.school.message}
-            </p>
+            <p className="text-red-500 text-sm">{errors.school.message}</p>
           )}
         </div>
 
-        {/* District */}
+        {/* School District */}
         <div>
-          <label className="block font-medium mb-1">
-            School District
-          </label>
+          <label className="block font-medium mb-1">School District</label>
           <select
             className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive"
-            {...register("schoolDistrict")}
+            {...register("schoolDistrict", {
+              onChange: () => {
+                setValue("examYear", undefined);
+                setValue("districtCutOff", "");
+                clearErrors(["examYear", "districtCutOff"]);
+              },
+            })}
           >
             <option value="">Select District</option>
             <option>Colombo</option>
@@ -195,65 +411,86 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
 
         {/* Exam Year */}
         <div>
-          <label className="block font-medium mb-1">
-            Exam Year
-          </label>
-          <Input type="number" {...register("examYear", { valueAsNumber: true })} />
+          <label className="block font-medium mb-1">Exam Year</label>
+          <Input
+            type="number"
+            min={2000}
+            max={new Date().getFullYear()}
+            disabled={!selectedDistrict}
+            {...register("examYear", {
+              setValueAs: (value) =>
+                value === "" ? undefined : Number(value),
+            })}
+          />
           {errors.examYear && (
-            <p className="text-red-500 text-sm">
-              {errors.examYear.message}
-            </p>
+            <p className="text-red-500 text-sm">{errors.examYear.message}</p>
           )}
         </div>
 
-        {/* District Cutoff */}
+        {/* District Cut-Off */}
         <div>
-          <label className="block font-medium mb-1">
-            District Cut-Off
-          </label>
-          <Input {...register("districtCutOff")} />
+          <label className="block font-medium mb-1">District Cut-Off</label>
+          <Input
+            {...register("districtCutOff")}
+            disabled={!selectedDistrict || !selectedYear}
+          />
         </div>
 
-        {/* Examination Number */}
+        {/* Marks Obtained */}
         <div>
-          <label className="block font-medium mb-1">
-            Marks Obtained
-          </label>
+          <label className="block font-medium mb-1">Marks Obtained</label>
           <Input
             type="number"
-            {...register("marksObtained", { valueAsNumber: true })}
+            {...register("marksObtained", {
+              setValueAs: (value) =>
+                value === "" ? undefined : Number(value),
+            })}
           />
           {errors.marksObtained && (
             <p className="text-red-500 text-sm">
               {errors.marksObtained.message}
             </p>
           )}
-          
         </div>
 
-        {/* Marks Obtained */}
+        {/* Examination Number */}
         <div className="col-span-2">
           <label className="block font-medium mb-1">
             Examination Number
           </label>
-          <div className="flex gap-6">
-          <Input className="w-1/2"
-          {...register("examinationNumber")} />
-          {errors.examinationNumber && (
-            <p className="text-red-500 text-sm">
-              {errors.examinationNumber.message}
-            </p>
-          )}
-          <Button 
-                className="bg-[#953002] text-white hover:bg-[#672102]"
-          >
-                Validate
-          </Button>
+
+          <div className="flex gap-6 items-start">
+            <div className="w-1/2">
+              <Input {...register("examinationNumber")} />
+
+              {errors.examinationNumber && (
+                <p className="text-red-500 text-sm mt-1">
+                  {errors.examinationNumber.message}
+                </p>
+              )}
+
+              {!errors.examinationNumber && examValidated && (
+                <p className="text-green-600 text-sm mt-1">
+                  Examination number is valid
+                </p>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              onClick={validateExamNumber}
+              className="bg-[#953002] text-white hover:bg-[#672102]"
+              disabled={checkingExamNo}
+            >
+              {checkingExamNo ? "Checking..." : "Validate"}
+            </Button>
           </div>
         </div>
       </div>
     </form>
   );
 });
+
+Grade5Form.displayName = "Grade5Form";
 
 export default Grade5Form;
