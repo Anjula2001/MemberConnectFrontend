@@ -104,7 +104,6 @@ const RetirementForm = forwardRef<RetirementFormRef>((_, ref) => {
             Requested Date
           </label>
           <Input type="date" {...register("requestedDate")} />
-          
           {errors.requestedDate && (
             <p className="text-red-500 text-sm">
               {errors.requestedDate.message}
