@@ -193,6 +193,21 @@ export default function NewRegistrationsPage() {
   const [displayData, setDisplayData] = useState<Registration[]>([]);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
+  const selectableNewRowIds = displayData
+    .filter((row) => row.selectable && row.status === "NEW")
+    .map((row) => row.appId);
+
+  const selectedNewRowsCount = selectableNewRowIds.filter((id) =>
+    selectedRows.includes(id)
+  ).length;
+
+  const isAllNewRowsSelected =
+    selectableNewRowIds.length > 0 &&
+    selectedNewRowsCount === selectableNewRowIds.length;
+
+  const isSomeNewRowsSelected =
+    selectedNewRowsCount > 0 && selectedNewRowsCount < selectableNewRowIds.length;
+
   const locationOptions = [
     { value: "colombo", label: "Colombo" },
     { value: "kandy", label: "Kandy" },
@@ -216,6 +231,17 @@ export default function NewRegistrationsPage() {
         ? prev.filter((id) => id !== appId)
         : [...prev, appId]
     );
+  };
+
+  const toggleAllNewRows = (checked: boolean) => {
+    setSelectedRows((prev) => {
+      if (checked) {
+        const merged = new Set([...prev, ...selectableNewRowIds]);
+        return Array.from(merged);
+      }
+
+      return prev.filter((id) => !selectableNewRowIds.includes(id));
+    });
   };
 
   const handleRetrieve = () => {
@@ -312,13 +338,22 @@ export default function NewRegistrationsPage() {
         <h1 className="text-2xl font-bold text-[#953002]">
           New Member Registration Search
         </h1>
-        <Button
-          className="bg-[#7a2700] hover:bg-[#953002] text-white"
-          onClick={() => setCurrentView("form")}
-        >
-          <Plus />
-          Create New Registration
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+            disabled={selectedNewRowsCount === 0}
+          >
+            Create Board Approval List
+            {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
+          </Button>
+          <Button
+            className="bg-[#7a2700] hover:bg-[#953002] text-white"
+            onClick={() => setCurrentView("form")}
+          >
+            <Plus />
+            Create New Registration
+          </Button>
+        </div>
       </div>
 
       {/* Search Criteria Card */}
@@ -436,7 +471,21 @@ export default function NewRegistrationsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead className="w-10 px-4" />
+              <TableHead className="w-10 px-4">
+                <Checkbox
+                  checked={
+                    isAllNewRowsSelected
+                      ? true
+                      : isSomeNewRowsSelected
+                      ? "indeterminate"
+                      : false
+                  }
+                  onCheckedChange={(checked) => toggleAllNewRows(checked === true)}
+                  aria-label="Select all new status rows"
+                  disabled={selectableNewRowIds.length === 0}
+                  className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                />
+              </TableHead>
               <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 App ID
               </TableHead>
