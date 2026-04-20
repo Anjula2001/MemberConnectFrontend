@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   RotateCcw,
@@ -11,6 +12,7 @@ import {
   AlertCircle,
   ChevronDown,
   ArrowLeft,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -182,6 +184,7 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 };
 
 export default function NewRegistrationsPage() {
+  const router = useRouter();
   const [currentView, setCurrentView] = useState<"list" | "form">("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -192,6 +195,9 @@ export default function NewRegistrationsPage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [displayData, setDisplayData] = useState<Registration[]>([]);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
 
   const selectableNewRowIds = displayData
     .filter((row) => row.selectable && row.status === "NEW")
@@ -223,6 +229,12 @@ export default function NewRegistrationsPage() {
     { value: "board", label: "Added to Board Approval List" },
     { value: "rejected", label: "Rejected" },
     { value: "inactive", label: "Inactive" },
+  ];
+
+  const boardMeetingOptions = [
+    { value: "2026-02-28 (108)", label: "2026-02-28 (108)" },
+    { value: "2026-03-15 (109)", label: "2026-03-15 (109)" },
+    { value: "2026-04-10 (110)", label: "2026-04-10 (110)" },
   ];
 
   const toggleRow = (appId: string) => {
@@ -315,6 +327,33 @@ export default function NewRegistrationsPage() {
     setHasRetrieved(true);
   };
 
+  const handleOpenBoardMeetingModal = () => {
+    if (selectedNewRowsCount === 0) return;
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveBoardMeeting = () => {
+    if (!selectedBoardMeeting) return;
+
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+    setShowCreationConfirmModal(true);
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    router.push("/membership/board-approvals");
+  };
+
   if (currentView === "form") {
     return (
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
@@ -342,6 +381,7 @@ export default function NewRegistrationsPage() {
           <Button
             className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
             disabled={selectedNewRowsCount === 0}
+            onClick={handleOpenBoardMeetingModal}
           >
             Create Board Approval List
             {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
@@ -584,6 +624,117 @@ export default function NewRegistrationsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#953002]">
+                  Select Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Select the Board Meeting date for these {selectedNewRowsCount} applications.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-6">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">Meeting Date</label>
+                <Select
+                  value={selectedBoardMeeting}
+                  onValueChange={setSelectedBoardMeeting}
+                >
+                  <SelectTrigger className="h-11 w-full text-base">
+                    <SelectValue placeholder="Select Meeting" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {boardMeetingOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={!selectedBoardMeeting}
+                  onClick={handleSaveBoardMeeting}
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-3xl font-semibold text-[#953002]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                The Board Approval List for {selectedNewRowsCount} applications has been created. Do you
+                want to view the list?
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
