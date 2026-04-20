@@ -58,6 +58,23 @@ marksObtained: z
     .min(1, "Examination number is required"),
 
   districtCutOff: z.string().optional(),
+}).superRefine((data, ctx) => {
+  const cutoffMark = data.districtCutOff
+    ? Number(data.districtCutOff)
+    : undefined;
+
+  if (
+    cutoffMark !== undefined &&
+    !Number.isNaN(cutoffMark) &&
+    data.marksObtained < cutoffMark
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["marksObtained"],
+      message:
+        "The Grade 5 Scholarship Request cannot be saved. The exam marks obtained by the student is less than the district cut-off mark.",
+    });
+  }
 });
 
 export type Grade5FormValues = z.infer<typeof grade5Schema>;
@@ -68,15 +85,9 @@ export interface Grade5FormRef {
 
 const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
   /**
-   * Keeps track of previous district value
-   * Used to detect district changes after cutoff is already loaded
-   */
-
-
-  /**
    * React Hook Form setup
    */
-const {
+  const {
   register,
   handleSubmit,
   setValue,
