@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Separator } from "../ui/separator";
+
 import Document from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 
@@ -21,7 +21,7 @@ export default function FundDisbursementRequest() {
   const [showIncomplete, setShowIncomplete] = useState(false);
 
   const availableBalance = 200000;
-  
+
   const {
     register,
     handleSubmit,
@@ -45,20 +45,21 @@ export default function FundDisbursementRequest() {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-5xl px-6 space-y-6">
+        
+        {/* TITLE */}
         <div>
           <h1 className="text-2xl font-bold text-[#953002]">
             Fund Disbursement Request
           </h1>
         </div>
 
-        <Separator />
 
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
-        >
-          <section className="space-y-6 rounded-lg border bg-white p-6 lg:col-span-2">
+        {/* FORM */}
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
+          {/* REQUEST SECTION */}
+          <section className="rounded-lg border bg-white p-6 space-y-6">
             <div className="flex items-center justify-between">
               <span className="text-lg font-semibold text-[#953002]">
                 Request Information
@@ -68,12 +69,18 @@ export default function FundDisbursementRequest() {
               </Button>
             </div>
 
+            {/* BALANCE */}
             <div className="rounded-md bg-gray-100 p-4">
               <p className="text-xs text-gray-500">Available Balance</p>
-              <p className="text-lg font-bold">LKR {availableBalance.toLocaleString()}</p>
+              <p className="text-lg font-bold">
+                LKR {availableBalance.toLocaleString()}
+              </p>
             </div>
 
+            {/* FORM FIELDS */}
             <div className="space-y-4">
+
+              {/* REQUEST DATE */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Requested Date <span className="text-red-500">*</span>
@@ -86,6 +93,7 @@ export default function FundDisbursementRequest() {
                 )}
               </div>
 
+              {/* REQUEST PERIOD */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Requested Period <span className="text-red-500">*</span>
@@ -101,49 +109,59 @@ export default function FundDisbursementRequest() {
                 )}
               </div>
 
+              {/* AMOUNT */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Requested Amount (LKR) <span className="text-red-500">*</span>
                 </label>
-                <Input placeholder="Enter amount" {...register("amount")} />
+                <Input
+                  placeholder="Enter amount"
+                  {...register("amount")}
+                />
                 {errors.amount && (
                   <p className="text-sm text-red-500">
                     {errors.amount.message}
                   </p>
                 )}
               </div>
+
             </div>
           </section>
 
-          <section className="space-y-4 rounded-lg border bg-white p-6">
+          {/* DOCUMENT SECTION */}
+          <section className="rounded-lg border bg-white p-6 space-y-4">
+            <h3 className="text-lg font-semibold text-[#953002]">
+              Supporting Documents
+            </h3>
+
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
-              <p className="mb-2 font-medium text-gray-700">
-                Supporting Documents
-              </p>
               <Document />
             </div>
-
-            <div className="flex justify-center gap-3 pt-4">
-              <Button
-                type="button"
-                className="bg-[#D4183D] text-white hover:bg-red-700"
-                onClick={() => setShowIncomplete(true)}
-              >
-                Mark as Incomplete
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={!isValid}
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
-              >
-                Submit for Approval
-              </Button>
-            </div>
           </section>
+
+          {/* ACTION BUTTONS */}
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              className="bg-[#D4183D] text-white hover:bg-red-700"
+              onClick={() => setShowIncomplete(true)}
+            >
+              Mark as Incomplete
+            </Button>
+
+            <Button
+              type="submit"
+              disabled={!isValid}
+              className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+            >
+              Submit for Approval
+            </Button>
+          </div>
+
         </form>
       </div>
 
+      {/* MODAL */}
       <MarkIncompleteModal
         open={showIncomplete}
         onClose={() => setShowIncomplete(false)}

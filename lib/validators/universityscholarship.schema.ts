@@ -90,10 +90,13 @@ export const universityScholarshipSchema = z.object({
     .string()
     .optional(),
 
-  accountNo: z
-    .string()
-    .min(1, "Account number is required")
-    .regex(/^\d{8,}$/, "Account number must be at least 8 digits"),
+  accountNo: z.preprocess(
+    (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+    z
+      .string()
+      .regex(/^\d{8,}$/, "Account number must be at least 8 digits")
+      .optional(),
+  ),
 
   bank: z
     .string()
