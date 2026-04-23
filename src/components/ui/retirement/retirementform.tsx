@@ -8,7 +8,30 @@ import { Input } from "../../ui/input";
 
 
 const retirementSchema = z.object({
-  requestedDate: z.string().min(1, "Requested date is required"),
+  requestedDate: z
+    .string()
+    .min(1, "Requested date is required")
+    .refine((date) => {
+      const selected = new Date(date);
+      const today = new Date();
+
+      // Remove time part (SAFE VERSION)
+      const selectedOnly = new Date(
+        selected.getFullYear(),
+        selected.getMonth(),
+        selected.getDate()
+      );
+
+      const todayOnly = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate()
+      );
+
+      return selectedOnly <= todayOnly;
+    }, {
+      message: "Request date cannot be a future date",
+    }),
   effectiveDate: z
     .string()
     .min(1, "Effective date is required")
@@ -55,7 +78,7 @@ const RetirementForm = forwardRef<RetirementFormRef>((_, ref) => {
   });
 
   const today = new Date();
-  
+  const todayString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
 
   const onValid = (data: RetirementFormValues) => {
@@ -103,7 +126,7 @@ const RetirementForm = forwardRef<RetirementFormRef>((_, ref) => {
           <label className="block font-medium mb-1">
             Requested Date
           </label>
-          <Input type="date" {...register("requestedDate")} />
+          <Input type="date" max={todayString} {...register("requestedDate")} />
           {errors.requestedDate && (
             <p className="text-red-500 text-sm">
               {errors.requestedDate.message}
@@ -118,6 +141,7 @@ const RetirementForm = forwardRef<RetirementFormRef>((_, ref) => {
           </label>
           <Input
             type="date"
+            max={todayString}
             {...register("effectiveDate")}
           />
           {errors.effectiveDate && (
