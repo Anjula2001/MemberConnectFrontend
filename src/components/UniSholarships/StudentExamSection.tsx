@@ -35,6 +35,10 @@ export default function StudentExamSection() {
   const [programs, setPrograms] = useState<any[]>([]);
   const [banks, setBanks] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [showExamNoPopup, setShowExamNoPopup] = useState(false);
+  const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
+  const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
+  const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
 
   const {
     register,
@@ -50,20 +54,21 @@ export default function StudentExamSection() {
   const selectedUniversity = watch("university");
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
+  const selectedExamNo = watch("examNo");
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [uniRes] = await Promise.all([
+        const [uniRes, bankRes] = await Promise.all([
           fetch("http://localhost:8080/api/universities"),
-          //fetch("http://localhost:8080/api/banks"),
+          fetch("http://localhost:8080/api/banks"),
         ]);
 
         const uniData = await uniRes.json();
-        //const bankData = await bankRes.json();
+        const bankData = await bankRes.json();
 
         setUniversities(uniData);
-        //setBanks(bankData);
+        setBanks(bankData);
       } catch (error) {
         console.error("Failed to load universities or banks", error);
       }
@@ -137,8 +142,69 @@ export default function StudentExamSection() {
     fetchBranches();
   }, [selectedBank, setValue]);
 
+  useEffect(() => {
+    setIsExamNoDuplicate(false);
+  }, [selectedExamNo]);
+
+  const handleValidateExamNo = async () => {
+    if (!selectedExamNo) {
+      setExamNoPopupMessage("Please enter Examination Number first");
+      setShowExamNoPopup(true);
+      return;
+    }
+
+    try {
+      setIsValidatingExamNo(true);
+
+      const response = await fetch(
+        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(selectedExamNo)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to validate Examination Number");
+      }
+
+      const result = await response.json();
+
+      if (result.duplicate) {
+        setIsExamNoDuplicate(true);
+        setExamNoPopupMessage(
+          "Entered Examination Number is duplicating with another Scholarship Request"
+        );
+        setShowExamNoPopup(true);
+      } else {
+        setIsExamNoDuplicate(false);
+        setExamNoPopupMessage("Examination Number is valid");
+        setShowExamNoPopup(true);
+      }
+    } catch (error) {
+      console.error(error);
+      setExamNoPopupMessage("Failed to validate Examination Number");
+      setShowExamNoPopup(true);
+    } finally {
+      setIsValidatingExamNo(false);
+    }
+  };
+
   const onSubmit = async (data: FormData) => {
     try {
+      const validateResponse = await fetch(`http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(data.examNo)}`);
+
+      if (!validateResponse.ok) {
+        throw new Error("Failed to validate Examination Number");
+      }
+
+      const validateResult = await validateResponse.json();
+      
+      if (validateResult.duplicate) {
+        setIsExamNoDuplicate(true);
+        setExamNoPopupMessage(
+          "Entered Examination Number is duplicating with another Scholarship Request"
+        );
+        setShowExamNoPopup(true);
+        return;
+      }
+
       const response = await fetch("http://localhost:8080/api", {
         method: "POST",
         headers: {
@@ -154,9 +220,10 @@ export default function StudentExamSection() {
       const result = await response.json();
       console.log("Saved successfully:", result);
       alert("Form submitted successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving form:", error);
-      alert("Failed to save form");
+      setExamNoPopupMessage(error.message || "Failed to save form");
+      setShowExamNoPopup(true);
     }
   };
 
@@ -291,8 +358,13 @@ export default function StudentExamSection() {
               </div>
 
               <div className="flex items-end justify-end">
-                <Button type="button" variant="outline">
-                  Validate
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleValidateExamNo}
+                  disabled={isValidatingExamNo}
+                >
+                  {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
               </div>
             </div>
@@ -465,6 +537,34 @@ export default function StudentExamSection() {
         onClose={() => setShowIncompleteModal(false)}
         onConfirm={handleMarkIncomplete}
       />
+
+      {showExamNoPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h3 className="mb-3 text-lg font-semibold text-[#953002]">
+              Examination Number Validation
+            </h3>
+
+            <p
+              className={`mb-5 text-sm justify-content ${
+                isExamNoDuplicate ? "text-red-600" : "text-black-600"
+              }`}
+            >
+              {examNoPopupMessage}
+            </p>
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setShowExamNoPopup(false)}
+                className="bg-[#953002] text-white hover:bg-[#7a2500]"
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
