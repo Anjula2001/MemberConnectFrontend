@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
@@ -31,19 +31,133 @@ type FormData = {
 
 export default function StudentExamSection() {
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
+  const [universities, setUniversities] = useState<any[]>([]);
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [banks, setBanks] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
 
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
   });
 
-  const onSubmit = (data: FormData) => {
-    console.log("FORM SUBMITTED:", data);
+  const selectedUniversity = watch("university");
+  const selectedProgram = watch("program");
+  const selectedBank = watch("bank");
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const [uniRes] = await Promise.all([
+          fetch("http://localhost:8080/api/universities"),
+          //fetch("http://localhost:8080/api/banks"),
+        ]);
+
+        const uniData = await uniRes.json();
+        //const bankData = await bankRes.json();
+
+        setUniversities(uniData);
+        //setBanks(bankData);
+      } catch (error) {
+        console.error("Failed to load universities or banks", error);
+      }
+    };
+
+    fetchInitialData();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedUniversity) {
+      setPrograms([]);
+      setValue("program", "");
+      setValue("duration", "");
+      return;
+    }
+
+    const fetchPrograms = async () => {
+      try {
+        const res = await fetch(`http://localhost:8080/api/programs/${selectedUniversity}`);
+        const data = await res.json();
+        setPrograms(data);
+        setValue("program", "");
+        setValue("duration", "");
+      } catch (error) {
+        console.error("Failed to load programs", error);
+      }
+    };
+
+    fetchPrograms();
+  }, [selectedUniversity, setValue]);
+
+  useEffect(() => {
+    if (!selectedUniversity || !selectedProgram) {
+      setValue("duration", "");
+      return;
+    }
+
+    const fetchDuration = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/duration?universityId=${selectedUniversity}&programId=${selectedProgram}`
+        );
+        const data = await res.json();
+        setValue("duration", String(data));
+      } catch (error) {
+        console.error("Failed to load duration", error);
+      }
+    };
+
+    fetchDuration();
+  }, [selectedUniversity, selectedProgram, setValue]);
+
+  useEffect(() => {
+    if (!selectedBank) {
+      setBranches([]);
+      setValue("branch", "");
+      return;
+    }
+
+    const fetchBranches = async () => {
+      try {
+        const res = await fetch(`http://localhost:8080/api/branches/${selectedBank}`);
+        const data = await res.json();
+        setBranches(data);
+        setValue("branch", "");
+      } catch (error) {
+        console.error("Failed to load branches", error);
+      }
+    };
+
+    fetchBranches();
+  }, [selectedBank, setValue]);
+
+  const onSubmit = async (data: FormData) => {
+    try {
+      const response = await fetch("http://localhost:8080/api", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save scholarship request");
+      }
+
+      const result = await response.json();
+      console.log("Saved successfully:", result);
+      alert("Form submitted successfully");
+    } catch (error) {
+      console.error("Error saving form:", error);
+      alert("Failed to save form");
+    }
   };
 
   const handleMarkIncomplete = (reason: string) => {
@@ -91,93 +205,51 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="requestDate"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="requestDate" className="mb-1 block text-sm font-medium text-gray-700">
                   Request Date <span className="text-red-500">*</span>
                 </label>
                 <Input id="requestDate" type="date" {...register("requestDate")} />
-                {errors.requestDate && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.requestDate.message}
-                  </p>
-                )}
+                {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="studentName"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="studentName" className="mb-1 block text-sm font-medium text-gray-700">
                   Student Name <span className="text-red-500">*</span>
                 </label>
                 <Input id="studentName" {...register("studentName")} />
-                {errors.studentName && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.studentName.message}
-                  </p>
-                )}
+                {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="nic"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="nic" className="mb-1 block text-sm font-medium text-gray-700">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
                 <Input id="nic" {...register("nic")} />
-                {errors.nic && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.nic.message}
-                  </p>
-                )}
+                {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="bcNo"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="bcNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
                 <Input id="bcNo" {...register("bcNo")} />
-                {errors.bcNo && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.bcNo.message}
-                  </p>
-                )}
+                {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="address"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="address" className="mb-1 block text-sm font-medium text-gray-700">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
                 <Input id="address" {...register("address")} />
-                {errors.address && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.address.message}
-                  </p>
-                )}
+                {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="mobile"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="mobile" className="mb-1 block text-sm font-medium text-gray-700">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
                 <Input id="mobile" {...register("mobile")} />
-                {errors.mobile && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.mobile.message}
-                  </p>
-                )}
+                {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
 
@@ -188,58 +260,34 @@ export default function StudentExamSection() {
                 {...register("isSchoolApplicant")}
                 className="h-4 w-4 accent-[#953002]"
               />
-              <label
-                htmlFor="isSchoolApplicant"
-                className="text-sm font-medium text-gray-700"
-              >
+              <label htmlFor="isSchoolApplicant" className="text-sm font-medium text-gray-700">
                 A/L Exam as School Applicant
               </label>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="examYear"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="examYear" className="mb-1 block text-sm font-medium text-gray-700">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
                 <Input id="examYear" {...register("examYear")} />
-                {errors.examYear && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.examYear.message}
-                  </p>
-                )}
+                {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="examNo"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="examNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
                 <Input id="examNo" {...register("examNo")} />
-                {errors.examNo && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.examNo.message}
-                  </p>
-                )}
+                {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="zScore"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="zScore" className="mb-1 block text-sm font-medium text-gray-700">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
                 <Input id="zScore" {...register("zScore")} />
-                {errors.zScore && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.zScore.message}
-                  </p>
-                )}
+                {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
               </div>
 
               <div className="flex items-end justify-end">
@@ -257,10 +305,7 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="university"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="university" className="mb-1 block text-sm font-medium text-gray-700">
                   University <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -269,22 +314,17 @@ export default function StudentExamSection() {
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
-                  <option value="uom">University of Moratuwa</option>
-                  <option value="uop">University of Peradeniya</option>
-                  <option value="uoc">University of Colombo</option>
+                  {universities.map((university) => (
+                    <option key={university.id} value={university.id}>
+                      {university.name}
+                    </option>
+                  ))}
                 </select>
-                {errors.university && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.university.message}
-                  </p>
-                )}
+                {errors.university && <p className="mt-1 text-sm text-red-500">{errors.university.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="program"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="program" className="mb-1 block text-sm font-medium text-gray-700">
                   Program <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -294,41 +334,29 @@ export default function StudentExamSection() {
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
-                  <option value="it">Information Technology</option>
-                  <option value="eng">Engineering</option>
-                  <option value="bs">Business Science</option>
+                  {programs.map((item) => (
+                      <option key={item.programId} value={item.programId}>
+                        {item.programName}
+                      </option>
+                  ))} 
                 </select>
-                {errors.program && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.program.message}
-                  </p>
-                )}
+                {errors.program && <p className="mt-1 text-sm text-red-500">{errors.program.message}</p>}
               </div>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="duration"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="duration" className="mb-1 block text-sm font-medium text-gray-700">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} disabled />
+                <Input id="duration" {...register("duration")} readOnly />
               </div>
 
               <div>
-                <label
-                  htmlFor="academicYearStart"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="academicYearStart" className="mb-1 block text-sm font-medium text-gray-700">
                   Academic Year Start Date
                 </label>
-                <Input
-                  id="academicYearStart"
-                  type="date"
-                  {...register("academicYearStart")}
-                />
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} />
               </div>
             </div>
           </section>
@@ -374,38 +402,48 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="accountNo"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
-                  Bank Account Number 
+                <label htmlFor="accountNo" className="mb-1 block text-sm font-medium text-gray-700">
+                  Bank Account Number
                 </label>
                 <Input id="accountNo" {...register("accountNo")} />
-                {errors.accountNo && (
-                  <p className="mt-1 text-sm text-red-500">
-                    {errors.accountNo.message}
-                  </p>
-                )}
+                {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
               <div>
-                <label
-                  htmlFor="bank"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="bank" className="mb-1 block text-sm font-medium text-gray-700">
                   Bank
                 </label>
-                <Input id="bank" {...register("bank")} />
+                <select
+                  id="bank"
+                  {...register("bank")}
+                  className="h-10 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="">Select Bank</option>
+                  {banks.map((bank) => (
+                    <option key={bank.id} value={bank.id}>
+                      {bank.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
-                <label
-                  htmlFor="branch"
-                  className="mb-1 block text-sm font-medium text-gray-700"
-                >
+                <label htmlFor="branch" className="mb-1 block text-sm font-medium text-gray-700">
                   Bank Branch
                 </label>
-                <Input id="branch" {...register("branch")} />
+                <select
+                  id="branch"
+                  {...register("branch")}
+                  disabled={!watch("bank")}
+                  className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+                >
+                  <option value="">Select Branch</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </section>
