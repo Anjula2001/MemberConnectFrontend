@@ -41,6 +41,11 @@ import {
   SelectValue,
 } from "@/src/components/ui/select";
 import { NewMemberRegistrationForm } from "./form";
+import {
+  getMemberApplications,
+  type ApplicationStatus,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
 
 // ── Multi-select dropdown ─────────────────────────────────────────────────────
 interface MultiSelectProps {
@@ -121,7 +126,7 @@ function MultiSelect({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegistrationStatus = "DRAFT" | "PENDING_BOARD" | "SUBMITTED" | "NEW";
+type RegistrationStatus = ApplicationStatus;
 
 interface Registration {
   appId: string;
@@ -135,52 +140,23 @@ interface Registration {
   selectable: boolean;
 }
 
-const mockData: Registration[] = [
-  {
-    appId: "APP-2026-002",
-    fullName: "Second User",
-    nic: "199588877766",
-    appliedDate: null,
-    district: "Kandy",
-    zone: "Kandy",
-    status: "DRAFT",
-    selectable: false,
-  },
-  {
-    appId: "APP-2026-003",
-    fullName: "Rejoining Member",
-    nic: "198844433322",
-    appliedDate: "2026-01-25",
-    district: "Nuwara Eliya",
-    zone: "Nuwara Eliya",
-    status: "PENDING_BOARD",
-    hasWarning: true,
-    selectable: false,
-  },
-  {
-    appId: "APP-2026-001",
-    fullName: "New User One",
-    nic: "200012345678",
-    appliedDate: "2026-02-05",
-    district: "Colombo",
-    zone: "Colombo South",
-    status: "NEW",
-    selectable: true,
-  },
-];
-
 const statusBadgeClass: Record<RegistrationStatus, string> = {
-  DRAFT: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
-  PENDING_BOARD: "bg-amber-500 text-white border-transparent hover:bg-amber-500",
-  SUBMITTED: "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  PENDING: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
   NEW: "bg-green-100 text-green-700 border border-green-300 hover:bg-green-100",
+  SUBMITTED_FOR_APPROVAL:
+    "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  ADDED_TO_BOARD_APPROVAL_LIST:
+    "bg-amber-500 text-white border-transparent hover:bg-amber-500",
+  REJECTED: "bg-red-100 text-red-700 border border-red-300 hover:bg-red-100",
+  INACTIVE: "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100",
 };
 
 const statusFilterMap: Record<string, RegistrationStatus> = {
   new: "NEW",
-  submitted: "SUBMITTED",
-  board: "PENDING_BOARD",
-  draft: "DRAFT",
+  submitted: "SUBMITTED_FOR_APPROVAL",
+  board: "ADDED_TO_BOARD_APPROVAL_LIST",
+  rejected: "REJECTED",
+  inactive: "INACTIVE",
 };
 
 export default function NewRegistrationsPage() {
@@ -195,9 +171,35 @@ export default function NewRegistrationsPage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [displayData, setDisplayData] = useState<Registration[]>([]);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [isRetrieving, setIsRetrieving] = useState(false);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
   const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
   const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+
+  const mapToRegistration = (
+    item: MemberApplicationDTO,
+    index: number
+  ): Registration => {
+    const status = item.status ?? "PENDING";
+    const rawAppId = item.applicationID ?? `APP-${item.id ?? index + 1}`;
+    const epochPart = rawAppId.replace("APP-", "");
+    const epoch = Number(epochPart);
+    const appliedDate = Number.isFinite(epoch)
+      ? new Date(epoch).toISOString().slice(0, 10)
+      : null;
+
+    return {
+      appId: rawAppId,
+      fullName: item.fullName ?? "-",
+      nic: item.nicNumber ?? "-",
+      appliedDate,
+      district: item.salaryPayingOffice ?? "-",
+      zone: "-",
+      status,
+      selectable: status === "NEW",
+      hasWarning: false,
+    };
+  };
 
   const selectableNewRowIds = displayData
     .filter((row) => row.selectable && row.status === "NEW")
@@ -256,8 +258,22 @@ export default function NewRegistrationsPage() {
     });
   };
 
-  const handleRetrieve = () => {
-    let filtered = [...mockData];
+  const handleRetrieve = async () => {
+    setIsRetrieving(true);
+    let filtered: Registration[] = [];
+
+    try {
+      const applications = await getMemberApplications();
+      filtered = applications.map(mapToRegistration);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to retrieve applications";
+      alert(message);
+      setDisplayData([]);
+      setHasRetrieved(true);
+      setIsRetrieving(false);
+      return;
+    }
 
     // Filter by location/district
     if (selectedLocations.length > 0) {
@@ -324,7 +340,9 @@ export default function NewRegistrationsPage() {
     });
 
     setDisplayData(filtered);
+    setSelectedRows([]);
     setHasRetrieved(true);
+    setIsRetrieving(false);
   };
 
   const handleOpenBoardMeetingModal = () => {
@@ -496,9 +514,10 @@ export default function NewRegistrationsPage() {
                 <Button
                   className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap"
                   onClick={handleRetrieve}
+                  disabled={isRetrieving}
                 >
                   <RotateCcw size={14} />
-                  Retrieve
+                  {isRetrieving ? "Retrieving..." : "Retrieve"}
                 </Button>
               </div>
             </div>
@@ -605,14 +624,14 @@ export default function NewRegistrationsPage() {
                 {/* Status Badge */}
                 <TableCell className="px-4">
                   <Badge className={statusBadgeClass[row.status]}>
-                    {row.status}
+                    {row.status.replaceAll("_", " ")}
                   </Badge>
                 </TableCell>
 
                 {/* Actions */}
                 <TableCell className="px-4 text-right">
                   <Button variant="ghost" size="icon-sm" className="text-gray-400 hover:text-gray-600">
-                    {row.status === "DRAFT" ? (
+                    {row.status === "PENDING" ? (
                       <Pencil size={16} />
                     ) : (
                       <FileText size={16} />
