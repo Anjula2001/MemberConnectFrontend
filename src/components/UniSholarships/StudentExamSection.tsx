@@ -27,6 +27,8 @@ type FormData = {
   accountNo?: string;
   bank?: string;
   branch?: string;
+  hasMinorAccount?: string;
+  minorAccountMonths?: string;
 };
 
 export default function StudentExamSection() {
@@ -187,46 +189,147 @@ export default function StudentExamSection() {
   };
 
   const onSubmit = async (data: FormData) => {
-    try {
-      const validateResponse = await fetch(`http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(data.examNo)}`);
+    const isExamNoValid = await validateExamNoBeforeSave(data.examNo);
 
-      if (!validateResponse.ok) {
-        throw new Error("Failed to validate Examination Number");
+    if (!isExamNoValid) {
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8080/api/university-scholarships", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Submit failed:", response.status, errorText);
+        setExamNoPopupMessage("Failed to submit request");
+        setShowExamNoPopup(true);
+        return;
       }
 
-      const validateResult = await validateResponse.json();
-      
-      if (validateResult.duplicate) {
+      await response.json();
+
+      setIsExamNoDuplicate(false);
+      setExamNoPopupMessage("Request submitted successfully");
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Submit failed:", error);
+      setExamNoPopupMessage("Failed to submit request");
+      setShowExamNoPopup(true);
+    }
+  };
+
+  const validateExamNoBeforeSave = async (examNo: string) => {
+    if (!examNo) {
+      setIsExamNoDuplicate(false);
+      setExamNoPopupMessage("Please enter Examination Number first");
+      setShowExamNoPopup(true);
+      return false;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(examNo)}`
+      );
+
+      if (!response.ok) {
+        console.error("Validate API failed:", response.status, await response.text());
+        setIsExamNoDuplicate(false);
+        setExamNoPopupMessage("Failed to validate Examination Number");
+        setShowExamNoPopup(true);
+        return false;
+      }
+
+      const result = await response.json();
+
+      if (result.duplicate) {
         setIsExamNoDuplicate(true);
         setExamNoPopupMessage(
           "Entered Examination Number is duplicating with another Scholarship Request"
         );
         setShowExamNoPopup(true);
-        return;
+        return false;
       }
 
-      const response = await fetch("http://localhost:8080/api", {
+      setIsExamNoDuplicate(false);
+      return true;
+    } catch (error) {
+      console.error("Validate request failed:", error);
+      setIsExamNoDuplicate(false);
+      setExamNoPopupMessage("Failed to validate Examination Number");
+      setShowExamNoPopup(true);
+      return false;
+    }
+  };
+  
+  const handleSave = async () => {
+    const data = watch();
+
+    const isExamNoValid = await validateExamNoBeforeSave(data.examNo);
+
+    if (!isExamNoValid) {
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8080/api/university-scholarships", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save scholarship request");
+        setExamNoPopupMessage("Failed to save request");
+        setShowExamNoPopup(true);
+        return;
       }
 
-      const result = await response.json();
-      console.log("Saved successfully:", result);
-      alert("Form submitted successfully");
-    } catch (error: any) {
-      console.error("Error saving form:", error);
-      setExamNoPopupMessage(error.message || "Failed to save form");
+      setIsExamNoDuplicate(false);
+      setExamNoPopupMessage("Request is saved successfully");
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Save failed:", error);
+      setExamNoPopupMessage("Failed to save request");
       setShowExamNoPopup(true);
     }
   };
 
+  const handleRefreshMinorAccount = async () => {
+    const bcNo = watch("bcNo");
+
+    if (!bcNo) {
+      setExamNoPopupMessage("Please enter Birth Certificate Number first");
+      setShowExamNoPopup(true);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/minor-account/check?birthCertificateNumber=${encodeURIComponent(bcNo)}`
+      );
+      
+      if (!response.ok) {
+        throw new Error("Failed to check minor account");
+      }
+
+      const result = await response.json();
+
+      setValue("hasMinorAccount", result.hasMinorAccount);
+      setValue("minorAccountMonths", result.remittedMonths);
+    } catch (error) {
+      console.error("Failed to refresh minor account:", error);
+      setValue("hasMinorAccount", "NO");
+      setValue("minorAccountMonths", "No minor account");
+    }
+  };
+ 
   const handleMarkIncomplete = (reason: string) => {
     console.log("FORM MARKED AS INCOMPLETE");
     console.log("Reason:", reason);
@@ -250,7 +353,7 @@ export default function StudentExamSection() {
               Incomplete
             </Button>
 
-            <Button type="button" variant="outline">
+            <Button type="button" variant="outline" onClick={handleSave} disabled={!isValid}>
               Save
             </Button>
 
@@ -442,9 +545,7 @@ export default function StudentExamSection() {
                 type="button"
                 variant="outline"
                 className="bg-gray text-black hover:bg-gray-200"
-                onClick={() => {
-                  console.log("Refreshing minor account status...");
-                }}
+                onClick={handleRefreshMinorAccount}
               >
                 Refresh
               </Button>
@@ -455,14 +556,14 @@ export default function StudentExamSection() {
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Minor Account Availability
                 </label>
-                <Input value="Not loaded yet" readOnly />
+                <Input {...register("hasMinorAccount")} readOnly />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Remitted Months
                 </label>
-                <Input value="Not loaded yet" readOnly />
+                <Input {...register("minorAccountMonths")} readOnly />
               </div>
             </div>
           </section>
@@ -547,7 +648,7 @@ export default function StudentExamSection() {
 
             <p
               className={`mb-5 text-sm justify-content ${
-                isExamNoDuplicate ? "text-red-600" : "text-black-600"
+                isExamNoDuplicate ? "text-black-600" : "text-black-600"
               }`}
             >
               {examNoPopupMessage}
