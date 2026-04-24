@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
-import { NewMemberRegistrationForm } from "./form";
+import { NewMemberRegistrationForm } from "./form-new";
 import {
   getMemberApplications,
   type ApplicationStatus,
@@ -383,7 +383,7 @@ export default function NewRegistrationsPage() {
           <ArrowLeft size={16} />
           Back to List
         </Button>
-        <NewMemberRegistrationForm />
+        <NewMemberRegistrationForm onDone={() => setCurrentView("list")} />
       </div>
     );
   }
