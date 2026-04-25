@@ -1,170 +1,127 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Input } from "../../ui/input";
-
-
-const retirementSchema = z.object({
-  requestedDate: z
-    .string()
-    .min(1, "Requested date is required")
-    .refine((date) => {
-      const selected = new Date(date);
-      const today = new Date();
-
-      // Remove time part (SAFE VERSION)
-      const selectedOnly = new Date(
-        selected.getFullYear(),
-        selected.getMonth(),
-        selected.getDate()
-      );
-
-      const todayOnly = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate()
-      );
-
-      return selectedOnly <= todayOnly;
-    }, {
-      message: "Request date cannot be a future date",
-    }),
-  effectiveDate: z
-    .string()
-    .min(1, "Effective date is required")
-    .refine((date) => {
-      const selected = new Date(date);
-      const today = new Date();
-
-      // Remove time part (SAFE VERSION)
-      const selectedOnly = new Date(
-        selected.getFullYear(),
-        selected.getMonth(),
-        selected.getDate()
-      );
-
-      const todayOnly = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate()
-      );
-
-      return selectedOnly <= todayOnly;
-    }, {
-      message: "Effective Date cannot be a future date",
-    }),
-  comment: z.string().optional(),
-});
-
-export type RetirementFormValues = z.infer<typeof retirementSchema>;
+import { forwardRef, useImperativeHandle, useState, useEffect } from "react";
 
 export interface RetirementFormRef {
-  saveDraft: () => void;
-  submitForm: () => void;
+  validateAndGetData: () => {
+    requestedDate: string;
+    effectiveDate: string;
+    comment: string;
+  } | null;
 }
 
-const RetirementForm = forwardRef<RetirementFormRef>((_, ref) => {
-  const {
-    register,
-    handleSubmit,
-    trigger,
-    getValues,
-    formState: { errors },
-  } = useForm<RetirementFormValues>({
-    resolver: zodResolver(retirementSchema),
-  });
-
-  const today = new Date();
-  const todayString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-
-
-  const onValid = (data: RetirementFormValues) => {
-    console.log("Validated Data:", data);
+interface Props {
+  initialData?: {
+    requestedDate: string;
+    effectiveDate: string;
+    comment: string;
   };
-  const onInvalid = (errors: any) => {
-    console.log("Validation Errors:", errors);
-  };
+}
 
+const RetirementForm = forwardRef<RetirementFormRef, Props>(
+  ({ initialData }, ref) => {
+    const [requestedDate, setRequestedDate] = useState("");
+    const [effectiveDate, setEffectiveDate] = useState("");
+    const [comment, setComment] = useState("");
 
-  
-  useImperativeHandle(ref, () => ({
-    
-    saveDraft: async () => {
-      const isValid = await trigger(); // validate full form
-      if (!isValid) {
-        console.log("Cannot save: validation errors", errors);
-        return;
+    const [error, setError] = useState("");
+
+    // ✅ Load initial data (EDIT mode)
+    useEffect(() => {
+      if (initialData) {
+        setRequestedDate(initialData.requestedDate || "");
+        setEffectiveDate(initialData.effectiveDate || "");
+        setComment(initialData.comment || "");
       }
-      const data = getValues();
-      console.log("Saved Draft (frontend-only)", data);
-      alert("Draft Saved "); // Frontend feedback
-    },
+    }, [initialData]);
 
-    // Submit final
-    submitForm: handleSubmit((data) => {
-      console.log("Submitted (frontend-only)", data);
-      alert("Form Submitted "); // Frontend feedback
-    }, (errors) => {
-      console.log("Validation Errors on Submit", errors);
-      
-    }),
-  }));
+    // ✅ Expose validation to parent
+    useImperativeHandle(ref, () => ({
+      validateAndGetData: () => {
+        setError("");
 
-  return (
-    <form  onSubmit={handleSubmit(onValid, onInvalid)}className="space-y-6">
-      <p className="text-[#953002] text-xl font-bold">
-        Request Details
-      </p>
+        if (!requestedDate) {
+          setError("Requested Date is required");
+          return null;
+        }
 
-      <div className="grid grid-cols-2 gap-4">
+        if (!effectiveDate) {
+          setError("Effective Date is required");
+          return null;
+        }
 
-        {/* Requested Date */}
-        <div>
-          <label className="block font-medium mb-1">
-            Requested Date
-          </label>
-          <Input type="date" max={todayString} {...register("requestedDate")} />
-          {errors.requestedDate && (
-            <p className="text-red-500 text-sm">
-              {errors.requestedDate.message}
-            </p>
-          )}
-        </div>
+        const today = new Date().toISOString().split("T")[0];
 
-        {/* Effective Date */}
-        <div>
-          <label className="block font-medium mb-1">
-            Effective Date
-          </label>
-          <Input
-            type="date"
-            max={todayString}
-            {...register("effectiveDate")}
-          />
-          {errors.effectiveDate && (
-            <p className="text-red-500 text-sm">
-              {errors.effectiveDate.message}
-            </p>
-          )}
-        </div>
-        
-        {/* Marks Obtained */}
-        <div className="col-span-2">
-          <label className="block font-medium mb-1">
-            Comment
-          </label>
-          <div className="flex gap-6">
-          <textarea className="w-full min-h-[100px] rounded-md border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]"
-            {...register("comment")} />
-          
+        if (requestedDate > today) {
+          setError("Requested Date cannot be a future date");
+          return null;
+        }
+
+        // ❗ Effective date CAN be future → backend will validate
+        return {
+          requestedDate,
+          effectiveDate,
+          comment,
+        };
+      },
+    }));
+
+    return (
+      <div className="space-y-4">
+        {/* ❌ Error Message */}
+        {error && (
+          <div className="text-red-500 text-sm font-medium">
+            {error}
+          </div>
+        )}
+
+        {/* Dates */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Requested Date */}
+          <div>
+            <label className="block font-medium mb-1">
+              Requested Date <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              value={requestedDate}
+              max={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setRequestedDate(e.target.value)}
+              className="border rounded-md px-3 py-2 w-full"
+            />
+          </div>
+
+          {/* Effective Date */}
+          <div>
+            <label className="block font-medium mb-1">
+              Effective Date <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              className="border rounded-md px-3 py-2 w-full"
+            />
           </div>
         </div>
+
+        {/* Comment */}
+        <div>
+          <label className="block font-medium mb-1">
+            Comments
+          </label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            className="border rounded-md px-3 py-2 w-full min-h-[90px]"
+            placeholder="Any remarks regarding the retirement request"
+          />
+        </div>
       </div>
-    </form>
-  );
-});
+    );
+  }
+);
+
+RetirementForm.displayName = "RetirementForm";
 
 export default RetirementForm;

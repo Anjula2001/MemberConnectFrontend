@@ -5,7 +5,7 @@ import { Button } from "../../../../components/ui/button";
 import Grade5Form, {
   Grade5FormRef,
 } from "../../../../components/ui/grade5schoolarship/grade5form";
-import DocumentUpload from "../../../../components/ui/grade5schoolarship/documentupload";
+import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
 
 export default function Grade5ScholarshipPage() {
