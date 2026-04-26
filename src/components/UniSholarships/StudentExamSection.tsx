@@ -41,6 +41,13 @@ export default function StudentExamSection() {
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
+  const [requestId, setRequestId] = useState<number | null>(null);
+  const [status, setStatus] = useState<"NEW" | "SUBMITTED_FOR_COMMITTEE_APPROVAL">("NEW");
+  const [isSaved, setIsSaved] = useState(false);
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+
+  const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
 
   const {
     register,
@@ -51,12 +58,29 @@ export default function StudentExamSection() {
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
+    defaultValues: {
+      isSchoolApplicant: false,
+    },
   });
 
   const selectedUniversity = watch("university");
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
   const selectedExamNo = watch("examNo");
+
+  useEffect(() => {
+    if (!requestId) return;
+
+    const fetchDocuments = async () => {
+      const res = await fetch(
+        `http://localhost:8080/api/documents/upload/${requestId}`
+      );
+      const data = await res.json();
+      setUploadedDocuments(data);
+    };
+
+    fetchDocuments();
+  }, [requestId]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -148,6 +172,7 @@ export default function StudentExamSection() {
     setIsExamNoDuplicate(false);
   }, [selectedExamNo]);
 
+  // Validate Exam number Based on Db
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
       setExamNoPopupMessage("Please enter Examination Number first");
@@ -188,21 +213,29 @@ export default function StudentExamSection() {
     }
   };
 
+  //Handle Submit button
   const onSubmit = async (data: FormData) => {
-    const isExamNoValid = await validateExamNoBeforeSave(data.examNo);
+    if (!requestId) {
+      setExamNoPopupMessage("Please save the request before submitting");
+      setShowExamNoPopup(true);
+      return;
+    }
 
-    if (!isExamNoValid) {
+    const confirmSubmit = window.confirm(
+      "After submitting, this request cannot be edited. Do you want to continue?"
+    );
+
+    if (!confirmSubmit) {
       return;
     }
 
     try {
-      const response = await fetch("http://localhost:8080/api/university-scholarships", {
+    const response = await fetch(
+      `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
+      {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
+      }
+    );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -212,10 +245,10 @@ export default function StudentExamSection() {
         return;
       }
 
-      await response.json();
+      const submittedRequest = await response.json();
 
-      setIsExamNoDuplicate(false);
-      setExamNoPopupMessage("Request submitted successfully");
+      setStatus(submittedRequest.status);
+      setExamNoPopupMessage("Request submitted for committee approval");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Submit failed:", error);
@@ -224,6 +257,7 @@ export default function StudentExamSection() {
     }
   };
 
+  // Validate Exam Number beforesave Based on DB
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
       setIsExamNoDuplicate(false);
@@ -267,6 +301,7 @@ export default function StudentExamSection() {
     }
   };
   
+  //Handle Save Button
   const handleSave = async () => {
     const data = watch();
 
@@ -290,6 +325,17 @@ export default function StudentExamSection() {
         setShowExamNoPopup(true);
         return;
       }
+      
+      const savedRequest = await response.json();
+
+      setRequestId(savedRequest.id);
+      setStatus(savedRequest.status || "NEW");
+      setIsSaved(true);
+      
+      if (documentFiles.length > 0) {
+        await uploadDocuments(savedRequest.id);
+      }
+
 
       setIsExamNoDuplicate(false);
       setExamNoPopupMessage("Request is saved successfully");
@@ -300,7 +346,8 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
-
+  
+  //Refresh Minor Account Field based on DB
   const handleRefreshMinorAccount = async () => {
     const bcNo = watch("bcNo");
 
@@ -329,6 +376,28 @@ export default function StudentExamSection() {
       setValue("minorAccountMonths", "No minor account");
     }
   };
+
+  const uploadDocuments = async (savedRequestId: number) => {
+    for (const file of documentFiles) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("documentType", "OTHER");
+
+      const response = await fetch(
+        `http://localhost:8080/api/documents/upload/${savedRequestId}`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Document upload failed:", response.status, errorText);
+        throw new Error("Document upload failed");
+      }
+    }
+  };
  
   const handleMarkIncomplete = (reason: string) => {
     console.log("FORM MARKED AS INCOMPLETE");
@@ -349,17 +418,18 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
+              disabled={isSubmitted||!isSaved}
             >
               Incomplete
             </Button>
 
-            <Button type="button" variant="outline" onClick={handleSave} disabled={!isValid}>
+            <Button type="button" variant="outline" onClick={handleSave} disabled={!isValid||isSubmitted||isSaved}>
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={!isValid}
+              disabled={!isSaved || isSubmitted}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
               Submit
@@ -378,7 +448,7 @@ export default function StudentExamSection() {
                 <label htmlFor="requestDate" className="mb-1 block text-sm font-medium text-gray-700">
                   Request Date <span className="text-red-500">*</span>
                 </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} />
+                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isSubmitted} />
                 {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
@@ -386,7 +456,7 @@ export default function StudentExamSection() {
                 <label htmlFor="studentName" className="mb-1 block text-sm font-medium text-gray-700">
                   Student Name <span className="text-red-500">*</span>
                 </label>
-                <Input id="studentName" {...register("studentName")} />
+                <Input id="studentName" {...register("studentName")} disabled={isSubmitted}/>
                 {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
@@ -394,7 +464,7 @@ export default function StudentExamSection() {
                 <label htmlFor="nic" className="mb-1 block text-sm font-medium text-gray-700">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
-                <Input id="nic" {...register("nic")} />
+                <Input id="nic" {...register("nic")} disabled={isSubmitted} />
                 {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
@@ -402,7 +472,7 @@ export default function StudentExamSection() {
                 <label htmlFor="bcNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="bcNo" {...register("bcNo")} />
+                <Input id="bcNo" {...register("bcNo")} disabled={isSubmitted}/>
                 {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
@@ -410,7 +480,7 @@ export default function StudentExamSection() {
                 <label htmlFor="address" className="mb-1 block text-sm font-medium text-gray-700">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
-                <Input id="address" {...register("address")} />
+                <Input id="address" {...register("address")} disabled={isSubmitted}/>
                 {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
@@ -418,7 +488,7 @@ export default function StudentExamSection() {
                 <label htmlFor="mobile" className="mb-1 block text-sm font-medium text-gray-700">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="mobile" {...register("mobile")} />
+                <Input id="mobile" {...register("mobile")} disabled={isSubmitted}/>
                 {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
@@ -428,6 +498,7 @@ export default function StudentExamSection() {
                 id="isSchoolApplicant"
                 type="checkbox"
                 {...register("isSchoolApplicant")}
+                disabled={isSubmitted}
                 className="h-4 w-4 accent-[#953002]"
               />
               <label htmlFor="isSchoolApplicant" className="text-sm font-medium text-gray-700">
@@ -440,7 +511,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examYear" className="mb-1 block text-sm font-medium text-gray-700">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
-                <Input id="examYear" {...register("examYear")} />
+                <Input id="examYear" {...register("examYear")} disabled={isSubmitted}/>
                 {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
@@ -448,7 +519,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="examNo" {...register("examNo")} />
+                <Input id="examNo" {...register("examNo")} disabled={isSubmitted}/>
                 {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
@@ -456,7 +527,7 @@ export default function StudentExamSection() {
                 <label htmlFor="zScore" className="mb-1 block text-sm font-medium text-gray-700">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zScore")} />
+                <Input id="zScore" {...register("zScore")} disabled={isSubmitted}/>
                 {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
               </div>
 
@@ -465,7 +536,7 @@ export default function StudentExamSection() {
                   type="button"
                   variant="outline"
                   onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo}
+                  disabled={isValidatingExamNo||isSubmitted}
                 >
                   {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
@@ -485,7 +556,7 @@ export default function StudentExamSection() {
                 </label>
                 <select
                   id="university"
-                  {...register("university")}
+                  {...register("university")} disabled={isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
@@ -505,7 +576,7 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university")}
+                  disabled={!watch("university")||isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
@@ -524,14 +595,14 @@ export default function StudentExamSection() {
                 <label htmlFor="duration" className="mb-1 block text-sm font-medium text-gray-700">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} readOnly />
+                <Input id="duration" {...register("duration")} disabled={isSubmitted} readOnly />
               </div>
 
               <div>
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm font-medium text-gray-700">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} />
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isSubmitted}/>
               </div>
             </div>
           </section>
@@ -546,6 +617,7 @@ export default function StudentExamSection() {
                 variant="outline"
                 className="bg-gray text-black hover:bg-gray-200"
                 onClick={handleRefreshMinorAccount}
+                disabled={isSubmitted}
               >
                 Refresh
               </Button>
@@ -578,7 +650,7 @@ export default function StudentExamSection() {
                 <label htmlFor="accountNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} />
+                <Input id="accountNo" {...register("accountNo")} disabled={isSubmitted}/>
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
@@ -589,6 +661,7 @@ export default function StudentExamSection() {
                 <select
                   id="bank"
                   {...register("bank")}
+                  disabled={isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select Bank</option>
@@ -607,7 +680,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank")}
+                  disabled={!watch("bank")||isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>
@@ -626,10 +699,25 @@ export default function StudentExamSection() {
               Documents
             </h3>
 
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
-              <Document />
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500" >
+              <Document
+                requestId={requestId}
+                disabled={isSubmitted}
+                isSaved={isSaved}
+                files={documentFiles}
+                setFiles={setDocumentFiles}
+              />
             </div>
           </section>
+
+          <div className="space-y-2">
+            {uploadedDocuments.map((doc) => (
+              <div key={doc.id} className="rounded border p-2 text-sm">
+                <p className="font-medium">{doc.documentType}</p>
+                <p>{doc.fileName}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </form>
 
