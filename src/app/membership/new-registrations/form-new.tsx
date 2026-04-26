@@ -20,6 +20,8 @@ import {
 } from "@/lib/api/memberApplications";
 import {
   getDocumentSummary,
+  getDocumentsByApplication,
+  deleteDocument,
   uploadDocumentFile,
   type DocumentSummaryDTO,
   type DocumentType,
@@ -173,6 +175,10 @@ export function NewMemberRegistrationForm({
   const [documentSummary, setDocumentSummary] =
     useState<DocumentSummaryDTO | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  // Map of documentType -> { id, url, fileName } for previewing already-uploaded files
+  const [existingDocumentUrls, setExistingDocumentUrls] = useState<
+    Record<string, { id: number; url: string; fileName: string }>
+  >({});
   const hasCompletedMandatoryDocuments =
     !!documentSummary &&
     documentSummary.mandatoryDocumentCount > 0 &&
@@ -415,9 +421,25 @@ export function NewMemberRegistrationForm({
         reset(mappedValues);
         setSavedApplicationId(targetApplicationId);
 
-        const summary = await getDocumentSummary(targetApplicationId);
+        const [summary, existingDocs] = await Promise.all([
+          getDocumentSummary(targetApplicationId),
+          getDocumentsByApplication(targetApplicationId),
+        ]);
+
         if (!isCancelled) {
           setDocumentSummary(summary);
+          // Build a map: documentType -> { id, url, fileName }
+          const urlMap: Record<string, { id: number; url: string; fileName: string }> = {};
+          for (const doc of existingDocs) {
+            if (doc.storagePath) {
+              urlMap[doc.documentType] = {
+                id: doc.id,
+                url: `/api/documents/file/${doc.storagePath}`,
+                fileName: doc.fileName ?? doc.documentType,
+              };
+            }
+          }
+          setExistingDocumentUrls(urlMap);
         }
       } catch (error) {
         if (!isCancelled) {
@@ -529,15 +551,27 @@ export function NewMemberRegistrationForm({
 
     setIsUploadingDoc(true);
     try {
-      await uploadDocumentFile({
+      const uploaded = await uploadDocumentFile({
         applicationId: savedApplicationId,
         documentType,
         file,
       });
 
+      // Update preview map immediately with the newly uploaded file
+      if (uploaded.storagePath) {
+        setExistingDocumentUrls((prev) => ({
+          ...prev,
+          [documentType]: {
+            id: uploaded.id,
+            url: `/api/documents/file/${uploaded.storagePath}`,
+            fileName: uploaded.fileName ?? file.name,
+          },
+        }));
+      }
+
       const summary = await getDocumentSummary(savedApplicationId);
       setDocumentSummary(summary);
-      alert(`${documentType} uploaded successfully!`);
+      alert(`${documentType.replace(/_/g, " ")} uploaded successfully!`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to upload document";
@@ -545,6 +579,19 @@ export function NewMemberRegistrationForm({
     } finally {
       setIsUploadingDoc(false);
     }
+  };
+
+  const handleDocumentDelete = async (docType: DocumentType) => {
+    const entry = existingDocumentUrls[docType];
+    if (!entry || !savedApplicationId) return;
+    await deleteDocument(entry.id);
+    setExistingDocumentUrls((prev) => {
+      const next = { ...prev };
+      delete next[docType];
+      return next;
+    });
+    const updated = await getDocumentSummary(savedApplicationId);
+    setDocumentSummary(updated);
   };
 
   const districtZoneMap: Record<string, string[]> = {
@@ -1295,14 +1342,21 @@ export function NewMemberRegistrationForm({
                     "APPOINTMENT_LETTER",
                     "PAYSLIP_COPY",
                   ] as DocumentType[]
-                ).map((docType) => (
-                  <DocumentUploadCard
-                    key={docType}
-                    label={docType.replace(/_/g, " ")}
-                    isUploading={isUploadingDoc}
-                    onFileSelected={(file) => handleDocumentUpload(file, docType)}
-                  />
-                ))}
+                ).map((docType) => {
+                  const entry = existingDocumentUrls[docType] ?? null;
+                  return (
+                    <DocumentUploadCard
+                      key={docType}
+                      label={docType.replace(/_/g, " ")}
+                      isUploading={isUploadingDoc}
+                      existingUrl={entry?.url ?? null}
+                      existingDocId={entry?.id ?? null}
+                      existingFileName={entry?.fileName ?? null}
+                      onFileSelected={(file) => handleDocumentUpload(file, docType)}
+                      onDelete={() => handleDocumentDelete(docType)}
+                    />
+                  );
+                })}
 
                 <div className="flex justify-end pt-2">
                   <Button

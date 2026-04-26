@@ -80,3 +80,7 @@ export async function getDocumentsByApplication(applicationId: number) {
   );
   return data;
 }
+
+export async function deleteDocument(id: number) {
+  await apiClient.delete(`${BASE_PATH}/${id}`);
+}
