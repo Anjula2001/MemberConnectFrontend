@@ -7,12 +7,14 @@ import {
   RotateCcw,
   Plus,
   ArrowUp,
-  Pencil,
-  FileText,
   AlertCircle,
   ChevronDown,
   ArrowLeft,
   X,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  SendHorizontal,
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -43,6 +45,8 @@ import {
 import { NewMemberRegistrationForm } from "./form-new";
 import {
   getMemberApplications,
+  deleteMemberApplication,
+  updateMemberApplicationStatus,
   type ApplicationStatus,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
@@ -86,8 +90,8 @@ function MultiSelect({
     selected.length === 0
       ? placeholder
       : selected.length === options.length
-      ? "All Selected"
-      : `${selected.length} Selected`;
+        ? "All Selected"
+        : `${selected.length} Selected`;
 
   return (
     <div ref={ref} className="relative">
@@ -177,6 +181,30 @@ export default function NewRegistrationsPage() {
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
   const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
   const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<Registration | null>(null);
+  const [isDeletingApplication, setIsDeletingApplication] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close action menu on outside click or scroll
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    function closeOnScroll() { setOpenMenuId(null); }
+    if (openMenuId) {
+      document.addEventListener("mousedown", close);
+      document.addEventListener("scroll", closeOnScroll, true);
+    }
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("scroll", closeOnScroll, true);
+    };
+  }, [openMenuId]);
 
   const mapToRegistration = (
     item: MemberApplicationDTO,
@@ -380,9 +408,46 @@ export default function NewRegistrationsPage() {
       alert("Application ID is not available for this record.");
       return;
     }
-
     setSelectedApplicationId(row.id);
     setCurrentView("form");
+  };
+
+  const handleDeleteApplication = (row: Registration) => {
+    if (!row.id) return;
+    setPendingDeleteRow(row);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteRow?.id) return;
+    setIsDeletingApplication(true);
+    try {
+      await deleteMemberApplication(pendingDeleteRow.id);
+      setDisplayData((prev) => prev.filter((r) => r.appId !== pendingDeleteRow.appId));
+      setSelectedRows((prev) => prev.filter((id) => id !== pendingDeleteRow.appId));
+      setShowDeleteModal(false);
+      setPendingDeleteRow(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete application");
+    } finally {
+      setIsDeletingApplication(false);
+    }
+  };
+
+  const handleSubmitApplication = async (row: Registration) => {
+    if (!row.id) return;
+    try {
+      await updateMemberApplicationStatus(row.id, "SUBMITTED_FOR_APPROVAL");
+      setDisplayData((prev) =>
+        prev.map((r) =>
+          r.appId === row.appId
+            ? { ...r, status: "SUBMITTED_FOR_APPROVAL", selectable: false }
+            : r
+        )
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to submit application");
+    }
   };
 
   if (currentView === "form") {
@@ -561,8 +626,8 @@ export default function NewRegistrationsPage() {
                     isAllNewRowsSelected
                       ? true
                       : isSomeNewRowsSelected
-                      ? "indeterminate"
-                      : false
+                        ? "indeterminate"
+                        : false
                   }
                   onCheckedChange={(checked) => toggleAllNewRows(checked === true)}
                   aria-label="Select all new status rows"
@@ -655,12 +720,22 @@ export default function NewRegistrationsPage() {
 
                 {/* Actions */}
                 <TableCell className="px-4 text-right">
-                  <Button variant="ghost" size="icon-sm" className="text-gray-400 hover:text-gray-600">
-                    {row.status === "PENDING" ? (
-                      <Pencil size={16} />
-                    ) : (
-                      <FileText size={16} />
-                    )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-gray-400 hover:text-[#953002] hover:bg-[#fff6f2]"
+                    aria-label="Row actions"
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      if (openMenuId === row.appId) {
+                        setOpenMenuId(null);
+                      } else {
+                        setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                        setOpenMenuId(row.appId);
+                      }
+                    }}
+                  >
+                    <MoreHorizontal size={16} />
                   </Button>
                 </TableCell>
               </TableRow>
@@ -668,6 +743,109 @@ export default function NewRegistrationsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Fixed-position action dropdown — renders outside Card overflow */}
+      {openMenuId && menuPos && (() => {
+        const row = displayData.find((r) => r.appId === openMenuId);
+        if (!row) return null;
+        return (
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+            className="w-44 rounded-lg border border-gray-200 bg-white shadow-xl py-1"
+          >
+            {/* Edit */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); handleOpenApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-[#fff6f2] hover:text-[#953002] transition-colors"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+
+            {/* Submit */}
+            {row.status !== "SUBMITTED_FOR_APPROVAL" &&
+              row.status !== "ADDED_TO_BOARD_APPROVAL_LIST" && (
+                <button
+                  type="button"
+                  onClick={() => { setOpenMenuId(null); void handleSubmitApplication(row); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors"
+                >
+                  <SendHorizontal size={14} />
+                  Submit
+                </button>
+              )}
+
+            <div className="my-1 border-t border-gray-100" />
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); void handleDeleteApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        );
+      })()}
+
+
+      {showDeleteModal && pendingDeleteRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Application
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {pendingDeleteRow.appId} &mdash; {pendingDeleteRow.fullName}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                aria-label="Close delete modal"
+                disabled={isDeletingApplication}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this application?
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                  disabled={isDeletingApplication}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isDeletingApplication}
+                  onClick={handleConfirmDelete}
+                >
+                  {isDeletingApplication ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBoardMeetingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
