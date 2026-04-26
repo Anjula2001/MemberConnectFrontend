@@ -83,6 +83,22 @@ export interface Grade5FormRef {
   submitForm: () => void;
 }
 
+// Helper function for API calls with error handling
+const fetchAPI = async (url: string, options?: RequestInit) => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response;
+  } catch (error: any) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Network error: Unable to reach server at ${new URL(url).host}. Please ensure the backend service is running.`);
+    }
+    throw error;
+  }
+};
+
 const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
   /**
    * React Hook Form setup

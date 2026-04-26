@@ -63,7 +63,7 @@ export default function Document({ requestId, disabled,isSaved,files,setFiles,}:
         </div>
       )}
 
-      {files.length > 0 && (
+      {files && files.length > 0 && (
         <ul className="space-y-2">
           {files.map((file, index) => (
             <li

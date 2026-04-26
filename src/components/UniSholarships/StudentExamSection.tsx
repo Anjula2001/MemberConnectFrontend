@@ -31,6 +31,7 @@ type FormData = {
   minorAccountMonths?: string;
 };
 
+
 export default function StudentExamSection() {
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
@@ -67,21 +68,27 @@ export default function StudentExamSection() {
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
   const selectedExamNo = watch("examNo");
-
+  
+  // Load uploaded documents when requestId changes
   useEffect(() => {
     if (!requestId) return;
 
     const fetchDocuments = async () => {
-      const res = await fetch(
-        `http://localhost:8080/api/documents/upload/${requestId}`
-      );
-      const data = await res.json();
-      setUploadedDocuments(data);
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/documents/request/${requestId}`
+        );
+        const data = await res.json();
+        setUploadedDocuments(data);
+      } catch (error: any) {
+        console.error("Failed to load documents:", error.message);
+      }
     };
 
     fetchDocuments();
   }, [requestId]);
-
+  
+  // Load universities and banks on component mount
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -95,14 +102,17 @@ export default function StudentExamSection() {
 
         setUniversities(uniData);
         setBanks(bankData);
-      } catch (error) {
-        console.error("Failed to load universities or banks", error);
+      } catch (error: any) {
+        console.error("Failed to load universities or banks:", error.message);
+        setExamNoPopupMessage(error.message);
+        setShowExamNoPopup(true);
       }
     };
 
     fetchInitialData();
   }, []);
 
+  // Load programs when selected university changes
   useEffect(() => {
     if (!selectedUniversity) {
       setPrograms([]);
@@ -118,14 +128,15 @@ export default function StudentExamSection() {
         setPrograms(data);
         setValue("program", "");
         setValue("duration", "");
-      } catch (error) {
-        console.error("Failed to load programs", error);
+      } catch (error: any) {
+        console.error("Failed to load programs:", error.message);
       }
     };
 
     fetchPrograms();
   }, [selectedUniversity, setValue]);
 
+  // Load program duration when selected university or program changes
   useEffect(() => {
     if (!selectedUniversity || !selectedProgram) {
       setValue("duration", "");
@@ -139,14 +150,15 @@ export default function StudentExamSection() {
         );
         const data = await res.json();
         setValue("duration", String(data));
-      } catch (error) {
-        console.error("Failed to load duration", error);
+      } catch (error: any) {
+        console.error("Failed to load duration:", error.message);
       }
     };
 
     fetchDuration();
   }, [selectedUniversity, selectedProgram, setValue]);
 
+  // Load branches when selected bank changes
   useEffect(() => {
     if (!selectedBank) {
       setBranches([]);
@@ -160,8 +172,8 @@ export default function StudentExamSection() {
         const data = await res.json();
         setBranches(data);
         setValue("branch", "");
-      } catch (error) {
-        console.error("Failed to load branches", error);
+      } catch (error: any) {
+        console.error("Failed to load branches:", error.message);
       }
     };
 
@@ -310,6 +322,18 @@ export default function StudentExamSection() {
     if (!isExamNoValid) {
       return;
     }
+    
+    let data1 = watch();
+
+    if (!data.hasMinorAccount) {
+      const minorData = await handleRefreshMinorAccount();
+
+      data1 = {
+        ...data1,
+        hasMinorAccount: minorData?.hasMinorAccount,
+        minorAccountMonths: minorData?.minorAccountMonths,
+      };
+    }
 
     try {
       const response = await fetch("http://localhost:8080/api/university-scholarships", {
@@ -331,11 +355,10 @@ export default function StudentExamSection() {
       setRequestId(savedRequest.id);
       setStatus(savedRequest.status || "NEW");
       setIsSaved(true);
-      
+ 
       if (documentFiles.length > 0) {
         await uploadDocuments(savedRequest.id);
       }
-
 
       setIsExamNoDuplicate(false);
       setExamNoPopupMessage("Request is saved successfully");
@@ -370,13 +393,24 @@ export default function StudentExamSection() {
 
       setValue("hasMinorAccount", result.hasMinorAccount);
       setValue("minorAccountMonths", result.remittedMonths);
+
+      return {
+        hasMinorAccount: result.hasMinorAccount,
+        minorAccountMonths: result.remittedMonths,
+      };
     } catch (error) {
       console.error("Failed to refresh minor account:", error);
       setValue("hasMinorAccount", "NO");
       setValue("minorAccountMonths", "No minor account");
+
+      return {
+        hasMinorAccount: "NO",
+        minorAccountMonths: "No minor account",
+      };
     }
   };
 
+  //Handle document upload after save
   const uploadDocuments = async (savedRequestId: number) => {
     for (const file of documentFiles) {
       const formData = new FormData();
@@ -399,10 +433,40 @@ export default function StudentExamSection() {
     }
   };
  
-  const handleMarkIncomplete = (reason: string) => {
-    console.log("FORM MARKED AS INCOMPLETE");
-    console.log("Reason:", reason);
-    setShowIncompleteModal(false);
+  const handleMarkIncomplete = async (reason: string) => {
+
+    if (!requestId) {
+      alert("Please save request first");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/university-scholarships/incomplete/${requestId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reason }),
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to mark incomplete");
+      }
+
+      const updated = await res.json();
+
+      setStatus(updated.status); // 🔥 update UI
+      setShowIncompleteModal(false);
+
+      alert("Request marked as INCOMPLETE");
+
+    } catch (error) {
+      console.error(error);
+      alert("Failed to mark incomplete");
+    }
   };
 
   return (
