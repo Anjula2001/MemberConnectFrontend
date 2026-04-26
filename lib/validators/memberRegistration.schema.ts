@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+const identificationTypeValues = [
+  "NIC",
+  "Passport",
+  "DrivingLicense",
+  "BirthCertificate",
+] as const;
+
 export const memberRegistrationSchema = z.object({
   // Application Information
   applicationDate: z.string().min(1, "Application date is required"),
@@ -23,7 +30,7 @@ export const memberRegistrationSchema = z.object({
   educationalDistrict: z.string().min(1, "Educational district is required"),
   educationalZone: z.string().optional(),
   workingLocation: z.string().optional(),
-  workingLocationAddressAuto: z.string().optional(),
+  workingLocationAddress: z.string().optional(),
   salaryPayingOffice: z.string().optional(),
   computerNoInPayroll: z.string().optional(),
   appointmentDate: z.string().optional(),
@@ -42,9 +49,17 @@ export const memberRegistrationSchema = z.object({
 
   // Nominee Details
   nomineeFullName: z.string().min(1, "Nominee full name is required"),
-  relationship: z.string().min(1, "Relationship is required"),
-  identificationType: z.string().min(1, "Identification type is required"),
-  identificationNumber: z.string().min(1, "Identification number is required"),
+  nomineeRelationship: z.string().min(1, "Relationship is required"),
+  identificationTypes: z
+    .array(z.enum(identificationTypeValues))
+    .min(1, "At least one identification type is required"),
+  identificationNumbers: z.record(
+    z.string(),
+    z.string().min(1, "Identification number is required")
+  ),
+  identification: z.string().optional(),
+  identificationNumber: z.string().optional(),
+  identificationDetails: z.string().optional(),
   nomineeAddress: z.string().optional(),
 });
 

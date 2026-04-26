@@ -1,7 +1,6 @@
 import { apiClient } from "@/lib/api/client";
 
 export type ApplicationStatus =
-  | "PENDING"
   | "NEW"
   | "SUBMITTED_FOR_APPROVAL"
   | "ADDED_TO_BOARD_APPROVAL_LIST"
@@ -10,11 +9,18 @@ export type ApplicationStatus =
 
 export type Gender = "MALE" | "FEMALE";
 export type Language = "ENGLISH" | "SINHALA" | "TAMIL";
+export type NatureOfOccupation =
+  | "PERMANENT"
+  | "PROBATION"
+  | "TEMPORARY"
+  | "CASUAL";
+export type Identification = "NIC" | "Passport" | "DrivingLicense" | "BirthCertificate";
 
 export interface MemberApplicationDTO {
   id?: number;
   applicationID?: string;
   status?: ApplicationStatus;
+  applicationDate?: string;
   title?: string;
   fullName?: string;
   nameAsInPayroll?: string;
@@ -24,6 +30,13 @@ export interface MemberApplicationDTO {
   gender?: Gender;
   preferredLanguage?: Language;
   permanentPrivateAddress?: string;
+  workingLocationType?: string;
+  designation?: string;
+  natureOfOccupation?: NatureOfOccupation;
+  educationalDistrict?: string;
+  educationalZone?: string;
+  workingLocation?: string;
+  workingLocationAddress?: string;
   computerNoInPayslip?: string;
   salaryPayingOffice?: string;
   officeTelephone?: string;
@@ -34,7 +47,13 @@ export interface MemberApplicationDTO {
   specialDepositAmount?: number;
   fixedDepositAmount?: number;
   scholarshipDeathDonationPensionAmount?: number;
+  nomineeFullName?: string;
+  nomineeRelationship?: string;
+  identificationNumber?: string;
+  identificationDetails?: string;
+  nomineeAddress?: string;
   rejoinFlag?: boolean;
+  identification?: Identification;
 }
 
 const BASE_PATH = "/api/applications";

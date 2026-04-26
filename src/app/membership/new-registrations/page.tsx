@@ -126,9 +126,10 @@ function MultiSelect({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegistrationStatus = ApplicationStatus;
+type RegistrationStatus = ApplicationStatus | "PENDING";
 
 interface Registration {
+  id?: number;
   appId: string;
   fullName: string;
   nic: string;
@@ -162,6 +163,7 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 export default function NewRegistrationsPage() {
   const router = useRouter();
   const [currentView, setCurrentView] = useState<"list" | "form">("list");
+  const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -189,11 +191,12 @@ export default function NewRegistrationsPage() {
       : null;
 
     return {
+      id: item.id,
       appId: rawAppId,
       fullName: item.fullName ?? "-",
       nic: item.nicNumber ?? "-",
       appliedDate,
-      district: item.salaryPayingOffice ?? "-",
+      district: item.educationalDistrict ?? "-",
       zone: "-",
       status,
       selectable: status === "NEW",
@@ -372,18 +375,38 @@ export default function NewRegistrationsPage() {
     router.push("/membership/board-approvals");
   };
 
+  const handleOpenApplication = (row: Registration) => {
+    if (!row.id) {
+      alert("Application ID is not available for this record.");
+      return;
+    }
+
+    setSelectedApplicationId(row.id);
+    setCurrentView("form");
+  };
+
   if (currentView === "form") {
     return (
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
         <Button
           variant="ghost"
-          onClick={() => setCurrentView("list")}
+          onClick={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+          }}
           className="w-fit text-[#953002] hover:text-[#7a2700] hover:bg-transparent mb-2"
         >
           <ArrowLeft size={16} />
           Back to List
         </Button>
-        <NewMemberRegistrationForm onDone={() => setCurrentView("list")} />
+        <NewMemberRegistrationForm
+          applicationId={selectedApplicationId}
+          onDone={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+            void handleRetrieve();
+          }}
+        />
       </div>
     );
   }
@@ -406,7 +429,10 @@ export default function NewRegistrationsPage() {
           </Button>
           <Button
             className="bg-[#7a2700] hover:bg-[#953002] text-white"
-            onClick={() => setCurrentView("form")}
+            onClick={() => {
+              setSelectedApplicationId(null);
+              setCurrentView("form");
+            }}
           >
             <Plus />
             Create New Registration
@@ -505,7 +531,6 @@ export default function NewRegistrationsPage() {
                     <SelectItem value="applied-date">Applied Date</SelectItem>
                     <SelectItem value="status">Status</SelectItem>
                     <SelectItem value="district">District</SelectItem>
-                    <SelectItem value="zone">Zone</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
@@ -561,9 +586,6 @@ export default function NewRegistrationsPage() {
                 District
               </TableHead>
               <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Zone
-              </TableHead>
-              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 Status
               </TableHead>
               <TableHead className="px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -575,7 +597,7 @@ export default function NewRegistrationsPage() {
             {hasRetrieved && displayData.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={8}
                   className="px-4 py-8 text-center text-gray-400 text-sm"
                 >
                   No records found. Adjust your filters and click Retrieve.
@@ -600,9 +622,13 @@ export default function NewRegistrationsPage() {
                 {/* App ID */}
                 <TableCell className="px-4">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[#953002] font-medium hover:underline cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenApplication(row)}
+                      className="text-[#953002] font-medium hover:underline cursor-pointer"
+                    >
                       {row.appId}
-                    </span>
+                    </button>
                     {row.hasWarning && (
                       <AlertCircle size={14} className="text-amber-500" />
                     )}
@@ -619,7 +645,6 @@ export default function NewRegistrationsPage() {
                 <TableCell className="px-4 text-gray-700">
                   {row.district}
                 </TableCell>
-                <TableCell className="px-4 text-gray-700">{row.zone}</TableCell>
 
                 {/* Status Badge */}
                 <TableCell className="px-4">
