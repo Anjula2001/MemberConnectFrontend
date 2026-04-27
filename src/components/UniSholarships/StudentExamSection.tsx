@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import Document from "./Document";
+import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 
 type FormData = {
@@ -31,8 +31,9 @@ type FormData = {
   minorAccountMonths?: string;
 };
 
-
 export default function StudentExamSection() {
+  const HARDCODED_MEMBER_ID = 7;
+
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
   const [programs, setPrograms] = useState<any[]>([]);
@@ -42,11 +43,19 @@ export default function StudentExamSection() {
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
+
+  const [member, setMember] = useState<any>(null);
+  const [scholarshipRequestNo, setScholarshipRequestNo] = useState("");
+
   const [requestId, setRequestId] = useState<number | null>(null);
-  const [status, setStatus] = useState<"NEW" | "SUBMITTED_FOR_COMMITTEE_APPROVAL">("NEW");
+  const [status, setStatus] = useState<
+    "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
+  >("NEW");
   const [isSaved, setIsSaved] = useState(false);
+
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
-  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+
 
   const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
 
@@ -68,8 +77,42 @@ export default function StudentExamSection() {
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
   const selectedExamNo = watch("examNo");
-  
-  // Load uploaded documents when requestId changes
+
+  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
+
+  useEffect(() => {
+    const fetchRequiredDocumentTypes = async () => {
+      const res = await fetch(
+        "http://localhost:8080/api/required-document-types/UNIVERSITY_SCHOLARSHIP"
+      );
+      const data = await res.json();
+      setRequiredDocumentTypes(data);
+    };
+
+    fetchRequiredDocumentTypes();
+  }, []);
+
+  useEffect(() => {
+    const fetchMember = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to load member");
+        }
+
+        const data = await res.json();
+        setMember(data);
+      } catch (error) {
+        console.error("Failed to load member:", error);
+      }
+    };
+
+    fetchMember();
+  }, []);
+
   useEffect(() => {
     if (!requestId) return;
 
@@ -78,6 +121,11 @@ export default function StudentExamSection() {
         const res = await fetch(
           `http://localhost:8080/api/documents/request/${requestId}`
         );
+
+        if (!res.ok) {
+          throw new Error("Failed to load documents");
+        }
+
         const data = await res.json();
         setUploadedDocuments(data);
       } catch (error: any) {
@@ -87,8 +135,7 @@ export default function StudentExamSection() {
 
     fetchDocuments();
   }, [requestId]);
-  
-  // Load universities and banks on component mount
+
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -112,7 +159,6 @@ export default function StudentExamSection() {
     fetchInitialData();
   }, []);
 
-  // Load programs when selected university changes
   useEffect(() => {
     if (!selectedUniversity) {
       setPrograms([]);
@@ -123,7 +169,9 @@ export default function StudentExamSection() {
 
     const fetchPrograms = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/programs/${selectedUniversity}`);
+        const res = await fetch(
+          `http://localhost:8080/api/programs/${selectedUniversity}`
+        );
         const data = await res.json();
         setPrograms(data);
         setValue("program", "");
@@ -136,7 +184,6 @@ export default function StudentExamSection() {
     fetchPrograms();
   }, [selectedUniversity, setValue]);
 
-  // Load program duration when selected university or program changes
   useEffect(() => {
     if (!selectedUniversity || !selectedProgram) {
       setValue("duration", "");
@@ -158,7 +205,6 @@ export default function StudentExamSection() {
     fetchDuration();
   }, [selectedUniversity, selectedProgram, setValue]);
 
-  // Load branches when selected bank changes
   useEffect(() => {
     if (!selectedBank) {
       setBranches([]);
@@ -168,7 +214,9 @@ export default function StudentExamSection() {
 
     const fetchBranches = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/branches/${selectedBank}`);
+        const res = await fetch(
+          `http://localhost:8080/api/branches/${selectedBank}`
+        );
         const data = await res.json();
         setBranches(data);
         setValue("branch", "");
@@ -184,7 +232,6 @@ export default function StudentExamSection() {
     setIsExamNoDuplicate(false);
   }, [selectedExamNo]);
 
-  // Validate Exam number Based on Db
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
       setExamNoPopupMessage("Please enter Examination Number first");
@@ -196,7 +243,9 @@ export default function StudentExamSection() {
       setIsValidatingExamNo(true);
 
       const response = await fetch(
-        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(selectedExamNo)}`
+        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
+          selectedExamNo
+        )}`
       );
 
       if (!response.ok) {
@@ -225,8 +274,7 @@ export default function StudentExamSection() {
     }
   };
 
-  //Handle Submit button
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async () => {
     if (!requestId) {
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
@@ -242,12 +290,12 @@ export default function StudentExamSection() {
     }
 
     try {
-    const response = await fetch(
-      `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
-      {
-        method: "POST",
-      }
-    );
+      const response = await fetch(
+        `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
+        {
+          method: "POST",
+        }
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -269,7 +317,6 @@ export default function StudentExamSection() {
     }
   };
 
-  // Validate Exam Number beforesave Based on DB
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
       setIsExamNoDuplicate(false);
@@ -280,7 +327,9 @@ export default function StudentExamSection() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(examNo)}`
+        `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
+          examNo
+        )}`
       );
 
       if (!response.ok) {
@@ -312,65 +361,7 @@ export default function StudentExamSection() {
       return false;
     }
   };
-  
-  //Handle Save Button
-  const handleSave = async () => {
-    const data = watch();
 
-    const isExamNoValid = await validateExamNoBeforeSave(data.examNo);
-
-    if (!isExamNoValid) {
-      return;
-    }
-    
-    let data1 = watch();
-
-    if (!data.hasMinorAccount) {
-      const minorData = await handleRefreshMinorAccount();
-
-      data1 = {
-        ...data1,
-        hasMinorAccount: minorData?.hasMinorAccount,
-        minorAccountMonths: minorData?.minorAccountMonths,
-      };
-    }
-
-    try {
-      const response = await fetch("http://localhost:8080/api/university-scholarships", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        setExamNoPopupMessage("Failed to save request");
-        setShowExamNoPopup(true);
-        return;
-      }
-      
-      const savedRequest = await response.json();
-
-      setRequestId(savedRequest.id);
-      setStatus(savedRequest.status || "NEW");
-      setIsSaved(true);
- 
-      if (documentFiles.length > 0) {
-        await uploadDocuments(savedRequest.id);
-      }
-
-      setIsExamNoDuplicate(false);
-      setExamNoPopupMessage("Request is saved successfully");
-      setShowExamNoPopup(true);
-    } catch (error) {
-      console.error("Save failed:", error);
-      setExamNoPopupMessage("Failed to save request");
-      setShowExamNoPopup(true);
-    }
-  };
-  
-  //Refresh Minor Account Field based on DB
   const handleRefreshMinorAccount = async () => {
     const bcNo = watch("bcNo");
 
@@ -382,9 +373,11 @@ export default function StudentExamSection() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/minor-account/check?birthCertificateNumber=${encodeURIComponent(bcNo)}`
+        `http://localhost:8080/api/minor-account/check?birthCertificateNumber=${encodeURIComponent(
+          bcNo
+        )}`
       );
-      
+
       if (!response.ok) {
         throw new Error("Failed to check minor account");
       }
@@ -410,12 +403,11 @@ export default function StudentExamSection() {
     }
   };
 
-  //Handle document upload after save
   const uploadDocuments = async (savedRequestId: number) => {
     for (const file of documentFiles) {
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("documentType", "OTHER");
+      formData.append("file", file.file);
+      formData.append("documentType", file.documentType);
 
       const response = await fetch(
         `http://localhost:8080/api/documents/upload/${savedRequestId}`,
@@ -432,9 +424,79 @@ export default function StudentExamSection() {
       }
     }
   };
- 
-  const handleMarkIncomplete = async (reason: string) => {
 
+  const handleSave = async () => {
+    const currentData = watch();
+
+    const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+
+    if (!isExamNoValid) {
+      return;
+    }
+
+    let saveData: FormData & { memberId: number } = {
+      ...currentData,
+      memberId: HARDCODED_MEMBER_ID,
+    };
+
+    if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
+      const minorData = await handleRefreshMinorAccount();
+
+      saveData = {
+        ...saveData,
+        hasMinorAccount: minorData?.hasMinorAccount,
+        minorAccountMonths: minorData?.minorAccountMonths,
+      };
+    }
+
+    try {
+      const response = await fetch(
+        "http://localhost:8080/api/university-scholarships",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(saveData),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = "Failed to save request";
+
+        try {
+          const errorJson = JSON.parse(errorText);
+          message = errorJson.message || message;
+        } catch {}
+
+        setExamNoPopupMessage(message);
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      const savedRequest = await response.json();
+
+      setRequestId(savedRequest.id);
+      setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
+      setStatus(savedRequest.status || "NEW");
+      setIsSaved(true);
+
+      if (documentFiles.length > 0) {
+        await uploadDocuments(savedRequest.id);
+      }
+
+      setIsExamNoDuplicate(false);
+      setExamNoPopupMessage("Request is saved successfully");
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Save failed:", error);
+      setExamNoPopupMessage("Failed to save request");
+      setShowExamNoPopup(true);
+    }
+  };
+
+  const handleMarkIncomplete = async (reason: string) => {
     if (!requestId) {
       alert("Please save request first");
       return;
@@ -458,42 +520,72 @@ export default function StudentExamSection() {
 
       const updated = await res.json();
 
-      setStatus(updated.status); // 🔥 update UI
+      setStatus(updated.status);
       setShowIncompleteModal(false);
 
       alert("Request marked as INCOMPLETE");
-
     } catch (error) {
       console.error(error);
       alert("Failed to mark incomplete");
     }
   };
 
+ const mandatoryDocumentTypes = requiredDocumentTypes
+  .filter((doc) => doc.mandatory)
+  .map((doc) => doc.documentType);
+  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((type) =>
+    documentFiles.some((doc) => doc.documentType === type) ||
+    uploadedDocuments.some((doc) => doc.documentType === type)
+  );
+
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-[#953002]">
-            New University Scholarship
-          </h2>
+          <div>
+            <h2 className="text-2xl font-bold text-[#953002]">
+              New University Scholarship
+              {scholarshipRequestNo && `: ${scholarshipRequestNo}`}
+            </h2>
+
+            <p className="text-sm text-gray-600 flex items-center gap-8">
+              <span>
+                Member: {member?.fullName} ({member?.memberId})
+              </span>
+
+              {isSaved && (
+                <span className="font-semibold text-blue-600">
+                  Status:{" "}
+                  <span>
+                    {status}
+                  </span>
+                </span>
+              )}
+            </p>
+          </div>
 
           <div className="flex gap-2">
             <Button
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={isSubmitted||!isSaved}
+              disabled={isSubmitted || !isSaved || status !== "NEW"}
             >
               Incomplete
             </Button>
 
-            <Button type="button" variant="outline" onClick={handleSave} disabled={!isValid||isSubmitted||isSaved}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSave}
+              disabled={!isValid || isSubmitted || isSaved}
+            >
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={!isSaved || isSubmitted}
+              disabled={!isSaved || isSubmitted || !hasAllMandatoryDocuments}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
               Submit
@@ -600,7 +692,7 @@ export default function StudentExamSection() {
                   type="button"
                   variant="outline"
                   onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo||isSubmitted}
+                  disabled={isValidatingExamNo || isSubmitted}
                 >
                   {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
@@ -620,7 +712,8 @@ export default function StudentExamSection() {
                 </label>
                 <select
                   id="university"
-                  {...register("university")} disabled={isSubmitted}
+                  {...register("university")}
+                  disabled={isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
@@ -640,15 +733,15 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university")||isSubmitted}
+                  disabled={!watch("university") || isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
                   {programs.map((item) => (
-                      <option key={item.programId} value={item.programId}>
-                        {item.programName}
-                      </option>
-                  ))} 
+                    <option key={item.programId} value={item.programId}>
+                      {item.programName}
+                    </option>
+                  ))}
                 </select>
                 {errors.program && <p className="mt-1 text-sm text-red-500">{errors.program.message}</p>}
               </div>
@@ -744,7 +837,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank")||isSubmitted}
+                  disabled={!watch("bank") || isSubmitted}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>
@@ -760,16 +853,17 @@ export default function StudentExamSection() {
 
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Documents
+              Supporting Documents
             </h3>
 
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500" >
+            <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
               <Document
                 requestId={requestId}
                 disabled={isSubmitted}
                 isSaved={isSaved}
                 files={documentFiles}
                 setFiles={setDocumentFiles}
+                documentTypes={requiredDocumentTypes}
               />
             </div>
           </section>
@@ -795,14 +889,10 @@ export default function StudentExamSection() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
             <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              Examination Number Validation
+              Validation
             </h3>
 
-            <p
-              className={`mb-5 text-sm justify-content ${
-                isExamNoDuplicate ? "text-black-600" : "text-black-600"
-              }`}
-            >
+            <p className="mb-5 text-sm text-black">
               {examNoPopupMessage}
             </p>
 
