@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../../../components/ui/button";
+import { Button } from "../../../../components/ui/button";
 import RetirementForm, {
   RetirementFormRef,
-} from "../../../components/ui/retirement/retirementform";
-import DocumentUpload from "../../../components/ui/documentupload";
-import { MarkIncompleteModal } from "../../../components/ui/grade5schoolarship/MarkIncomplete";
+} from "../../../../components/ui/retirement/retirementform";
+import DocumentUpload from "../../../../components/ui/documentupload";
+import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
 import AddBankDetails, {
   AddBankDetailsRef,
-} from "../../../components/ui/retirement/addbankdetails";
+} from "../../../../components/ui/retirement/addbankdetails";
+
 
 interface BankAccountRow {
   id: number;
@@ -54,13 +55,15 @@ export default function RetirementPage() {
   const [member, setMember] = useState({
     memberId: "",
     fullName: "",
+    nameWithInitials: "",
+    nic: "",
   });
   const [saveError, setSaveError] = useState("");
   const [retirementRequest, setRetirementRequest] = useState<any>(null);
 
   const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
-  const memberId = "MEM001";
+  const memberId = "MEM002";
 
   useEffect(() => {
     fetchMemberBankAccounts();
@@ -68,7 +71,7 @@ export default function RetirementPage() {
     fetchMember();
     fetchRetirementValidation();
     fetchRetirementRequests();
-     fetchRetirementRequestformdata(); 
+    fetchRetirementRequestformdata(); 
   }, []);
 
   const fetchMember = async () => {
@@ -85,6 +88,8 @@ export default function RetirementPage() {
       setMember({
         memberId: data.memberId,
         fullName: data.fullName,
+        nameWithInitials: data.nameWithInitials,
+        nic: data.nic,
       });
     } catch (error) {
       console.error("Fetch member error:", error);
@@ -428,10 +433,68 @@ export default function RetirementPage() {
             </div>
           )}
 
+          <div className="bg-white border border-gray-200 rounded-lg  px-5 py-5 mt-6 ">
+
+            {/* Header */}
+            <h2 className="text-lg font-bold text-[#953002] mb-4">
+              Member Details
+            </h2>
+
+            {/* Form Layout */}
+            <div className="grid grid-cols-3 gap-5">
+
+              {/* Member ID */}
+              <div>
+                <label className=" block font-medium mb-1">
+                  Member ID
+                </label>
+                <input
+                  type="text"
+                  value={member.memberId || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              {/* Name with Initials */}
+              <div>
+                <label className="block font-medium mb-1">
+                  Surname with Initials
+                </label>
+                <input
+                  type="text"
+                  value={member.nameWithInitials || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              {/* NIC */}
+              <div>
+                <label className="block font-medium mb-1">
+                  NIC Number
+                </label>
+                <input
+                  type="text"
+                  value={member.nic || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+            </div>
+          </div>
           <div className="flex gap-6 mt-6">
-            <div className="flex-1 flex flex-col gap-6">
+            <div className="flex-1 flex flex-col space-y-6">
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <RetirementForm ref={formRef} />
+                <RetirementForm
+                  ref={formRef}
+                  initialData={{
+                    requestedDate: retirementRequest?.requestedDate || "",
+                    effectiveDate: retirementRequest?.effectiveDate || "",
+                    comment: retirementRequest?.comment || "",
+                  }}
+                />
               </div>
 
               <div className="bg-white rounded-lg shadow-sm p-4">
@@ -551,18 +614,11 @@ export default function RetirementPage() {
                 <p className="text-xl font-bold text-[#953002] mb-4">
                   Supporting Documents
                 </p>
-
-                {!retirementRequest?.id ? (
-                  <p className="text-gray-500">
-                    Save retirement request before uploading documents.
-                  </p>
-                ) : (
-                  <DocumentUpload
-                    requestId={retirementRequest.id}
+                <DocumentUpload
+                    requestId={retirementRequest?.id || null}
                     memberId={memberId}
-                    requestStatus={retirementRequest.status}
-                  />
-                )}
+                    requestStatus={retirementRequest?.status || "NEW"}
+                />
               </div>
             </div>
           </div>

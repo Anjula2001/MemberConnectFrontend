@@ -22,18 +22,17 @@ interface UploadedDocument {
 }
 
 interface DocumentUploadProps {
-  requestId: number;
+  requestId: number | null;
   memberId: string;
   requestStatus: string;
-  onDocumentsChanged?: () => void;
 }
 
 export default function DocumentUpload({
   requestId,
   memberId,
-  requestStatus,
-  onDocumentsChanged,
+  requestStatus
 }: DocumentUploadProps) {
+
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>([]);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
@@ -49,9 +48,11 @@ export default function DocumentUpload({
 
   const fetchRequiredDocuments = async () => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${requestId}/required-documents?memberId=${memberId}`
-      );
+      const url = requestId
+        ? `${API_BASE_URL}/api/retirement-requests/${requestId}/required-documents?memberId=${memberId}`
+        : `${API_BASE_URL}/api/retirement-requests/required-documents-preview?memberId=${memberId}`;
+
+      const res = await fetch(url);
 
       if (!res.ok) {
         throw new Error("Failed to load required documents");
@@ -66,6 +67,11 @@ export default function DocumentUpload({
   };
 
   const fetchUploadedDocuments = async () => {
+    if (!requestId) {
+      setUploadedDocuments([]);
+      return;
+    }
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/retirement-requests/${requestId}/uploaded-documents`
@@ -85,6 +91,11 @@ export default function DocumentUpload({
 
   const handleUpload = async () => {
     setMessage("");
+
+    if (!requestId) {
+      setMessage("Please save retirement request before uploading documents.");
+      return;
+    }
 
     if (isSubmitted) {
       setMessage("Cannot upload documents after request is submitted.");
@@ -126,7 +137,6 @@ export default function DocumentUpload({
       await fetchRequiredDocuments();
       await fetchUploadedDocuments();
 
-      onDocumentsChanged?.();
     } catch (error) {
       console.error(error);
       setMessage("Failed to upload document.");
@@ -160,12 +170,36 @@ export default function DocumentUpload({
       await fetchRequiredDocuments();
       await fetchUploadedDocuments();
 
-      onDocumentsChanged?.();
     } catch (error) {
       console.error(error);
       setMessage("Failed to delete document.");
     }
   };
+
+  const fetchUploadedDocumentsBySelectedDocument = async (
+    requiredDocumentId: number
+  ) => {
+    if (!requestId) {
+      setUploadedDocuments([]);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${requestId}/documents/${requiredDocumentId}/uploaded`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to load uploaded documents");
+      }
+
+      const data = await res.json();
+      setUploadedDocuments(data);
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to load uploaded documents.");
+    }
+};
 
   return (
     <div className="space-y-6">
@@ -208,18 +242,26 @@ export default function DocumentUpload({
         )}
       </div>
 
-      {!isSubmitted && (
+      {requestId ? (
         <div className="border rounded-lg p-4 space-y-4">
           <p className="font-semibold">Upload Document</p>
 
           <select
             value={selectedDocumentId ?? ""}
-            onChange={(e) =>
-              setSelectedDocumentId(e.target.value ? Number(e.target.value) : null)
-            }
+            onChange={(e) => {
+              const id = e.target.value ? Number(e.target.value) : null;
+              setSelectedDocumentId(id);
+
+              if (id && requestId) {
+                fetchUploadedDocumentsBySelectedDocument(id);
+              } else {
+                setUploadedDocuments([]);
+              }
+            }}
             className="border rounded-md px-3 py-2 w-full"
           >
             <option value="">Select document type</option>
+
             {requiredDocuments.map((doc) => (
               <option key={doc.id} value={doc.id}>
                 {doc.documentName} {doc.mandatory ? "*" : ""}
@@ -241,6 +283,10 @@ export default function DocumentUpload({
             Add
           </Button>
         </div>
+      ) : (
+        <p className="text-gray-500 text-sm">
+          Save retirement request before uploading documents.
+        </p>
       )}
 
       {isSubmitted && (
@@ -269,7 +315,14 @@ export default function DocumentUpload({
             <tbody>
               {uploadedDocuments.map((file) => (
                 <tr key={file.id}>
-                  <td className="px-4 py-2 border-b">{file.fileName}</td>
+                  <td className="px-4 py-2 border-b">
+                    <a
+                      href={`${API_BASE_URL}/api/retirement-requests/documents/${file.id}/download`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {file.fileName}
+                    </a>
+                  </td>
                   <td className="px-4 py-2 border-b">{file.fileType}</td>
                   <td className="px-4 py-2 border-b">{file.uploadedAt}</td>
                   {!isSubmitted && (

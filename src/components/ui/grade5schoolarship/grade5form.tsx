@@ -30,7 +30,8 @@ const grade5Schema = z.object({
 
   birthCertificateNo: z
     .string()
-    .min(1, "Birth certificate number is required"),
+    .min(1, "Birth certificate number is required")
+    .min(8, "Birth Certificate number must be at least 8 characters"),
 
   school: z.string().min(1, "School is required"),
 
@@ -46,16 +47,17 @@ const grade5Schema = z.object({
   })
   .optional(),
 
-marksObtained: z
-  .number({
-    message: "Marks obtained is required",
-  })
-  .min(0, "Marks must be at least 0")
-  .max(200, "Marks cannot exceed 200"),
+  marksObtained: z
+    .number({
+      message: "Marks obtained is required",
+    })
+    .min(0, "Marks must be at least 0")
+    .max(200, "Marks cannot exceed 200"),
 
   examinationNumber: z
     .string()
-    .min(1, "Examination number is required"),
+    .min(1, "Examination number is required")
+    .min(8, "Examination number must be at least 8 characters"),
 
   districtCutOff: z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -81,6 +83,7 @@ export type Grade5FormValues = z.infer<typeof grade5Schema>;
 
 export interface Grade5FormRef {
   submitForm: () => void;
+  getBirthCertificateNo: () => string;
 }
 
 const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
@@ -306,6 +309,9 @@ useEffect(() => {
   useImperativeHandle(ref, () => ({
     submitForm: () => {
       handleSubmit(onValid, onInvalid)();
+    },
+    getBirthCertificateNo: () => {
+      return getValues("birthCertificateNo");
     },
   }));
 

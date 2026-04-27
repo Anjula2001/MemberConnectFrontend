@@ -10,10 +10,19 @@ import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarshi
 
 export default function Grade5ScholarshipPage() {
   const formRef = useRef<Grade5FormRef>(null);
-
   const [openModal, setOpenModal] = useState(false);
   const [status, setStatus] = useState("Draft");
   const [incompleteReason, setIncompleteReason] = useState("");
+  const [fundRefreshed, setFundRefreshed] = useState(false);
+  const [minorAccountExists, setMinorAccountExists] = useState(false);
+  const [minorAccountNumber, setMinorAccountNumber] = useState("");
+  const [disbursementOption, setDisbursementOption] = useState("");
+  const [memberAmount, setMemberAmount] = useState(0);
+  const [minorAmount, setMinorAmount] = useState(0);
+  const [fundError, setFundError] = useState("");
+  const [totalMonths, setTotalMonths] = useState(0);
+  const [eligibleMonths, setEligibleMonths] = useState(0);
+  const [isDoubleAmount, setIsDoubleAmount] = useState(false);
 
   const handleConfirm = (reason: string) => {
     if (!reason.trim()) return;
@@ -26,11 +35,64 @@ export default function Grade5ScholarshipPage() {
   };
 
   const handleSave = () => {
+    if (!fundRefreshed) {
+      setFundError("Please click Refresh in Fund Disbursement before saving.");
+      return;
+    }
+
     formRef.current?.submitForm();
   };
 
   const handleSubmitForm = () => {
     formRef.current?.submitForm();
+  };
+
+  const handleRefreshFund = async () => {
+    setFundError("");
+
+    const birthCertificateNo = formRef.current?.getBirthCertificateNo?.();
+    
+
+    if (!birthCertificateNo) {
+      setFundError("Birth Certificate No required");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/fund-details?birthCertificateNo=${encodeURIComponent(
+          birthCertificateNo
+        )}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch fund details");
+      }
+
+      const data = await res.json();
+
+      setFundRefreshed(true);
+      setMinorAccountExists(data.hasMinorAccount);
+      setMinorAccountNumber(data.minorAccountNo || "");
+      setTotalMonths(data.totalMonths);
+      setEligibleMonths(data.eligibleMonths);
+      setIsDoubleAmount(data.doubleAmount);
+
+      const baseAmount = data.doubleAmount ? 10000 : 5000;
+
+      if (!data.hasMinorAccount) {
+        setDisbursementOption("MEMBER_ONLY");
+        setMemberAmount(baseAmount);
+        setMinorAmount(0);
+      } else {
+        setDisbursementOption("MEMBER_AND_MINOR");
+        setMemberAmount(baseAmount / 2);
+        setMinorAmount(baseAmount / 2);
+      }
+    } catch (err) {
+      console.error(err);
+      setFundError("Failed to load fund details");
+    }
   };
 
   return (
@@ -79,20 +141,155 @@ export default function Grade5ScholarshipPage() {
 
               {/* Fund Disbursement */}
               <div className="bg-white rounded-lg shadow-sm p-4">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-4">
                   <p className="text-xl font-bold text-[#953002]">
                     Fund Disbursement
                   </p>
 
-                  <Button className="bg-gray-50 text-black hover:bg-gray-100">
+                  <Button
+                    onClick={handleRefreshFund}
+                    className="bg-gray-50 text-black hover:bg-gray-100"
+                  >
                     Refresh
                   </Button>
                 </div>
+
+                {fundError && (
+                  <p className="text-red-500 text-sm mb-3">{fundError}</p>
+                )}
+
+                {!fundRefreshed ? (
+                  <p className="text-gray-500 text-sm">
+                    Click Refresh to enable fund disbursement.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Minor Account Exists
+                        </label>
+                        <select
+                          value={minorAccountExists ? "YES" : "NO"}
+                          onChange={(e) => setMinorAccountExists(e.target.value === "YES")}
+                          className="border rounded-md px-3 py-2 w-full"
+                        >
+                          <option value="YES">Yes</option>
+                          <option value="NO">No</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Minor Account Number
+                        </label>
+                        <input
+                          value={minorAccountNumber}
+                          onChange={(e) => setMinorAccountNumber(e.target.value)}
+                          disabled={!minorAccountExists}
+                          className="border rounded-md px-3 py-2 w-full disabled:bg-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Total Months Remitted
+                        </label>
+                        <input
+                          value={totalMonths}
+                          onChange={(e) => setTotalMonths(Number(e.target.value))}
+                          className="border rounded-md px-3 py-2 w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          No. of Months with Rs.250+
+                        </label>
+                        <input
+                          value={eligibleMonths}
+                          onChange={(e) => setEligibleMonths(Number(e.target.value))}
+                          className="border rounded-md px-3 py-2 w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Disbursement Option
+                        </label>
+                        <select
+                          value={disbursementOption}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setDisbursementOption(value);
+
+                            if (value === "MEMBER_ONLY") {
+                              setMemberAmount(5000);
+                              setMinorAmount(0);
+                            }
+
+                            if (value === "MEMBER_AND_MINOR") {
+                              setMemberAmount(2500);
+                              setMinorAmount(2500);
+                            }
+
+                            if (value === "MINOR_ONLY") {
+                              setMemberAmount(0);
+                              setMinorAmount(5000);
+                            }
+                          }}
+                          className="border rounded-md px-3 py-2 w-full"
+                        >
+                        {!minorAccountExists && (
+                          <option value="MEMBER_ONLY">Member Only</option>
+                        )}
+
+                        {minorAccountExists && (
+                          <>
+                            <option value="MEMBER_AND_MINOR">
+                              Member and Minor Account
+                            </option>
+                            <option value="MINOR_ONLY">
+                              Minor Account Only
+                            </option>
+                          </>
+                        )}
+                      </select>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="font-semibold mb-3">Fund Disbursement Breakdown</p>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm mb-1">Member Amount</label>
+                          <input
+                            type="number"
+                            value={memberAmount}
+                            onChange={(e) => setMemberAmount(Number(e.target.value))}
+                            className="border rounded-md px-3 py-2 w-full"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm mb-1">Minor Account Amount</label>
+                          <input
+                            type="number"
+                            value={minorAmount}
+                            onChange={(e) => setMinorAmount(Number(e.target.value))}
+                            disabled={!minorAccountExists}
+                            className="border rounded-md px-3 py-2 w-full disabled:bg-gray-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* ✅ Document Upload MOVED BELOW */}
               <div className="bg-white rounded-lg shadow-sm p-4">
-                <DocumentUpload />
+                <DocumentUpload requestId={null} memberId={""} requestStatus={""} />
               </div>
 
             </div>

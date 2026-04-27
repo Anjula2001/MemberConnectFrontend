@@ -26,7 +26,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
 
     const [error, setError] = useState("");
 
-    // ✅ Load initial data (EDIT mode)
+    // Load initial data (EDIT mode)
     useEffect(() => {
       if (initialData) {
         setRequestedDate(initialData.requestedDate || "");
@@ -35,7 +35,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
       }
     }, [initialData]);
 
-    // ✅ Expose validation to parent
+    // Expose validation to parent
     useImperativeHandle(ref, () => ({
       validateAndGetData: () => {
         setError("");
@@ -57,7 +57,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
           return null;
         }
 
-        // ❗ Effective date CAN be future → backend will validate
+        //Effective date CAN be future → backend will validate
         return {
           requestedDate,
           effectiveDate,
@@ -68,7 +68,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
 
     return (
       <div className="space-y-4">
-        {/* ❌ Error Message */}
+        {/* Error Message */}
         {error && (
           <div className="text-red-500 text-sm font-medium">
             {error}
