@@ -32,7 +32,7 @@ type FormData = {
 };
 
 export default function StudentExamSection() {
-  const HARDCODED_MEMBER_ID = 7;
+  const HARDCODED_MEMBER_ID = 8;
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
@@ -79,7 +79,8 @@ export default function StudentExamSection() {
   const selectedExamNo = watch("examNo");
 
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
-
+  
+  // Load required document types 
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       const res = await fetch(
@@ -92,6 +93,7 @@ export default function StudentExamSection() {
     fetchRequiredDocumentTypes();
   }, []);
 
+  // Load member details 
   useEffect(() => {
     const fetchMember = async () => {
       try {
@@ -112,7 +114,9 @@ export default function StudentExamSection() {
 
     fetchMember();
   }, []);
-
+  
+  
+  /* Load uploaded documents for existing request
   useEffect(() => {
     if (!requestId) return;
 
@@ -134,8 +138,10 @@ export default function StudentExamSection() {
     };
 
     fetchDocuments();
-  }, [requestId]);
+  }, [requestId]);*/
 
+
+  // Load universities and banks for dropdowns
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -159,6 +165,7 @@ export default function StudentExamSection() {
     fetchInitialData();
   }, []);
 
+  // Load programs when university changes
   useEffect(() => {
     if (!selectedUniversity) {
       setPrograms([]);
@@ -183,7 +190,8 @@ export default function StudentExamSection() {
 
     fetchPrograms();
   }, [selectedUniversity, setValue]);
-
+  
+  // Load program duration when university or program changes
   useEffect(() => {
     if (!selectedUniversity || !selectedProgram) {
       setValue("duration", "");
@@ -204,7 +212,8 @@ export default function StudentExamSection() {
 
     fetchDuration();
   }, [selectedUniversity, selectedProgram, setValue]);
-
+  
+  // Load branches when bank changes
   useEffect(() => {
     if (!selectedBank) {
       setBranches([]);
@@ -227,11 +236,13 @@ export default function StudentExamSection() {
 
     fetchBranches();
   }, [selectedBank, setValue]);
-
+  
+  
   useEffect(() => {
     setIsExamNoDuplicate(false);
   }, [selectedExamNo]);
-
+  
+  // Validate exam number when it changes
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
       setExamNoPopupMessage("Please enter Examination Number first");
@@ -274,6 +285,7 @@ export default function StudentExamSection() {
     }
   };
 
+  //Handle form submission
   const onSubmit = async () => {
     if (!requestId) {
       setExamNoPopupMessage("Please save the request before submitting");
@@ -316,7 +328,8 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
-
+  
+  // Validate exam number before saving
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
       setIsExamNoDuplicate(false);
@@ -361,7 +374,8 @@ export default function StudentExamSection() {
       return false;
     }
   };
-
+ 
+  // Refresh minor account status and remitted months
   const handleRefreshMinorAccount = async () => {
     const bcNo = watch("bcNo");
 
@@ -403,7 +417,10 @@ export default function StudentExamSection() {
     }
   };
 
+  // Upload documents after saving request
   const uploadDocuments = async (savedRequestId: number) => {
+    const uploadedItems: DocumentFileItem[] = [];
+
     for (const file of documentFiles) {
       const formData = new FormData();
       formData.append("file", file.file);
@@ -418,13 +435,22 @@ export default function StudentExamSection() {
       );
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Document upload failed:", response.status, errorText);
         throw new Error("Document upload failed");
       }
-    }
-  };
 
+      const savedDoc = await response.json();
+
+      uploadedItems.push({
+        ...file,
+        id: savedDoc.id,
+        uploadedAt: savedDoc.uploadedAt,
+      });
+    }
+
+    setDocumentFiles(uploadedItems);
+  };
+  
+  //Handle save 
   const handleSave = async () => {
     const currentData = watch();
 
@@ -495,7 +521,8 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
-
+  
+  // Handle marking request as incomplete
   const handleMarkIncomplete = async (reason: string) => {
     if (!requestId) {
       alert("Please save request first");
@@ -530,12 +557,14 @@ export default function StudentExamSection() {
     }
   };
 
- const mandatoryDocumentTypes = requiredDocumentTypes
-  .filter((doc) => doc.mandatory)
-  .map((doc) => doc.documentType);
+
+  const mandatoryDocumentTypes = requiredDocumentTypes
+    .filter((doc) => doc.mandatory)
+    .map((doc) => doc.documentType);
+
   const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((type) =>
-    documentFiles.some((doc) => doc.documentType === type) ||
-    uploadedDocuments.some((doc) => doc.documentType === type)
+      documentFiles.some((doc) => doc.documentType === type) ||
+      uploadedDocuments.some((doc) => doc.documentType === type)
   );
 
   return (
@@ -604,7 +633,7 @@ export default function StudentExamSection() {
                 <label htmlFor="requestDate" className="mb-1 block text-sm font-medium text-gray-700">
                   Request Date <span className="text-red-500">*</span>
                 </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isSubmitted} />
+                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isSubmitted||isSaved} />
                 {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
@@ -612,7 +641,7 @@ export default function StudentExamSection() {
                 <label htmlFor="studentName" className="mb-1 block text-sm font-medium text-gray-700">
                   Student Name <span className="text-red-500">*</span>
                 </label>
-                <Input id="studentName" {...register("studentName")} disabled={isSubmitted}/>
+                <Input id="studentName" {...register("studentName")} disabled={isSubmitted||isSaved} />
                 {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
@@ -620,7 +649,7 @@ export default function StudentExamSection() {
                 <label htmlFor="nic" className="mb-1 block text-sm font-medium text-gray-700">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
-                <Input id="nic" {...register("nic")} disabled={isSubmitted} />
+                <Input id="nic" {...register("nic")} disabled={isSubmitted||isSaved} />
                 {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
@@ -628,7 +657,7 @@ export default function StudentExamSection() {
                 <label htmlFor="bcNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="bcNo" {...register("bcNo")} disabled={isSubmitted}/>
+                <Input id="bcNo" {...register("bcNo")} disabled={isSubmitted||isSaved} />
                 {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
@@ -636,7 +665,7 @@ export default function StudentExamSection() {
                 <label htmlFor="address" className="mb-1 block text-sm font-medium text-gray-700">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
-                <Input id="address" {...register("address")} disabled={isSubmitted}/>
+                <Input id="address" {...register("address")} disabled={isSubmitted||isSaved} />
                 {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
@@ -644,7 +673,7 @@ export default function StudentExamSection() {
                 <label htmlFor="mobile" className="mb-1 block text-sm font-medium text-gray-700">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="mobile" {...register("mobile")} disabled={isSubmitted}/>
+                <Input id="mobile" {...register("mobile")} disabled={isSubmitted||isSaved} />
                 {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
@@ -654,7 +683,7 @@ export default function StudentExamSection() {
                 id="isSchoolApplicant"
                 type="checkbox"
                 {...register("isSchoolApplicant")}
-                disabled={isSubmitted}
+                disabled={isSubmitted||isSaved}
                 className="h-4 w-4 accent-[#953002]"
               />
               <label htmlFor="isSchoolApplicant" className="text-sm font-medium text-gray-700">
@@ -667,7 +696,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examYear" className="mb-1 block text-sm font-medium text-gray-700">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
-                <Input id="examYear" {...register("examYear")} disabled={isSubmitted}/>
+                <Input id="examYear" {...register("examYear")} disabled={isSubmitted||isSaved} />
                 {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
@@ -675,7 +704,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="examNo" {...register("examNo")} disabled={isSubmitted}/>
+                <Input id="examNo" {...register("examNo")} disabled={isSubmitted||isSaved} />
                 {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
@@ -683,7 +712,7 @@ export default function StudentExamSection() {
                 <label htmlFor="zScore" className="mb-1 block text-sm font-medium text-gray-700">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zScore")} disabled={isSubmitted}/>
+                <Input id="zScore" {...register("zScore")} disabled={isSubmitted||isSaved} />
                 {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
               </div>
 
@@ -692,7 +721,7 @@ export default function StudentExamSection() {
                   type="button"
                   variant="outline"
                   onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo || isSubmitted}
+                  disabled={isValidatingExamNo || isSubmitted||isSaved}
                 >
                   {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
@@ -713,7 +742,7 @@ export default function StudentExamSection() {
                 <select
                   id="university"
                   {...register("university")}
-                  disabled={isSubmitted}
+                  disabled={isSubmitted||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
@@ -733,7 +762,7 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university") || isSubmitted}
+                  disabled={!watch("university") || isSubmitted||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
@@ -752,14 +781,14 @@ export default function StudentExamSection() {
                 <label htmlFor="duration" className="mb-1 block text-sm font-medium text-gray-700">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} disabled={isSubmitted} readOnly />
+                <Input id="duration" {...register("duration")} disabled={isSubmitted||isSaved} readOnly />
               </div>
 
               <div>
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm font-medium text-gray-700">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isSubmitted}/>
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isSubmitted||isSaved}/>
               </div>
             </div>
           </section>
@@ -774,7 +803,7 @@ export default function StudentExamSection() {
                 variant="outline"
                 className="bg-gray text-black hover:bg-gray-200"
                 onClick={handleRefreshMinorAccount}
-                disabled={isSubmitted}
+                disabled={isSubmitted||isSaved}
               >
                 Refresh
               </Button>
@@ -807,7 +836,7 @@ export default function StudentExamSection() {
                 <label htmlFor="accountNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isSubmitted}/>
+                <Input id="accountNo" {...register("accountNo")} disabled={isSubmitted||isSaved} />
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
@@ -818,7 +847,7 @@ export default function StudentExamSection() {
                 <select
                   id="bank"
                   {...register("bank")}
-                  disabled={isSubmitted}
+                  disabled={isSubmitted||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select Bank</option>
@@ -837,7 +866,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank") || isSubmitted}
+                  disabled={!watch("bank") || isSubmitted||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>

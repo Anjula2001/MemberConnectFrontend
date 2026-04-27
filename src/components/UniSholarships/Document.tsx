@@ -8,6 +8,8 @@ import { Trash2, UploadCloud } from "lucide-react";
 export type DocumentFileItem = {
   file: File;
   documentType: string;
+  uploadedAt?: string;
+  id?: number;
 };
 
 export type RequiredDocType = {
@@ -42,6 +44,7 @@ export default function Document({
       const newFiles = acceptedFiles.map((file) => ({
         file,
         documentType: selectedDocumentType,
+        uploadedAt: new Date().toISOString(),
       }));
 
       setFiles((prev) => [...prev, ...newFiles]);
@@ -67,9 +70,16 @@ export default function Document({
     );
   };
 
+  const formatDateTime = (value?: string) => {
+    if (!value) return "Not uploaded yet";
+    return new Date(value).toLocaleString();
+  };
+
   return (
     <div className="space-y-4 text-left">
-      <h3 className="text-xl font-bold text-center text-[#953002]">Documents</h3>
+      <h3 className="text-xl font-bold text-center text-[#953002]">
+        Documents
+      </h3>
 
       {!isSaved && (
         <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500 bg-gray-50">
@@ -101,7 +111,7 @@ export default function Document({
 
           <div
             {...getRootProps()}
-            className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-left text-sm ${
+            className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-sm ${
               selectedDocumentType
                 ? "cursor-pointer text-muted-foreground hover:bg-gray-50"
                 : "cursor-not-allowed bg-gray-50 text-gray-400"
@@ -125,32 +135,60 @@ export default function Document({
       )}
 
       {files.length > 0 && (
-        <ul className="space-y-2">
-          {files.map((item, index) => (
-            <li
-              key={`${item.file.name}-${index}`}
-              className="flex justify-between items-center border rounded px-3 py-2 text-sm"
-            >
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {getDocumentLabel(item.documentType)}
-                </p>
-                <p className="truncate text-gray-600">{item.file.name}</p>
-              </div>
+        <div className="overflow-x-auto rounded border">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <th className="px-3 py-2">Document Type</th>
+                <th className="px-3 py-2">File Name</th>
+                <th className="px-3 py-2">Uploaded Time</th>
+                {!disabled && <th className="px-3 py-2">Action</th>}
+              </tr>
+            </thead>
 
-              {!disabled && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => removeFile(index)}
-                  className="text-red-600"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
+            <tbody>
+              {files.map((item, index) => (
+                <tr key={`${item.file.name}-${index}`} className="border-t">
+                  <td className="px-3 py-2">
+                    {getDocumentLabel(item.documentType)}
+                  </td>
+
+                  <td className="px-3 py-2">
+                    {item.id ? (
+                      <a
+                        href={`http://localhost:8080/api/documents/download/${item.id}`}
+                        className="font-medium text-blue-600 underline"
+                      >
+                        {item.file.name}
+                      </a>
+                    ) : (
+                      <span className="font-medium text-gray-700">
+                        {item.file.name}
+                      </span>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-2 text-gray-600">
+                    {formatDateTime(item.uploadedAt)}
+                  </td>
+
+                  {!disabled && (
+                    <td className="px-3 py-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => removeFile(index)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
