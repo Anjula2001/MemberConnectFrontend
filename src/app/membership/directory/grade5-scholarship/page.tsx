@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/button";
 import Grade5Form, {
   Grade5FormRef,
@@ -10,6 +10,20 @@ import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarshi
 
 export default function Grade5ScholarshipPage() {
   const formRef = useRef<Grade5FormRef>(null);
+
+  const API_BASE_URL = "http://localhost:8080";
+
+  const memberId = "MEM001";
+
+  const [member, setMember] = useState({
+    memberId: "",
+    fullName: "",
+    nameWithInitials: "",
+    nic: "",
+  });
+
+  const [grade5Request, setGrade5Request] = useState<any>(null);
+
   const [openModal, setOpenModal] = useState(false);
   const [status, setStatus] = useState("Draft");
   const [incompleteReason, setIncompleteReason] = useState("");
@@ -24,23 +38,117 @@ export default function Grade5ScholarshipPage() {
   const [eligibleMonths, setEligibleMonths] = useState(0);
   const [isDoubleAmount, setIsDoubleAmount] = useState(false);
 
-  const handleConfirm = (reason: string) => {
-    if (!reason.trim()) return;
+  useEffect(() => {
+  if (memberId) {
+    fetchMember();
+    fetchGrade5Requests();
+  }
+}, [memberId]);
 
-    setStatus("Incomplete");
-    setIncompleteReason(reason);
-    setOpenModal(false);
+  const fetchMember = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/members/${memberId}`);
 
-    console.log("Marked as Incomplete:", reason);
+      if (!res.ok) {
+        throw new Error("Failed to fetch member");
+      }
+
+      const data = await res.json();
+
+      setMember({
+        memberId: data.memberId,
+        fullName: data.fullName,
+        nameWithInitials: data.nameWithInitials,
+        nic: data.nic,
+      });
+    } catch (error) {
+      console.error("Fetch member error:", error);
+    }
   };
 
-  const handleSave = () => {
+  const fetchGrade5Requests = async () => {
+    if (!memberId) return;
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/${memberId}/request`
+      );
+
+      if (!res.ok) {
+        console.error("API error:", res.status);
+        return;
+      }
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+
+      if (data) {
+        setGrade5Request(data);
+      }
+    } catch (error) {
+      console.error("Fetch error:", error);
+    }
+  };
+
+ const handleConfirm = async (reason: string) => {
+    if (!reason.trim()) {
+      setFundError("Incomplete reason is required.");
+      return;
+    }
+
+    if (!grade5Request?.id) {
+      setFundError("Please save Grade 5 request before marking incomplete.");
+      setOpenModal(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/${grade5Request.id}/mark-incomplete`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reason }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        setFundError(text || "Failed to mark incomplete.");
+        return;
+      }
+
+      const updatedRequest = await res.json();
+
+      setGrade5Request(updatedRequest);
+      setOpenModal(false);
+      setFundError("");
+    } catch (error) {
+      console.error(error);
+      setFundError("Failed to mark request as incomplete.");
+    }
+  };
+
+  const handleSave = async () => {
     if (!fundRefreshed) {
       setFundError("Please click Refresh in Fund Disbursement before saving.");
       return;
     }
 
-    formRef.current?.submitForm();
+    try {
+      const savedRequest = await formRef.current?.submitForm();
+
+      if (savedRequest) {
+        setGrade5Request(savedRequest);
+        await fetchMember();
+        setFundError("");
+      }
+    } catch (error) {
+      console.error(error);
+      setFundError("Failed to save Grade 5 request.");
+    }
   };
 
   const handleSubmitForm = () => {
@@ -102,9 +210,30 @@ export default function Grade5ScholarshipPage() {
 
           {/* Header */}
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-[#953002]">
-              New Grade 5 Scholarship
-            </p>
+            <div>
+              <p className="text-2xl font-bold text-[#953002]">
+                Grade 5 Scholarship Request
+                {grade5Request?.requestNo && `: ${grade5Request.requestNo}`}
+              </p>
+
+              <div className="flex items-center gap-3 mt-1">
+                <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
+                  Member: {member.fullName} ({member.memberId})
+                </div>
+
+                {grade5Request?.status && (
+                  <p className="text-sm font-semibold text-blue-600">
+                    • Status: {grade5Request.status}
+                  </p>
+                )}
+                {grade5Request?.status === "INCOMPLETE" &&
+                  grade5Request?.incompleteReason && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      ({grade5Request.incompleteReason})
+                    </p>
+                )}
+              </div>
+            </div>
 
             <div className="flex gap-2">
               <Button
@@ -130,13 +259,58 @@ export default function Grade5ScholarshipPage() {
             </div>
           </div>
 
+          <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
+            <h2 className="text-lg font-bold text-[#953002] mb-4">
+              Member Details
+            </h2>
+
+            <div className="grid grid-cols-3 gap-5">
+              <div>
+                <label className="block font-medium mb-1">Member ID</label>
+                <input
+                  type="text"
+                  value={member.memberId || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium mb-1">
+                  Surname with Initials
+                </label>
+                <input
+                  type="text"
+                  value={member.nameWithInitials || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium mb-1">NIC Number</label>
+                <input
+                  type="text"
+                  value={member.nic || ""}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Main Content */}
           <div className="flex gap-6 mt-6">
             <div className="flex-1 flex flex-col gap-6">
 
               {/* Form */}
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <Grade5Form ref={formRef} />
+                <Grade5Form
+                  ref={formRef}
+                  memberId={memberId}
+                  initialData={grade5Request}
+                  readOnly={!!grade5Request?.id}
+                />
               </div>
 
               {/* Fund Disbursement */}
@@ -289,12 +463,19 @@ export default function Grade5ScholarshipPage() {
 
               {/* ✅ Document Upload MOVED BELOW */}
               <div className="bg-white rounded-lg shadow-sm p-4">
-                <DocumentUpload requestId={null} memberId={""} requestStatus={""} />
+                <p className="text-xl font-bold text-[#953002] mb-4">
+                  Supporting Documents
+                </p>
+                 <DocumentUpload
+                    requestId={grade5Request?.id || null}
+                    memberId={memberId}
+                    requestStatus={grade5Request?.status || "NEW"}
+                    requestType="grade5-requests"
+                  />
               </div>
 
             </div>
           </div>
-
         </div>
       </div>
 

@@ -16,10 +16,11 @@ interface Props {
     effectiveDate: string;
     comment: string;
   };
+  readOnly?: boolean;
 }
 
 const RetirementForm = forwardRef<RetirementFormRef, Props>(
-  ({ initialData }, ref) => {
+  ({ initialData, readOnly=false }, ref) => {
     const [requestedDate, setRequestedDate] = useState("");
     const [effectiveDate, setEffectiveDate] = useState("");
     const [comment, setComment] = useState("");
@@ -87,6 +88,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
               value={requestedDate}
               max={new Date().toISOString().split("T")[0]}
               onChange={(e) => setRequestedDate(e.target.value)}
+              disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"
             />
           </div>
@@ -100,6 +102,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
               type="date"
               value={effectiveDate}
               onChange={(e) => setEffectiveDate(e.target.value)}
+              disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"
             />
           </div>
@@ -113,6 +116,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
+            disabled={readOnly}
             className="border rounded-md px-3 py-2 w-full min-h-[90px]"
             placeholder="Any remarks regarding the retirement request"
           />

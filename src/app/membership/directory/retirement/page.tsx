@@ -63,13 +63,13 @@ export default function RetirementPage() {
 
   const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
-  const memberId = "MEM002";
+  const memberId = "MEM007";
 
   useEffect(() => {
-    fetchMemberBankAccounts();
-    fetchMinorSavingsAccounts();
     fetchMember();
     fetchRetirementValidation();
+    fetchMinorSavingsAccounts();
+    fetchMemberBankAccounts();
     fetchRetirementRequests();
     fetchRetirementRequestformdata(); 
   }, []);
@@ -364,6 +364,13 @@ export default function RetirementPage() {
                     • Status: {retirementRequest.status}
                   </p>
                 )}
+
+                {retirementRequest?.status === "INCOMPLETE" &&
+                  retirementRequest?.incompleteReason && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      ( {retirementRequest.incompleteReason})
+                    </p>
+                )}
               </div>
 
               {saveError && (
@@ -489,6 +496,7 @@ export default function RetirementPage() {
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <RetirementForm
                   ref={formRef}
+                  readOnly={!!retirementRequest?.id}
                   initialData={{
                     requestedDate: retirementRequest?.requestedDate || "",
                     effectiveDate: retirementRequest?.effectiveDate || "",
@@ -615,9 +623,10 @@ export default function RetirementPage() {
                   Supporting Documents
                 </p>
                 <DocumentUpload
-                    requestId={retirementRequest?.id || null}
-                    memberId={memberId}
-                    requestStatus={retirementRequest?.status || "NEW"}
+                  requestId={retirementRequest?.id || null}
+                  memberId={memberId}
+                  requestStatus={retirementRequest?.status || "NEW"}
+                  requestType="retirement-requests"
                 />
               </div>
             </div>
