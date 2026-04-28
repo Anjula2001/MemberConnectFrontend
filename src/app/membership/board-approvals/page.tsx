@@ -56,6 +56,12 @@ type ProcessedListState = {
   rejectReason: string;
 };
 
+type PendingDeleteMeeting = {
+  id: number;
+  boardMeetingId?: string;
+  date: string;
+};
+
 function formatDisplayDate(value: string) {
   if (!value) return "";
   const [year, month, day] = value.split("-");
@@ -89,6 +95,9 @@ export default function BoardApprovalsPage() {
     useState<ApplicationDecision>("Approve");
   const [rejectReason, setRejectReason] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
+  const [pendingDeleteMeeting, setPendingDeleteMeeting] =
+    useState<PendingDeleteMeeting | null>(null);
   const [actualMeetingDateValue, setActualMeetingDateValue] = useState("");
   const [signedListScan, setSignedListScan] = useState("");
   const [boardRemarks, setBoardRemarks] = useState("");
@@ -190,13 +199,30 @@ export default function BoardApprovalsPage() {
     }
   };
 
-  const handleDeleteMeeting = async (id: number) => {
+  const handleOpenDeleteMeetingModal = (meeting: BoardMeeting) => {
+    if (!meeting.id) return;
+
+    setPendingDeleteMeeting({
+      id: meeting.id,
+      boardMeetingId: meeting.boardMeetingId,
+      date: meeting.date,
+    });
+    setShowDeleteMeetingModal(true);
+  };
+
+  const handleConfirmDeleteMeeting = async () => {
+    if (!pendingDeleteMeeting) return;
+
     try {
       setIsLoading(true);
-      await deleteBoardMeeting(id);
-      setCreatedMeetings((prev) => prev.filter((meeting) => meeting.id !== id));
+      await deleteBoardMeeting(pendingDeleteMeeting.id);
+      setCreatedMeetings((prev) =>
+        prev.filter((meeting) => meeting.id !== pendingDeleteMeeting.id)
+      );
       setToastMessage("Board meeting deleted successfully");
       setShowProcessToast(true);
+      setShowDeleteMeetingModal(false);
+      setPendingDeleteMeeting(null);
     } catch (error) {
       console.error("Error deleting board meeting:", error);
       setToastMessage("Failed to delete board meeting");
@@ -446,7 +472,7 @@ export default function BoardApprovalsPage() {
                         variant="ghost"
                         size="icon-sm"
                         className="text-gray-400 hover:text-gray-600"
-                        onClick={() => meeting.id && handleDeleteMeeting(meeting.id)}
+                        onClick={() => handleOpenDeleteMeetingModal(meeting)}
                         aria-label={`Delete meeting ${meeting.id}`}
                         disabled={!meeting.id}
                       >
@@ -697,6 +723,66 @@ export default function BoardApprovalsPage() {
             </Card>
           </div>
         </>
+      )}
+
+      {showDeleteMeetingModal && pendingDeleteMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {(pendingDeleteMeeting.boardMeetingId || pendingDeleteMeeting.id)} - {formatDisplayDate(pendingDeleteMeeting.date)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => {
+                  setShowDeleteMeetingModal(false);
+                  setPendingDeleteMeeting(null);
+                }}
+                aria-label="Close delete modal"
+                disabled={isLoading}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this board meeting?
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => {
+                    setShowDeleteMeetingModal(false);
+                    setPendingDeleteMeeting(null);
+                  }}
+                  disabled={isLoading}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isLoading}
+                  onClick={handleConfirmDeleteMeeting}
+                >
+                  {isLoading ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showConfirmModal && selectedApprovalList && (
