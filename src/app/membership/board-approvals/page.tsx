@@ -24,9 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { createBoardMeeting, getBoardMeetings, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 
-type BoardMeeting = {
-  id: number;
+type BoardMeeting = BoardMeetingDTO & {
   date: string;
 };
 
@@ -67,6 +67,8 @@ export default function BoardApprovalsPage() {
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
   const [dateFilter, setDateFilter] = useState("all");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [approvalLists, setApprovalLists] = useState<ApprovalListItem[]>([
     {
       listId: "BAL-2026-001",
@@ -94,6 +96,41 @@ export default function BoardApprovalsPage() {
     {}
   );
   const [showProcessToast, setShowProcessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+
+  // Fetch board meetings from database
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      try {
+        setIsFetching(true);
+        const meetings = await getBoardMeetings();
+        const formattedMeetings = meetings.map((m) => ({
+          ...m,
+          date: m.scheduledDate,
+        }));
+        setCreatedMeetings(formattedMeetings);
+      } catch (error) {
+        console.error("Error fetching board meetings:", error);
+        setToastMessage("Failed to load board meetings");
+        setShowProcessToast(true);
+      } finally {
+        setIsFetching(false);
+      }
+    };
+
+    fetchMeetings();
+  }, []);
+
+  // Toast timeout effect
+  useEffect(() => {
+    if (!showProcessToast) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setShowProcessToast(false);
+    }, 3000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [showProcessToast]);
 
   const listApplications: Record<string, ApprovalApplication[]> = {
     "BAL-2026-001": [
@@ -117,28 +154,56 @@ export default function BoardApprovalsPage() {
   const selectedProcessedState =
     (selectedApprovalListId && processedLists[selectedApprovalListId]) || null;
 
-  const nextMeetingId = useMemo(() => {
-    if (createdMeetings.length === 0) return 108;
-    return Math.max(...createdMeetings.map((meeting) => meeting.id)) + 1;
-  }, [createdMeetings]);
-
-  const handleAddMeeting = () => {
+  const handleAddMeeting = async () => {
     if (!selectedDate) return;
 
     const isDuplicateDate = createdMeetings.some(
       (meeting) => meeting.date === selectedDate
     );
-    if (isDuplicateDate) return;
+    if (isDuplicateDate) {
+      setToastMessage("A meeting already exists for this date");
+      setShowProcessToast(true);
+      return;
+    }
 
-    setCreatedMeetings((prev) => [
-      { id: nextMeetingId, date: selectedDate },
-      ...prev,
-    ]);
-    setSelectedDate("");
+    try {
+      setIsLoading(true);
+      const newMeeting = await createBoardMeeting({
+        scheduledDate: selectedDate,
+      });
+      
+      const formattedMeeting = {
+        ...newMeeting,
+        date: newMeeting.scheduledDate,
+      };
+      
+      setCreatedMeetings((prev) => [formattedMeeting, ...prev]);
+      setSelectedDate("");
+      setToastMessage("Board meeting created successfully");
+      setShowProcessToast(true);
+    } catch (error) {
+      console.error("Error creating board meeting:", error);
+      setToastMessage("Failed to create board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDeleteMeeting = (id: number) => {
-    setCreatedMeetings((prev) => prev.filter((meeting) => meeting.id !== id));
+  const handleDeleteMeeting = async (id: number) => {
+    try {
+      setIsLoading(true);
+      await deleteBoardMeeting(id);
+      setCreatedMeetings((prev) => prev.filter((meeting) => meeting.id !== id));
+      setToastMessage("Board meeting deleted successfully");
+      setShowProcessToast(true);
+    } catch (error) {
+      console.error("Error deleting board meeting:", error);
+      setToastMessage("Failed to delete board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const filteredApprovalLists = useMemo(() => {
@@ -194,16 +259,6 @@ export default function BoardApprovalsPage() {
     applicationDecision === "Approve" ? selectedListApplications.length : 0;
   const rejectedCount =
     applicationDecision === "Reject" ? selectedListApplications.length : 0;
-
-  useEffect(() => {
-    if (!showProcessToast) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setShowProcessToast(false);
-    }, 3000);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [showProcessToast]);
 
   const handleRetrieveApprovalLists = () => {
     const generated = createdMeetings.map((meeting, index) => ({
@@ -341,10 +396,10 @@ export default function BoardApprovalsPage() {
                 <Button
                   type="button"
                   onClick={handleAddMeeting}
-                  disabled={!selectedDate}
+                  disabled={!selectedDate || isLoading}
                   className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
-                  Add
+                  {isLoading ? "Creating..." : "Add"}
                 </Button>
               </div>
             </CardContent>
@@ -357,7 +412,11 @@ export default function BoardApprovalsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-5 pb-5">
-              {createdMeetings.length === 0 ? (
+              {isFetching ? (
+                <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
+                  Loading meetings...
+                </div>
+              ) : createdMeetings.length === 0 ? (
                 <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
                   No meetings added yet.
                 </div>
@@ -751,7 +810,7 @@ export default function BoardApprovalsPage() {
         <div className="fixed bottom-6 right-6 z-50 rounded-lg border bg-white px-4 py-3 shadow-lg">
           <div className="flex items-center gap-2 text-sm text-gray-800">
             <CheckCircle2 size={16} className="text-black" />
-            <span>Board Approval List Processed Successfully</span>
+            <span>{toastMessage || "Board Approval List Processed Successfully"}</span>
           </div>
         </div>
       )}
