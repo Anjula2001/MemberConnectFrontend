@@ -113,7 +113,7 @@ const actionGroups = {
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Death Donation Request", "Add Documents"],
+	secondary: ["Death Donation Request", "Add Documents", "Record Member Death"],
 };
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -153,6 +153,7 @@ export default function MemberProfilePage({
 			"Request Termination": "/membership/directory/request-termination",
 			"Death Donation Request": "/membership/directory/death-donation-request",
 			"Add Documents": "/membership/directory/add-documents",
+			"Record Member Death": "/membership/directory/record-member-death",
 		};
 
 		const route = routeMap[action];
