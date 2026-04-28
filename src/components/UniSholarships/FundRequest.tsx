@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
-import Document from "./Document";
+import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 
 import { fundRequestSchema } from "@/lib/validators/fundrequestvalidation.schema";
@@ -18,7 +18,18 @@ type FundRequestFormInput = z.input<FundRequestSchema>;
 type FundRequestFormOutput = z.output<FundRequestSchema>;
 
 export default function FundDisbursementRequest() {
+  const [requestId, setRequestId] = useState<number | null>(null);
   const [showIncomplete, setShowIncomplete] = useState(false);
+  const [status, setStatus] = useState<
+    "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
+  >("NEW");
+  const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+
+  const [isSaved, setIsSaved] = useState(false);
+  
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
 
   const availableBalance = 200000;
 
@@ -129,16 +140,22 @@ export default function FundDisbursementRequest() {
           </section>
 
           {/* DOCUMENT SECTION */}
-          <section className="rounded-lg border bg-white p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-[#953002]">
+          <section className="rounded-lg border bg-white p-4">
+            <h3 className="mb-4 text-xl font-bold text-[#953002]">
               Supporting Documents
             </h3>
-
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
-              <Document />
+          
+            <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
+              <Document
+                requestId={requestId}
+                disabled={isSubmitted}
+                isSaved={isSaved}
+                files={documentFiles}
+                setFiles={setDocumentFiles}
+                documentTypes={requiredDocumentTypes}
+              />
             </div>
           </section>
-
           {/* ACTION BUTTONS */}
           <div className="flex justify-end gap-3">
             <Button
