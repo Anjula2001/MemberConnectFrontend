@@ -261,12 +261,14 @@ export default function BoardApprovalsPage() {
     applicationDecision === "Reject" ? selectedListApplications.length : 0;
 
   const handleRetrieveApprovalLists = () => {
-    const generated = createdMeetings.map((meeting, index) => ({
-      listId: `BAL-${new Date(meeting.date).getFullYear()}-${String(meeting.id + index).padStart(3, "0")}`,
-      status: "CREATED" as const,
-      meetingId: meeting.id,
-      date: meeting.date,
-    }));
+    const generated = createdMeetings
+      .filter((meeting) => meeting.id !== undefined)
+      .map((meeting, index) => ({
+        listId: `BAL-${new Date(meeting.date).getFullYear()}-${String((meeting.id || 0) + index).padStart(3, "0")}`,
+        status: "CREATED" as const,
+        meetingId: meeting.id || 0,
+        date: meeting.date,
+      }));
 
     if (generated.length > 0) {
       setApprovalLists((prev) => {
@@ -444,8 +446,9 @@ export default function BoardApprovalsPage() {
                         variant="ghost"
                         size="icon-sm"
                         className="text-gray-400 hover:text-gray-600"
-                        onClick={() => handleDeleteMeeting(meeting.id)}
+                        onClick={() => meeting.id && handleDeleteMeeting(meeting.id)}
                         aria-label={`Delete meeting ${meeting.id}`}
+                        disabled={!meeting.id}
                       >
                         <Trash2 size={16} />
                       </Button>
