@@ -18,20 +18,28 @@ import {
   SelectValue,
 } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import { Search, RotateCcw, ArrowUp, ChevronDown } from "lucide-react";
+import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil } from "lucide-react";
 
 type RequestRow = {
   id: number;
-  requestId: string;
+  requestId?: string;
   studentName: string;
-  memberName: string;
-  universityName: string;
-  status: string;
+  memberName?: string;
+  memberId?: string;
+  universityName?: string;
+  status?: string;
+  nic?: string;
+  birthCertificateNumber?: string;
+  mobile?: string;
+  address?: string;
+  examNumber?: string;
+  applicationReceivedOn?: string;
 };
 
 export default function Page() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [displayed, setDisplayed] = useState<RequestRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Search/filter state (copied from New Registrations UI)
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -82,30 +90,109 @@ export default function Page() {
     { value: "rejected", label: "Rejected" },
   ];
 
+  // Function to get status colors based on status value
+  const getStatusColor = (status?: string) => {
+    if (!status) return "bg-yellow-100 border-yellow-200 text-yellow-500";
+    
+    const statusLower = status.toLowerCase();
+    
+    if (statusLower === "new") {
+      return "bg-blue-100 border-blue-200 text-blue-500";
+    } else if (statusLower === "incomplete") {
+      return "bg-pink-100 border-pink-200 text-pink-500";
+    } else if (statusLower === "approved") {
+      return "bg-green-100 border-green-200 text-green-500";
+    } else if (statusLower === "rejected") {
+      return "bg-red-100 border-red-200 text-red-500";
+    } else {
+      return "bg-yellow-100 border-yellow-200 text-yellow-500";
+    }
+  };
+
   useEffect(() => {
-    const fetchRequests = async () => {
-      try {
-        const res = await fetch("http://localhost:8080/api/university-scholarships");
-        const data = await res.json();
-
-        console.log("API data:", data);
-
-        if (Array.isArray(data)) {
-          setRequests(data);
-          setDisplayed(data);
-        } else {
-          setRequests([]);
-          setDisplayed([]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch requests:", error);
-        setRequests([]);
-        setDisplayed([]);
-      }
-    };
-
-    fetchRequests();
+    // Component initialization - no automatic data fetch
   }, []);
+
+  // Real-time filtering as user changes filters
+  useEffect(() => {
+    if (requests.length === 0) return; // Don't filter if no data
+
+    let filtered = [...requests];
+
+    console.log("Total requests:", requests.length);
+    console.log("Selected locations:", selectedLocations);
+    console.log("Sample request data:", requests[0]);
+
+    // Filter by location (using address field from backend)
+    if (selectedLocations.length > 0) {
+      filtered = filtered.filter((r) => {
+        const requestAddress = (r.address || "").toLowerCase().trim();
+        return selectedLocations.some(loc => 
+          requestAddress === loc.toLowerCase().trim()
+        );
+      });
+      console.log("After location filter:", filtered.length, "records");
+    }
+
+    // Filter by status
+    if (selectedStatuses.length > 0) {
+      filtered = filtered.filter((r) => {
+        if (!r.status) return false;
+        const normalizedStatus = r.status.toLowerCase().replace(/[\s_]+/g, "");
+        return selectedStatuses.includes(normalizedStatus);
+      });
+    }
+
+    // Filter by application received date
+    if (applicationReceivedOn !== "all") {
+      const today = new Date();
+      
+      filtered = filtered.filter((r) => {
+        if (!r.applicationReceivedOn) return false;
+        const rDate = new Date(r.applicationReceivedOn);
+
+        if (applicationReceivedOn === "thisMonth") {
+          return rDate.getMonth() === today.getMonth() && rDate.getFullYear() === today.getFullYear();
+        } else if (applicationReceivedOn === "thisAndLastMonth") {
+          const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          return rDate >= lastMonth && rDate <= today;
+        }
+        return true;
+      });
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (r) =>
+          (r.studentName && r.studentName.toLowerCase().includes(q)) ||
+          (r.memberName && r.memberName.toLowerCase().includes(q)) ||
+          (r.memberId && r.memberId.toLowerCase().includes(q)) ||
+          (r.requestId && r.requestId.toLowerCase().includes(q)) ||
+          (r.nic && r.nic.toLowerCase().includes(q)) ||
+          (r.examNumber && r.examNumber.toLowerCase().includes(q))
+      );
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "student") {
+        cmp = (a.studentName || "").localeCompare(b.studentName || "");
+      } else if (sortBy === "member") {
+        cmp = (a.memberName || "").localeCompare(b.memberName || "");
+      } else if (sortBy === "university") {
+        cmp = (a.universityName || "").localeCompare(b.universityName || "");
+      } else {
+        cmp = (a.requestId || "").localeCompare(b.requestId || "");
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+
+    console.log("Final filtered results:", filtered.length, "records");
+    setDisplayed(filtered);
+  }, [requests, selectedLocations, selectedStatuses, applicationReceivedOn, searchQuery, sortBy, sortAsc]);
 
   function MultiSelect({
     options,
@@ -182,36 +269,56 @@ export default function Page() {
     );
   }
 
-  const handleRetrieve = () => {
-    let filtered = [...requests];
-
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((r) => selectedStatuses.includes(r.status.toLowerCase()));
+  const handleRetrieve = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Fetch fresh data from backend (without query parameters)
+      // Filtering will be done client-side by the useEffect hook
+      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const data = await res.json();
+      
+      console.log("Retrieved fresh data from backend:", data);
+      
+      if (Array.isArray(data) && data.length > 0) {
+        // Log the complete first record to see all fields
+        console.log("========== FIRST RECORD STRUCTURE ==========");
+        console.log(JSON.stringify(data[0], null, 2));
+        console.log("==========================================");
+        
+        // Log all available field names
+        const fieldNames = Object.keys(data[0]);
+        console.log("Available fields in the data:", fieldNames);
+        
+        // Check for location-related fields
+        const locationFields = fieldNames.filter(f => 
+          f.toLowerCase().includes('location') || 
+          f.toLowerCase().includes('district') || 
+          f.toLowerCase().includes('area')
+        );
+        console.log("Location-related fields found:", locationFields);
+        
+        // Get all unique values for each field
+        fieldNames.forEach(field => {
+          const uniqueValues = [...new Set(data.map(r => r[field]))].slice(0, 5);
+          console.log(`${field}:`, uniqueValues);
+        });
+        
+        setRequests(data);
+        // useEffect will automatically apply filters
+      } else {
+        setRequests([]);
+        setDisplayed([]);
+      }
+      setHasRetrieved(true);
+    } catch (error) {
+      console.error("Failed to retrieve requests:", error);
+      setRequests([]);
+      setDisplayed([]);
+      setHasRetrieved(true);
+    } finally {
+      setIsLoading(false);
     }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          r.studentName.toLowerCase().includes(q) ||
-          r.memberName.toLowerCase().includes(q) ||
-          r.universityName.toLowerCase().includes(q) ||
-          r.requestId.toLowerCase().includes(q)
-      );
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "student") cmp = a.studentName.localeCompare(b.studentName);
-      else if (sortBy === "member") cmp = a.memberName.localeCompare(b.memberName);
-      else if (sortBy === "university") cmp = a.universityName.localeCompare(b.universityName);
-      else cmp = a.requestId.localeCompare(b.requestId);
-      return sortAsc ? cmp : -cmp;
-    });
-
-    setDisplayed(filtered);
-    setHasRetrieved(true);
   };
 
   return (
@@ -279,14 +386,14 @@ export default function Page() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="flex flex-col gap-1 md:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Search (Name / NIC / Request)</label>
+              <label className="text-xs font-medium text-gray-600">Search (MemberName / MemberID / StudentName / StudentNIC / RequestID / ExamNumber)</label>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by Student, Member, University or Request ID..."
+                  placeholder="Search by StudentName, StudentID, MemberName, MemberID, ExamNumber or Request ID..."
                   className="pl-8"
                 />
               </div>
@@ -309,9 +416,9 @@ export default function Page() {
                 <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
                   <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
                 </Button>
-                <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap" onClick={handleRetrieve}>
-                  <RotateCcw size={14} />
-                  Retrieve
+                <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap" onClick={handleRetrieve} disabled={isLoading}>
+                  <RotateCcw size={14} className={isLoading ? "animate-spin" : ""} />
+                  {isLoading ? "Retrieving..." : "Retrieve"}
                 </Button>
               </div>
             </div>
@@ -326,8 +433,8 @@ export default function Page() {
                     <tr className="text-sm text-gray bold">
                         <th className="py-4 px-4 font-medium">Request ID</th>
                         <th className="py-4 px-4 font-medium">Student</th>
+                        <th className="py-4 px-4 font-medium">NIC</th>
                         <th className="py-4 px-4 font-medium">Member</th>
-                        <th className="py-4 px-4 font-medium">University</th>
                         <th className="py-4 px-4 font-medium">Status</th>
                         <th className="py-4 px-4 font-medium">Action</th>
                     </tr>
@@ -342,24 +449,33 @@ export default function Page() {
                         </tr>
                     ) : (
                       displayed.map((item) => (
-                        <tr key={item.id} className="border-t text-small text-gray-600">
-                            <td className="py-4 px-4 text-gray-600">{item.requestId}</td>
-                            <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
-                            <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
-                            <td className="py-4 px-4 text-gray-600">{item.universityName}</td>
+                        <tr key={item.id} className="border-t text-sm text-gray-600">
                             <td className="py-4 px-4">
-                            <span className="px-2 py-1 rounded-full bg-white border border-gray-300 text-sm text-gray-600">
+                              <Link
+                                href={`../membership/directory/university-scholarship`}
+                                className="text-[#953002] hover:underline font-medium"
+                              >
+                                {item.requestId}
+                              </Link>
+                            </td>
+                            <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
+                            <td className="py-4 px-4 text-gray-600">{item.nic}</td>
+                            <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
+                            <td className="py-4 px-4">
+                            <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
                                 {item.status}
                             </span>
                             </td>
                             <td className="py-4 px-4">
-                                <Link
-                                    href={`/scholarships/university/${item.id}`}
-                                    className="text-[#953002] hover:underline font-medium"
-                                >
-                                    View
-                                </Link>
-                                </td>
+                                {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
+                                  <Link
+                                    href={`../membership/directory/university-scholarship`}
+                                    className="text-[#953002] hover:text-[#c44515] transition-colors"
+                                  >
+                                    <Pencil size={18} />
+                                  </Link>
+                                )}
+                            </td>
                         </tr>
                         ))
                     )}
