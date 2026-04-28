@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useToast } from "@/lib/toast-context";
 import {
   memberRegistrationSchema,
   type MemberRegistration,
@@ -163,6 +164,7 @@ export function NewMemberRegistrationForm({
   applicationId,
   onDone,
 }: NewMemberRegistrationFormProps) {
+  const { addToast } = useToast();
   const isEditMode = !!applicationId;
   const [currentTab, setCurrentTab] = useState<"application" | "documents">(
     "application"
@@ -447,7 +449,7 @@ export function NewMemberRegistrationForm({
             error instanceof Error
               ? error.message
               : "Failed to load application details";
-          alert(message);
+          addToast(message, "destructive");
         }
       } finally {
         if (!isCancelled) {
@@ -523,7 +525,7 @@ export function NewMemberRegistrationForm({
         setSavedApplicationId(response.id);
         const summary = await getDocumentSummary(response.id);
         setDocumentSummary(summary);
-        alert(
+        addToast(
           isEditMode
             ? "Registration updated successfully!"
             : "Registration saved successfully! You can now upload documents."
@@ -537,7 +539,7 @@ export function NewMemberRegistrationForm({
           : isEditMode
             ? "Failed to update registration"
             : "Failed to save registration";
-      alert(message);
+      addToast(message, "destructive");
     } finally {
       setIsSubmitting(false);
     }
@@ -545,7 +547,7 @@ export function NewMemberRegistrationForm({
 
   const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
     if (!savedApplicationId) {
-      alert("Please save the application first");
+      addToast("Please save the application first", "destructive");
       return;
     }
 
@@ -571,11 +573,11 @@ export function NewMemberRegistrationForm({
 
       const summary = await getDocumentSummary(savedApplicationId);
       setDocumentSummary(summary);
-      alert(`${documentType.replace(/_/g, " ")} uploaded successfully!`);
+      addToast(`${documentType.replace(/_/g, " ")} uploaded successfully!`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to upload document";
-      alert(message);
+      addToast(message, "destructive");
     } finally {
       setIsUploadingDoc(false);
     }
