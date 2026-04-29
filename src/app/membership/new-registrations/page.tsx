@@ -516,7 +516,7 @@ export default function NewRegistrationsPage() {
       setDisplayData((prev) =>
         prev.map((r) =>
           r.appId === row.appId
-            ? { ...r, status: "SUBMITTED_FOR_APPROVAL", selectable: false }
+            ? { ...r, status: "SUBMITTED_FOR_APPROVAL", selectable: true }
             : r
         )
       );
