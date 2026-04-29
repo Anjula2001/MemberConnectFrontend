@@ -491,21 +491,6 @@ export default function StudentExamSection() {
     }
 
     try {
-      const hasPendingDocuments = documentFiles.some((file) => !file.id);
-
-      if (hasPendingDocuments) {
-        try {
-          await uploadDocuments(requestId);
-        } catch (err: any) {
-          console.error("Document upload before submit failed:", err);
-          setExamNoPopupMessage(
-            err?.message || "Failed to upload documents before submitting"
-          );
-          setShowExamNoPopup(true);
-          return;
-        }
-      }
-
       const response = await fetch(
         `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
         {
@@ -626,58 +611,32 @@ export default function StudentExamSection() {
     const uploadedItems: DocumentFileItem[] = [];
 
     for (const file of documentFiles) {
-      // skip files that already have an id (already uploaded)
-      if ((file as any).id) {
-        uploadedItems.push(file);
-        continue;
-      }
-
       const formData = new FormData();
       formData.append("file", file.file);
       formData.append("documentType", file.documentType);
 
-      try {
-        const response = await fetch(
-          `http://localhost:8080/api/documents/upload/${savedRequestId}`,
-          {
-            method: "POST",
-            body: formData,
-            credentials: "include",
-          }
-        );
-
-        if (!response.ok) {
-          const body = await response.text().catch(() => "");
-          console.error("Document upload failed", response.status, body);
-          throw new Error(`Document upload failed: ${response.status}`);
+      const response = await fetch(
+        `http://localhost:8080/api/documents/upload/${savedRequestId}`,
+        {
+          method: "POST",
+          body: formData,
         }
+      );
 
-        const savedDoc = await response.json();
-
-        uploadedItems.push({
-          ...file,
-          id: savedDoc.id,
-          uploadedAt: savedDoc.uploadedAt,
-        });
-      } catch (err) {
-        console.error("Failed to upload document", err);
-        // Re-throw so callers can decide what to do (e.g., abort submit)
-        throw err;
+      if (!response.ok) {
+        throw new Error("Document upload failed");
       }
+
+      const savedDoc = await response.json();
+
+      uploadedItems.push({
+        ...file,
+        id: savedDoc.id,
+        uploadedAt: savedDoc.uploadedAt,
+      });
     }
 
-    // Merge uploaded items with any uploadedDocuments already present
     setDocumentFiles(uploadedItems);
-    setUploadedDocuments((prev) => {
-      const existing = prev || [];
-      const merged = [...existing];
-      for (const it of uploadedItems) {
-        if ((it as any).id && !existing.find((e) => e.id === (it as any).id)) {
-          merged.push(it as any);
-        }
-      }
-      return merged;
-    });
   };
   
   //Handle save 
