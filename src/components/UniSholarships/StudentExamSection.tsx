@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type FormData = {
   requestDate: string;
@@ -31,8 +32,40 @@ type FormData = {
   minorAccountMonths?: string;
 };
 
+type ScholarshipRecord = {
+  id: number;
+  memberId?: string | null;
+  requestId?: string | null;
+  studentName?: string | null;
+  memberName?: string | null;
+  universityName?: string | null;
+  status?: string | null;
+  nic?: string | null;
+  birthCertificateNumber?: string | null;
+  address?: string | null;
+  mobile?: string | null;
+  applicantType?: string | null;
+  examYear?: string | null;
+  examNumber?: string | null;
+  zscore?: string | null;
+  duration?: string | null;
+  academicYearStartDate?: string | null;
+  accountNumber?: string | null;
+  bankName?: string | null;
+  branchName?: string | null;
+  hasMinorAccount?: string | null;
+  minorAccountMonths?: string | null;
+  incompleteReason?: string | null;
+  requestDate?: string | null;
+  programName?: string | null;
+};
+
 export default function StudentExamSection() {
   const HARDCODED_MEMBER_ID = 8;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestKey = searchParams.get("requestId") || searchParams.get("id");
+  const mode = searchParams.get("mode") || "view";
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
@@ -48,6 +81,7 @@ export default function StudentExamSection() {
   const [scholarshipRequestNo, setScholarshipRequestNo] = useState("");
 
   const [requestId, setRequestId] = useState<number | null>(null);
+  const [loadedRecord, setLoadedRecord] = useState<ScholarshipRecord | null>(null);
   const [status, setStatus] = useState<
     "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
   >("NEW");
@@ -58,12 +92,19 @@ export default function StudentExamSection() {
 
 
   const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const isExistingRequest = Boolean(requestKey);
+  const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
+  const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
+  const isViewMode = isExistingRequest && !isEditMode;
+  const canModifyForm = isExistingRequest ? isEditMode : !isSaved;
+  const isInputsDisabled = isViewMode || isSubmitted || !canModifyForm;
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
@@ -114,6 +155,154 @@ export default function StudentExamSection() {
 
     fetchMember();
   }, []);
+
+  // Load an existing scholarship request for view/edit mode
+  useEffect(() => {
+    if (!requestKey) {
+      setLoadedRecord(null);
+      return;
+    }
+
+    const fetchRequest = async () => {
+      try {
+        const res = await fetch("http://localhost:8080/api/university-scholarships");
+
+        if (!res.ok) {
+          throw new Error("Failed to load scholarship request");
+        }
+
+        const data: ScholarshipRecord[] = await res.json();
+        const found = data.find((item) => {
+          const idMatches = String(item.id) === requestKey;
+          const requestMatches = item.requestId === requestKey;
+
+          return idMatches || requestMatches;
+        });
+
+        if (!found) {
+          throw new Error("Scholarship request not found");
+        }
+
+        setLoadedRecord(found);
+      } catch (error) {
+        console.error("Failed to load scholarship request:", error);
+        setLoadedRecord(null);
+      }
+    };
+
+    fetchRequest();
+  }, [requestKey]);
+
+  useEffect(() => {
+    if (!loadedRecord) return;
+
+    reset({
+      requestDate: loadedRecord.requestDate || "",
+      studentName: loadedRecord.studentName || "",
+      nic: loadedRecord.nic || "",
+      bcNo: loadedRecord.birthCertificateNumber || "",
+      address: loadedRecord.address || "",
+      mobile: loadedRecord.mobile || "",
+      isSchoolApplicant: loadedRecord.applicantType === "SCHOOL_APPICANT",
+      examYear: loadedRecord.examYear || "",
+      examNo: loadedRecord.examNumber || "",
+      zScore: loadedRecord.zscore || "",
+      university: "",
+      program: "",
+      duration: loadedRecord.duration || "",
+      academicYearStart: loadedRecord.academicYearStartDate || "",
+      accountNo: loadedRecord.accountNumber || "",
+      bank: "",
+      branch: "",
+      hasMinorAccount: loadedRecord.hasMinorAccount || "",
+      minorAccountMonths: loadedRecord.minorAccountMonths || "",
+    });
+
+    setRequestId(loadedRecord.id);
+    setScholarshipRequestNo(loadedRecord.requestId || "");
+    setStatus((loadedRecord.status as any) || "NEW");
+    setIsSaved(true);
+  }, [loadedRecord, reset]);
+
+  useEffect(() => {
+    if (!loadedRecord || universities.length === 0) return;
+
+    const university = universities.find(
+      (item) =>
+        item.name?.toString().trim().toLowerCase() ===
+        loadedRecord.universityName?.toString().trim().toLowerCase()
+    );
+
+    if (university) {
+      setValue("university", String(university.id));
+    }
+  }, [loadedRecord, universities, setValue]);
+
+  useEffect(() => {
+    if (!loadedRecord || programs.length === 0) return;
+
+    const program = programs.find(
+      (item) =>
+        item.programName?.toString().trim().toLowerCase() ===
+        loadedRecord.programName?.toString().trim().toLowerCase()
+    );
+
+    if (program) {
+      setValue("program", String(program.programId));
+    }
+  }, [loadedRecord, programs, setValue]);
+
+  useEffect(() => {
+    if (!loadedRecord || banks.length === 0) return;
+
+    const bank = banks.find(
+      (item) =>
+        item.name?.toString().trim().toLowerCase() ===
+        loadedRecord.bankName?.toString().trim().toLowerCase()
+    );
+
+    if (bank) {
+      setValue("bank", String(bank.id));
+    }
+  }, [loadedRecord, banks, setValue]);
+
+  useEffect(() => {
+    if (!loadedRecord || branches.length === 0) return;
+
+    const branch = branches.find(
+      (item) =>
+        item.name?.toString().trim().toLowerCase() ===
+        loadedRecord.branchName?.toString().trim().toLowerCase()
+    );
+
+    if (branch) {
+      setValue("branch", String(branch.id));
+    }
+  }, [loadedRecord, branches, setValue]);
+
+  useEffect(() => {
+    if (!loadedRecord?.id) return;
+
+    const fetchDocuments = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/documents/request/${loadedRecord.id}`
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to load documents");
+        }
+
+        const data = await res.json();
+        setUploadedDocuments(data);
+      } catch (error) {
+        console.error("Failed to load documents:", error);
+        setUploadedDocuments([]);
+      }
+    };
+
+    fetchDocuments();
+  }, [loadedRecord?.id]);
   
   
   /* Load uploaded documents for existing request
@@ -302,6 +491,21 @@ export default function StudentExamSection() {
     }
 
     try {
+      const hasPendingDocuments = documentFiles.some((file) => !file.id);
+
+      if (hasPendingDocuments) {
+        try {
+          await uploadDocuments(requestId);
+        } catch (err: any) {
+          console.error("Document upload before submit failed:", err);
+          setExamNoPopupMessage(
+            err?.message || "Failed to upload documents before submitting"
+          );
+          setShowExamNoPopup(true);
+          return;
+        }
+      }
+
       const response = await fetch(
         `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
         {
@@ -422,32 +626,58 @@ export default function StudentExamSection() {
     const uploadedItems: DocumentFileItem[] = [];
 
     for (const file of documentFiles) {
+      // skip files that already have an id (already uploaded)
+      if ((file as any).id) {
+        uploadedItems.push(file);
+        continue;
+      }
+
       const formData = new FormData();
       formData.append("file", file.file);
       formData.append("documentType", file.documentType);
 
-      const response = await fetch(
-        `http://localhost:8080/api/documents/upload/${savedRequestId}`,
-        {
-          method: "POST",
-          body: formData,
+      try {
+        const response = await fetch(
+          `http://localhost:8080/api/documents/upload/${savedRequestId}`,
+          {
+            method: "POST",
+            body: formData,
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          console.error("Document upload failed", response.status, body);
+          throw new Error(`Document upload failed: ${response.status}`);
         }
-      );
 
-      if (!response.ok) {
-        throw new Error("Document upload failed");
+        const savedDoc = await response.json();
+
+        uploadedItems.push({
+          ...file,
+          id: savedDoc.id,
+          uploadedAt: savedDoc.uploadedAt,
+        });
+      } catch (err) {
+        console.error("Failed to upload document", err);
+        // Re-throw so callers can decide what to do (e.g., abort submit)
+        throw err;
       }
-
-      const savedDoc = await response.json();
-
-      uploadedItems.push({
-        ...file,
-        id: savedDoc.id,
-        uploadedAt: savedDoc.uploadedAt,
-      });
     }
 
+    // Merge uploaded items with any uploadedDocuments already present
     setDocumentFiles(uploadedItems);
+    setUploadedDocuments((prev) => {
+      const existing = prev || [];
+      const merged = [...existing];
+      for (const it of uploadedItems) {
+        if ((it as any).id && !existing.find((e) => e.id === (it as any).id)) {
+          merged.push(it as any);
+        }
+      }
+      return merged;
+    });
   };
   
   //Handle save 
@@ -567,13 +797,27 @@ export default function StudentExamSection() {
       uploadedDocuments.some((doc) => doc.documentType === type)
   );
 
+  const handleEnterEditMode = () => {
+    if (!requestKey) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("requestId", requestKey);
+    params.set("mode", "edit");
+    router.replace(`?${params.toString()}`);
+  };
+
+  const statusLabel = loadedRecord?.status || status;
+  const statusReason =
+    status === "INCOMPLETE" ? loadedRecord?.incompleteReason || "" : "";
+  const pageTitle = isExistingRequest ? "University Scholarship" : "New University Scholarship";
+
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-[#953002]">
-              New University Scholarship
+              {pageTitle}
               {scholarshipRequestNo && `: ${scholarshipRequestNo}`}
             </h2>
 
@@ -582,23 +826,38 @@ export default function StudentExamSection() {
                 Member: {member?.fullName} ({member?.memberId})
               </span>
 
-              {isSaved && (
+              {(isSaved || isExistingRequest) && (
                 <span className="font-semibold text-blue-600">
                   Status:{" "}
                   <span>
-                    {status}
+                    {statusLabel}
                   </span>
+                  {statusReason && (
+                    <span className="ml-2 text-red-600 font-normal">
+                      ({statusReason})
+                    </span>
+                  )}
                 </span>
               )}
             </p>
           </div>
 
           <div className="flex gap-2">
+            {isViewMode && isEditableStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleEnterEditMode}
+              >
+                Edit
+              </Button>
+            )}
+
             <Button
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={isSubmitted || !isSaved || status !== "NEW"}
+              disabled={isInputsDisabled || !requestId || !isSaved}
             >
               Incomplete
             </Button>
@@ -607,14 +866,14 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={!isValid || isSubmitted || isSaved}
+              disabled={isInputsDisabled || !isValid}
             >
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={!isSaved || isSubmitted || !hasAllMandatoryDocuments}
+              disabled={isInputsDisabled || !requestId || !hasAllMandatoryDocuments}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
               Submit
@@ -633,7 +892,7 @@ export default function StudentExamSection() {
                 <label htmlFor="requestDate" className="mb-1 block text-sm font-medium text-gray-700">
                   Request Date <span className="text-red-500">*</span>
                 </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isSubmitted||isSaved} />
+                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled} />
                 {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
@@ -641,7 +900,7 @@ export default function StudentExamSection() {
                 <label htmlFor="studentName" className="mb-1 block text-sm font-medium text-gray-700">
                   Student Name <span className="text-red-500">*</span>
                 </label>
-                <Input id="studentName" {...register("studentName")} disabled={isSubmitted||isSaved} />
+                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled} />
                 {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
@@ -649,7 +908,7 @@ export default function StudentExamSection() {
                 <label htmlFor="nic" className="mb-1 block text-sm font-medium text-gray-700">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
-                <Input id="nic" {...register("nic")} disabled={isSubmitted||isSaved} />
+                <Input id="nic" {...register("nic")} disabled={isInputsDisabled} />
                 {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
@@ -657,7 +916,7 @@ export default function StudentExamSection() {
                 <label htmlFor="bcNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="bcNo" {...register("bcNo")} disabled={isSubmitted||isSaved} />
+                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled} />
                 {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
@@ -665,7 +924,7 @@ export default function StudentExamSection() {
                 <label htmlFor="address" className="mb-1 block text-sm font-medium text-gray-700">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
-                <Input id="address" {...register("address")} disabled={isSubmitted||isSaved} />
+                <Input id="address" {...register("address")} disabled={isInputsDisabled} />
                 {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
@@ -673,7 +932,7 @@ export default function StudentExamSection() {
                 <label htmlFor="mobile" className="mb-1 block text-sm font-medium text-gray-700">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="mobile" {...register("mobile")} disabled={isSubmitted||isSaved} />
+                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled} />
                 {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
@@ -683,7 +942,7 @@ export default function StudentExamSection() {
                 id="isSchoolApplicant"
                 type="checkbox"
                 {...register("isSchoolApplicant")}
-                disabled={isSubmitted||isSaved}
+                disabled={isInputsDisabled}
                 className="h-4 w-4 accent-[#953002]"
               />
               <label htmlFor="isSchoolApplicant" className="text-sm font-medium text-gray-700">
@@ -696,7 +955,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examYear" className="mb-1 block text-sm font-medium text-gray-700">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
-                <Input id="examYear" {...register("examYear")} disabled={isSubmitted||isSaved} />
+                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled} />
                 {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
@@ -704,7 +963,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="examNo" {...register("examNo")} disabled={isSubmitted||isSaved} />
+                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled} />
                 {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
@@ -712,7 +971,7 @@ export default function StudentExamSection() {
                 <label htmlFor="zScore" className="mb-1 block text-sm font-medium text-gray-700">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zScore")} disabled={isSubmitted||isSaved} />
+                <Input id="zScore" {...register("zScore")} disabled={isInputsDisabled} />
                 {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
               </div>
 
@@ -721,7 +980,7 @@ export default function StudentExamSection() {
                   type="button"
                   variant="outline"
                   onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo || isSubmitted||isSaved}
+                  disabled={isValidatingExamNo || isInputsDisabled}
                 >
                   {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
@@ -742,7 +1001,7 @@ export default function StudentExamSection() {
                 <select
                   id="university"
                   {...register("university")}
-                  disabled={isSubmitted||isSaved}
+                  disabled={isInputsDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
@@ -762,7 +1021,7 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university") || isSubmitted||isSaved}
+                  disabled={!watch("university") || isInputsDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
@@ -781,14 +1040,14 @@ export default function StudentExamSection() {
                 <label htmlFor="duration" className="mb-1 block text-sm font-medium text-gray-700">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} disabled={isSubmitted||isSaved} readOnly />
+                <Input id="duration" {...register("duration")} disabled={isInputsDisabled} readOnly />
               </div>
 
               <div>
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm font-medium text-gray-700">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isSubmitted||isSaved}/>
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled}/>
               </div>
             </div>
           </section>
@@ -803,7 +1062,7 @@ export default function StudentExamSection() {
                 variant="outline"
                 className="bg-gray text-black hover:bg-gray-200"
                 onClick={handleRefreshMinorAccount}
-                disabled={isSubmitted||isSaved}
+                disabled={isInputsDisabled}
               >
                 Refresh
               </Button>
@@ -814,14 +1073,14 @@ export default function StudentExamSection() {
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Minor Account Availability
                 </label>
-                <Input {...register("hasMinorAccount")} readOnly />
+                <Input {...register("hasMinorAccount")} readOnly disabled={isInputsDisabled} />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Remitted Months
                 </label>
-                <Input {...register("minorAccountMonths")} readOnly />
+                <Input {...register("minorAccountMonths")} readOnly disabled={isInputsDisabled} />
               </div>
             </div>
           </section>
@@ -836,7 +1095,7 @@ export default function StudentExamSection() {
                 <label htmlFor="accountNo" className="mb-1 block text-sm font-medium text-gray-700">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isSubmitted||isSaved} />
+                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled} />
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
@@ -847,7 +1106,7 @@ export default function StudentExamSection() {
                 <select
                   id="bank"
                   {...register("bank")}
-                  disabled={isSubmitted||isSaved}
+                  disabled={isInputsDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select Bank</option>
@@ -866,7 +1125,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank") || isSubmitted||isSaved}
+                  disabled={!watch("bank") || isInputsDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>
@@ -888,7 +1147,7 @@ export default function StudentExamSection() {
             <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
               <Document
                 requestId={requestId}
-                disabled={isSubmitted}
+                disabled={isInputsDisabled}
                 isSaved={isSaved}
                 files={documentFiles}
                 setFiles={setDocumentFiles}
