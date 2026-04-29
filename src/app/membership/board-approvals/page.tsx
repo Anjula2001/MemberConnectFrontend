@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
-import { createBoardMeeting, getBoardMeetings, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import { createBoardMeeting, getBoardMeetings, updateBoardMeeting, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
   getBoardApprovalLists,
   getBoardApprovalListByListId,
@@ -80,7 +80,7 @@ function formatDisplayDate(value: string) {
 
 export default function BoardApprovalsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<BoardTab>("meetings");
+  const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
   const [dateFilter, setDateFilter] = useState("all");
@@ -99,8 +99,11 @@ export default function BoardApprovalsPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
   const [showDeleteListModal, setShowDeleteListModal] = useState(false);
+  const [showEditMeetingModal, setShowEditMeetingModal] = useState(false);
   const [pendingDeleteMeeting, setPendingDeleteMeeting] =
     useState<PendingDeleteMeeting | null>(null);
+  const [pendingEditMeeting, setPendingEditMeeting] = useState<BoardMeeting | null>(null);
+  const [editedMeetingDate, setEditedMeetingDate] = useState("");
   const [boardRemarks, setBoardRemarks] = useState("");
   const [isEditingProcessedList, setIsEditingProcessedList] = useState(false);
   const [processedLists, setProcessedLists] = useState<Record<string, ProcessedListState>>(
@@ -113,6 +116,7 @@ export default function BoardApprovalsPage() {
   const [selectedApplicationDetails, setSelectedApplicationDetails] = useState<ApprovalApplication | null>(null);
   const [selectedListDetails, setSelectedListDetails] = useState<BoardApprovalListDTO | null>(null);
   const [isLoadingApplicationDetails, setIsLoadingApplicationDetails] = useState(false);
+  const [isUpdatingMeeting, setIsUpdatingMeeting] = useState(false);
 
   const mapApplicationToRow = (application: MemberApplicationDTO): ApprovalApplication => ({
     id: application.id ?? 0,
@@ -259,6 +263,59 @@ export default function BoardApprovalsPage() {
       setShowProcessToast(true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOpenEditMeetingModal = (meeting: BoardMeeting) => {
+    if (!meeting.id) return;
+
+    setPendingEditMeeting(meeting);
+    setEditedMeetingDate(meeting.date);
+    setShowEditMeetingModal(true);
+  };
+
+  const handleConfirmUpdateMeeting = async () => {
+    if (!pendingEditMeeting?.id || !editedMeetingDate) return;
+
+    const duplicateDate = createdMeetings.some(
+      (meeting) => meeting.id !== pendingEditMeeting.id && meeting.date === editedMeetingDate
+    );
+
+    if (duplicateDate) {
+      setToastMessage("A meeting already exists for this date");
+      setShowProcessToast(true);
+      return;
+    }
+
+    try {
+      setIsUpdatingMeeting(true);
+      const updatedMeeting = await updateBoardMeeting(pendingEditMeeting.id, {
+        scheduledDate: editedMeetingDate,
+      });
+
+      setCreatedMeetings((prev) =>
+        prev.map((meeting) =>
+          meeting.id === pendingEditMeeting.id
+            ? {
+                ...meeting,
+                ...updatedMeeting,
+                date: updatedMeeting.scheduledDate ?? editedMeetingDate,
+              }
+            : meeting
+        )
+      );
+
+      setToastMessage("Board meeting updated successfully");
+      setShowProcessToast(true);
+      setShowEditMeetingModal(false);
+      setPendingEditMeeting(null);
+      setEditedMeetingDate("");
+    } catch (error) {
+      console.error("Error updating board meeting:", error);
+      setToastMessage("Failed to update board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsUpdatingMeeting(false);
     }
   };
 
@@ -481,18 +538,6 @@ export default function BoardApprovalsPage() {
       <div className="inline-flex w-fit rounded-md border bg-muted p-1">
         <Button
           type="button"
-          variant={activeTab === "meetings" ? "secondary" : "ghost"}
-          className={`h-8 rounded-sm px-3 text-xs ${
-            activeTab === "meetings"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
-          }`}
-          onClick={() => setActiveTab("meetings")}
-        >
-          Board Meetings
-        </Button>
-        <Button
-          type="button"
           variant={activeTab === "approval-lists" ? "secondary" : "ghost"}
           className={`h-8 rounded-sm px-3 text-xs ${
             activeTab === "approval-lists"
@@ -502,6 +547,18 @@ export default function BoardApprovalsPage() {
           onClick={() => setActiveTab("approval-lists")}
         >
           Board Approval Lists
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "meetings" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${
+            activeTab === "meetings"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-transparent"
+          }`}
+          onClick={() => setActiveTab("meetings")}
+        >
+          Board Meetings
         </Button>
       </div>
 
@@ -563,9 +620,17 @@ export default function BoardApprovalsPage() {
                       className="flex items-center justify-between rounded-lg border px-4 py-3"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="rounded bg-[#f7ede8] p-1.5 text-[#953002]">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded bg-[#f7ede8] text-[#953002] hover:bg-[#f0dfd8] hover:text-[#7a2700]"
+                          onClick={() => handleOpenEditMeetingModal(meeting)}
+                          aria-label={`Edit meeting ${meeting.id}`}
+                          disabled={!meeting.id}
+                        >
                           <CalendarDays size={14} />
-                        </div>
+                        </Button>
                         <div className="leading-tight">
                           <p className="font-semibold text-foreground">{meeting.id}</p>
                           <p className="text-sm text-muted-foreground">
@@ -980,6 +1045,80 @@ export default function BoardApprovalsPage() {
                   onClick={handleConfirmDeleteList}
                 >
                   {isDeletingSelectedList ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditMeetingModal && pendingEditMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#953002]">
+                  Edit Board Meeting
+                </h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {(pendingEditMeeting.boardMeetingId || pendingEditMeeting.id)} - {formatDisplayDate(pendingEditMeeting.date)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => {
+                  setShowEditMeetingModal(false);
+                  setPendingEditMeeting(null);
+                  setEditedMeetingDate("");
+                }}
+                aria-label="Close edit modal"
+                disabled={isUpdatingMeeting}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Scheduled Date</label>
+                <div className="relative">
+                  <CalendarDays
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    type="date"
+                    value={editedMeetingDate}
+                    onChange={(e) => setEditedMeetingDate(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => {
+                    setShowEditMeetingModal(false);
+                    setPendingEditMeeting(null);
+                    setEditedMeetingDate("");
+                  }}
+                  disabled={isUpdatingMeeting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={isUpdatingMeeting || !editedMeetingDate}
+                  onClick={handleConfirmUpdateMeeting}
+                >
+                  {isUpdatingMeeting ? "Updating..." : "Update"}
                 </Button>
               </div>
             </div>
