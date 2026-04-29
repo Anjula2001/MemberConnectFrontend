@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, User, Loader2 } from "lucide-react";
+import { ChevronDown, User, Loader2, ArrowLeft, FileText, Download, Folder } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
 import { Badge } from "@/src/components/ui/badge";
@@ -11,6 +12,7 @@ import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
 import { getMemberById, type MemberDTO } from "@/lib/api/member";
+import { getDocumentsByApplication, type UploadDocumentResponseDTO } from "@/lib/api/documents";
 
 const detailTabs = [
 	"Profile Details",
@@ -54,7 +56,12 @@ export default function MemberProfilePage({
 	const router = useRouter();
 	const [memberIdParam, setMemberIdParam] = useState<string | null>(null);
 	const [profile, setProfile] = useState<MemberDTO | null>(null);
+	const [documents, setDocuments] = useState<UploadDocumentResponseDTO[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [activeTab, setActiveTab] = useState("Profile Details");
+	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
+
+	const uniqueDocTypes = Array.from(new Set(documents.map(d => d.documentType)));
 
 	useEffect(() => {
 		params.then((p) => setMemberIdParam(p.memberId));
@@ -67,6 +74,10 @@ export default function MemberProfilePage({
 			try {
 				const data = await getMemberById(Number(memberIdParam));
 				setProfile(data);
+				if (data.applicationId) {
+					const docs = await getDocumentsByApplication(data.applicationId);
+					setDocuments(docs);
+				}
 			} catch (err) {
 				console.error("Failed to fetch member", err);
 			} finally {
@@ -110,6 +121,15 @@ export default function MemberProfilePage({
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
+			<div className="flex items-center">
+				<Link 
+					href="/membership/directory" 
+					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+				>
+					<ArrowLeft className="h-4 w-4" />
+					Back to List
+				</Link>
+			</div>
 			<div className="rounded-xl border border-neutral-200 bg-white">
 				<div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 p-4">
 					<div className="flex items-center gap-3">
@@ -184,14 +204,15 @@ export default function MemberProfilePage({
 				</div>
 
 				<div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2">
-					{detailTabs.map((tab, index) => (
+					{detailTabs.map((tab) => (
 						<button
 							key={tab}
 							type="button"
+							onClick={() => setActiveTab(tab)}
 							className={
-								index === 0
-									? "rounded-sm border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700"
-									: "rounded-sm px-2.5 py-1 text-xs font-medium text-neutral-500"
+								activeTab === tab
+									? "rounded-sm border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm"
+									: "rounded-sm px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700"
 							}
 						>
 							{tab}
@@ -200,6 +221,7 @@ export default function MemberProfilePage({
 				</div>
 
 				<div className="p-4">
+					{activeTab === "Profile Details" && (
 					<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 						<CardContent className="space-y-5 p-4">
 							<div>
@@ -262,6 +284,110 @@ export default function MemberProfilePage({
 							</div>
 						</CardContent>
 					</Card>
+					)}
+
+					{activeTab === "Documents" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-5 p-4">
+								<div>
+									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+										Uploaded Documents
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
+								</div>
+								
+								{documents.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
+										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
+										<p>No documents found for this member.</p>
+									</div>
+								) : !selectedDocType ? (
+									<div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+										{uniqueDocTypes.map((type) => {
+											const count = documents.filter((d) => d.documentType === type).length;
+											return (
+												<button
+													key={type}
+													type="button"
+													onClick={() => setSelectedDocType(type)}
+													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#b2410f]/30 hover:shadow-sm"
+												>
+													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#b2410f]/10 text-[#b2410f]">
+														<Folder className="h-6 w-6" />
+													</div>
+													<div className="text-center">
+														<p className="text-sm font-semibold text-neutral-700">
+															{type.replace(/_/g, " ")}
+														</p>
+														<p className="mt-1 text-xs text-neutral-500">{count} Files</p>
+													</div>
+												</button>
+											);
+										})}
+									</div>
+								) : (
+									<div className="space-y-4">
+										<button
+											type="button"
+											onClick={() => setSelectedDocType(null)}
+											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+										>
+											<ArrowLeft className="h-4 w-4" />
+											Back to Document Types
+										</button>
+
+										<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+											{documents
+												.filter((d) => d.documentType === selectedDocType)
+												.map((doc) => (
+													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm">
+														<div className="flex items-start justify-between gap-2">
+															<Badge className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200" variant="outline">
+																{doc.documentType.replace(/_/g, ' ')}
+															</Badge>
+															<span className="shrink-0 text-xs text-neutral-400">
+																{new Date(doc.uploadedAt).toLocaleDateString()}
+															</span>
+														</div>
+														<div className="flex items-center gap-2">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#b2410f]/10 text-[#b2410f]">
+																<FileText className="h-4 w-4" />
+															</div>
+															<div className="flex-1 overflow-hidden">
+																<p className="truncate text-sm font-medium text-neutral-800" title={doc.fileName}>
+																	{doc.fileName}
+																</p>
+																<p className="text-[10px] text-neutral-500">
+																	{doc.fileSize ? `${(doc.fileSize / 1024 / 1024).toFixed(2)} MB` : "File"} • {doc.fileType}
+																</p>
+															</div>
+														</div>
+														{doc.storagePath && (
+															<a 
+																href={doc.storagePath} 
+																target="_blank" 
+																rel="noreferrer"
+																download={doc.fileName}
+																className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-100"
+															>
+																<Download className="h-3 w-3" />
+																Download
+															</a>
+														)}
+													</div>
+												))}
+										</div>
+									</div>
+								)}
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab !== "Profile Details" && activeTab !== "Documents" && (
+						<div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
+							<p>This tab is currently under construction.</p>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>
