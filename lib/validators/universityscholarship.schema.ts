@@ -73,7 +73,7 @@ export const universityScholarshipSchema = z.object({
     .string()
     .regex(/^\d{8}$/, "Exam number must be exactly 8 digits"),
 
-  zScore: z
+  zscore: z
     .string()
     .min(1, "Z-Score is required")
     .regex(/^\d+\.\d{4}$/, "Z-Score must be in format like 1.4909"),

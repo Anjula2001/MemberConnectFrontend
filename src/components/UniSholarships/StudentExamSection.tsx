@@ -20,7 +20,7 @@ type FormData = {
   isSchoolApplicant?: boolean;
   examYear: string;
   examNo: string;
-  zScore: string;
+  zscore: string;
   university: string;
   program: string;
   duration?: string;
@@ -83,7 +83,7 @@ export default function StudentExamSection() {
   const [member, setMember] = useState<any>(null);
   const [scholarshipRequestNo, setScholarshipRequestNo] = useState("");
 
-  const [requestId, setRequestId] = useState<number | null>(null);
+  const [requestId, setRequestId] = useState<any>(null);
   const [loadedRecord, setLoadedRecord] = useState<ScholarshipRecord | null>(null);
   const [status, setStatus] = useState<
     | "NEW"
@@ -217,7 +217,7 @@ export default function StudentExamSection() {
       isSchoolApplicant: loadedRecord.applicantType === "SCHOOL_APPICANT",
       examYear: loadedRecord.examYear || "",
       examNo: loadedRecord.examNumber || "",
-      zScore: loadedRecord.zscore || "",
+      zscore: loadedRecord.zscore || "",
       university: "",
       program: "",
       duration: loadedRecord.duration || "",
@@ -229,7 +229,7 @@ export default function StudentExamSection() {
       minorAccountMonths: loadedRecord.minorAccountMonths || "",
     });
 
-    setRequestId(loadedRecord.id);
+    setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
     setScholarshipRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
     setIsSaved(true);
@@ -293,56 +293,6 @@ export default function StudentExamSection() {
       setValue("branch", String(branch.id));
     }
   }, [loadedRecord, branches, setValue]);
-
-  /*Load uploaded documents for the existing request
-  useEffect(() => {
-    if (!loadedRecord?.id) return;
-
-    const fetchDocuments = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:8080/api/documents/request/${loadedRecord.id}`
-        );
-
-        if (!res.ok) {
-          throw new Error("Failed to load documents");
-        }
-
-        const data = await res.json();
-        setUploadedDocuments(data);
-      } catch (error) {
-        console.error("Failed to load documents:", error);
-        setUploadedDocuments([]);
-      }
-    };
-
-    fetchDocuments();
-  }, [loadedRecord?.id]);*/
-  
-  
-  /* Load uploaded documents for existing request
-  useEffect(() => {
-    if (!requestId) return;
-
-    const fetchDocuments = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:8080/api/documents/request/${requestId}`
-        );
-
-        if (!res.ok) {
-          throw new Error("Failed to load documents");
-        }
-
-        const data = await res.json();
-        setUploadedDocuments(data);
-      } catch (error: any) {
-        console.error("Failed to load documents:", error.message);
-      }
-    };
-
-    fetchDocuments();
-  }, [requestId]);*/
 
 
   // Load universities and banks for dropdowns
@@ -491,7 +441,16 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    if (!requestId) {
+    // If editing, persist changes first
+    let actionId: string | number | null = requestId;
+    if (isEditMode) {
+      const saved = await handleSave();
+      if (!saved) return;
+      // prefer numeric DB id if returned
+      actionId = saved.id || saved.universityScholarshipRequestID || requestId;
+    }
+
+    if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
       return;
@@ -507,7 +466,7 @@ export default function StudentExamSection() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/university-scholarships/submit/${requestId}`,
+        `http://localhost:8080/api/university-scholarships/submit/${actionId}`,
         {
           method: "POST",
         }
@@ -771,10 +730,14 @@ export default function StudentExamSection() {
   const handleSave = async () => {
     const currentData = watch();
 
-    const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+    // Skip validations when in edit mode: allow updating any field without
+    // blocking on exam-number or other validations.
+    if (!isEditMode) {
+      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
 
-    if (!isExamNoValid) {
-      return;
+      if (!isExamNoValid) {
+        return;
+      }
     }
 
     let saveData: FormData & { memberId: number } = {
@@ -793,62 +756,117 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
-        "http://localhost:8080/api/university-scholarships",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(saveData),
+      let savedRequest: any = null;
+
+      // If editing an existing request, call PUT to update
+      if (requestId && isEditMode) {
+        const res = await fetch(
+          `http://localhost:8080/api/university-scholarships/${requestId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(saveData),
+          }
+        );
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("Update failed:", res.status, text);
+          setExamNoPopupMessage("Failed to update request");
+          setShowExamNoPopup(true);
+          return null;
         }
-      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let message = "Failed to save request";
+        savedRequest = await res.json();
+      } else {
+        const response = await fetch(
+          "http://localhost:8080/api/university-scholarships",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(saveData),
+          }
+        );
 
-        try {
-          const errorJson = JSON.parse(errorText);
-          message = errorJson.message || message;
-        } catch {}
+        if (!response.ok) {
+          const errorText = await response.text();
+          let message = "Failed to save request";
 
-        setExamNoPopupMessage(message);
-        setShowExamNoPopup(true);
-        return;
+          try {
+            const errorJson = JSON.parse(errorText);
+            message = errorJson.message || message;
+          } catch {}
+
+          setExamNoPopupMessage(message);
+          setShowExamNoPopup(true);
+          return null;
+        }
+
+        savedRequest = await response.json();
       }
 
-      const savedRequest = await response.json();
-
-      setRequestId(savedRequest.id);
+      // Common post-save handling
+      setRequestId(
+        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
+      );
       setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
       setStatus(savedRequest.status || "NEW");
       setIsSaved(true);
 
-      if (documentFiles.length > 0) {
+      if (documentFiles.length > 0 && savedRequest.id) {
         await uploadDocuments(savedRequest.id);
       }
 
       setIsExamNoDuplicate(false);
       setExamNoPopupMessage("Request is saved successfully");
       setShowExamNoPopup(true);
+
+      return savedRequest;
     } catch (error) {
       console.error("Save failed:", error);
       setExamNoPopupMessage("Failed to save request");
       setShowExamNoPopup(true);
+      return null;
+    }
+  };
+
+  // Dedicated update helper (optional reuse)
+  const updateScholarship = async (id: string | number, data: any) => {
+    try {
+      const res = await fetch(`http://localhost:8080/api/university-scholarships/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      return res;
+    } catch (err) {
+      console.error("Update scholarship failed:", err);
+      throw err;
     }
   };
   
   // Handle marking request as incomplete
   const handleMarkIncomplete = async (reason: string) => {
-    if (!requestId) {
+    // If editing, persist changes first
+    let actionId: string | number | null = requestId;
+    if (isEditMode) {
+      const saved = await handleSave();
+      if (!saved) return;
+      // prefer numeric DB id if returned
+      actionId = saved.id || saved.universityScholarshipRequestID || requestId;
+    }
+
+    if (!actionId) {
       alert("Please save request first");
       return;
     }
 
     try {
       const res = await fetch(
-        `http://localhost:8080/api/university-scholarships/incomplete/${requestId}`,
+        `http://localhost:8080/api/university-scholarships/incomplete/${actionId}`,
         {
           method: "POST",
           headers: {
@@ -958,7 +976,9 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid}
+              // Allow saving in edit mode even if the form is invalid; otherwise
+              // require validity for new/create flows.
+              disabled={isInputsDisabled || (!isEditMode && !isValid)}
             >
               Save
             </Button>
@@ -1063,8 +1083,8 @@ export default function StudentExamSection() {
                 <label htmlFor="zScore" className="mb-1 block text-sm  text-gray-600">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zScore")} disabled={isInputsDisabled} className={whiteInputClass} />
-                {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
+                <Input id="zScore" {...register("zscore")} disabled={isInputsDisabled} className={whiteInputClass} />
+                {errors.zscore && <p className="mt-1 text-sm text-red-500">{errors.zscore.message}</p>}
               </div>
 
               <div className="flex items-end justify-end">
