@@ -28,13 +28,17 @@ import {
 import { createBoardMeeting, getBoardMeetings, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
   getBoardApprovalLists,
+  getBoardApprovalListByListId,
   deleteBoardApprovalList,
   getBoardApprovalListApplications,
   processBoardApprovalList,
   type ProcessBoardApprovalListPayload,
   type BoardApprovalListDTO,
 } from "@/lib/api/boardApprovalLists";
-import type { MemberApplicationDTO } from "@/lib/api/memberApplications";
+import {
+  getMemberApplicationById,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
 
 type BoardMeeting = BoardMeetingDTO & {
   date: string;
@@ -104,6 +108,11 @@ export default function BoardApprovalsPage() {
   );
   const [showProcessToast, setShowProcessToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [showApplicationDetailsModal, setShowApplicationDetailsModal] = useState(false);
+  const [selectedApplicationForDetails, setSelectedApplicationForDetails] = useState<ApprovalApplication | null>(null);
+  const [selectedApplicationDetails, setSelectedApplicationDetails] = useState<ApprovalApplication | null>(null);
+  const [selectedListDetails, setSelectedListDetails] = useState<BoardApprovalListDTO | null>(null);
+  const [isLoadingApplicationDetails, setIsLoadingApplicationDetails] = useState(false);
 
   const mapApplicationToRow = (application: MemberApplicationDTO): ApprovalApplication => ({
     id: application.id ?? 0,
@@ -388,6 +397,36 @@ export default function BoardApprovalsPage() {
     setIsEditingProcessedList(true);
   };
 
+  const handleOpenApplicationDetails = async (application: ApprovalApplication) => {
+    if (!selectedApprovalListId || !application.id) return;
+
+    try {
+      setIsLoadingApplicationDetails(true);
+      const [listDetails, applicationDetails] = await Promise.all([
+        getBoardApprovalListByListId(selectedApprovalListId),
+        getMemberApplicationById(application.id),
+      ]);
+
+      setSelectedListDetails(listDetails);
+      setSelectedApplicationDetails({
+        id: applicationDetails.id ?? application.id,
+        appId: applicationDetails.applicationID ?? application.appId,
+        name: applicationDetails.fullName ?? application.name,
+        status: applicationDetails.status ?? application.status,
+        nic: applicationDetails.nicNumber ?? application.nic,
+        hasWarning: applicationDetails.rejoinFlag ?? application.hasWarning ?? false,
+      });
+      setSelectedApplicationForDetails(application);
+      setShowApplicationDetailsModal(true);
+    } catch (error) {
+      console.error("Error loading application details:", error);
+      setToastMessage("Failed to load application details");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoadingApplicationDetails(false);
+    }
+  };
+
   const handleProcessBoardDecision = async () => {
     if (!selectedApprovalListId || !selectedApprovalList) return;
 
@@ -669,32 +708,19 @@ export default function BoardApprovalsPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {selectedProcessedState && !isEditingProcessedList ? (
-                      <div className="rounded-md bg-[#d9d9d9] px-3 py-2 text-sm text-gray-600">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            Processed by <span className="font-semibold">{selectedProcessedState.processedBy}</span>{" "}
-                            on <span className="font-semibold">{selectedProcessedState.processedAt}</span>
-                            <div className="mt-1 text-xs text-gray-500">
-                              Actual meeting date: <span className="font-semibold">{selectedProcessedState.actualMeetingDate}</span>
-                            </div>
-                            {selectedProcessedState.boardRemarks && (
-                              <div className="mt-1 text-xs text-gray-500">
-                                Remarks: <span className="font-semibold">{selectedProcessedState.boardRemarks}</span>
-                              </div>
-                            )}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 px-3"
-                            onClick={handleEditProcessedList}
-                          >
-                            Edit
-                          </Button>
-                        </div>
+                    {selectedProcessedState && !isEditingProcessedList && (
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3"
+                          onClick={handleEditProcessedList}
+                        >
+                          Edit
+                        </Button>
                       </div>
-                    ) : (
+                    )}
+                    {(!selectedProcessedState || isEditingProcessedList) && (
                       <div className="flex items-center justify-end gap-2">
                         <Button type="button" variant="outline" className="h-8 px-3">
                           <Printer size={14} />
@@ -719,7 +745,8 @@ export default function BoardApprovalsPage() {
                             <th className="pb-2 pr-3">App ID</th>
                             <th className="pb-2 pr-3">Name</th>
                             <th className="pb-2 pr-3">Decision</th>
-                            <th className="pb-2">Reason (If Reject)</th>
+                            <th className="pb-2 pr-3">Reason (If Reject)</th>
+                            <th className="pb-2 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -775,7 +802,7 @@ export default function BoardApprovalsPage() {
                                   </Select>
                                 )}
                               </td>
-                              <td className="py-3">
+                              <td className="py-3 pr-3">
                                 {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={
@@ -800,6 +827,21 @@ export default function BoardApprovalsPage() {
                                         : ""
                                     }
                                   />
+                                )}
+                              </td>
+                              <td className="py-3 text-center">
+                                {selectedProcessedState && !isEditingProcessedList ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-[#953002] hover:bg-[#f7ede8]"
+                                    onClick={() => handleOpenApplicationDetails(application)}
+                                  >
+                                    View
+                                  </Button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
                                 )}
                               </td>
                             </tr>
@@ -1036,6 +1078,153 @@ export default function BoardApprovalsPage() {
           <div className="flex items-center gap-2 text-sm text-gray-800">
             <CheckCircle2 size={16} className="text-black" />
             <span>{toastMessage || "Board Approval List Processed Successfully"}</span>
+          </div>
+        </div>
+      )}
+
+      {showApplicationDetailsModal && selectedApplicationForDetails && selectedProcessedState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="flex max-h-[80vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b px-5 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-[#953002]">
+                  Application Decision
+                </h2>
+                <p className="mt-1 text-xs text-gray-600">
+                  {selectedApplicationForDetails.appId}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowApplicationDetailsModal(false)}
+                aria-label="Close details modal"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              {isLoadingApplicationDetails ? (
+                <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed bg-gray-50 text-sm text-muted-foreground">
+                  Loading latest details...
+                </div>
+              ) : (
+                <>
+              {/* Applicant Information Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Applicant Information</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Name</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedApplicationDetails?.name ?? selectedApplicationForDetails.name}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">NIC Number</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedApplicationDetails?.nic ?? selectedApplicationForDetails.nic}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Meeting Information Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Meeting Information</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Scheduled Date</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {formatDisplayDate(selectedListDetails?.boardMeetingDate ?? selectedApprovalList?.boardMeetingDate ?? "")}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Actual Date</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedListDetails?.actualMeetingDate ?? selectedProcessedState.actualMeetingDate}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Processing Details Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Processing Details</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed By</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">
+                        {selectedListDetails?.processedBy ?? selectedProcessedState.processedBy}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed At</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedListDetails?.processedAt ?? selectedProcessedState.processedAt}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Decision Section */}
+              <div className="rounded-lg border border-[#f0d9cf] bg-gradient-to-r from-[#f7ede8] to-[#faf5f2] p-3.5">
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600">Decision</h3>
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold text-white ${
+                      (selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                        ? "bg-green-600"
+                        : "bg-rose-600"
+                    }`}
+                  >
+                    {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                      ? "✓ Approved"
+                      : "✕ Rejected"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Additional Information */}
+              {((selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
+                <div className="space-y-3">
+                  {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" && (selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason) && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-red-700">Reject Reason</p>
+                      <p className="mt-1 text-sm font-medium text-red-800">
+                        {selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks) && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-blue-700">Board Remarks</p>
+                      <p className="mt-1 text-sm font-medium text-blue-800">
+                        {selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t bg-gray-50 px-5 py-3.5">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-200"
+                onClick={() => setShowApplicationDetailsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}
