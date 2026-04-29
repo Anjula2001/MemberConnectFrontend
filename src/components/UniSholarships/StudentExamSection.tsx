@@ -65,8 +65,8 @@ export default function StudentExamSection() {
   const HARDCODED_MEMBER_ID = 8;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestKey = searchParams.get("requestId") || searchParams.get("id");
-  const mode = searchParams.get("mode") || "view";
+  const requestKey = searchParams.get("requestId") ;
+  const mode = searchParams.get("mode") ;
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
@@ -730,15 +730,13 @@ export default function StudentExamSection() {
   const handleSave = async () => {
     const currentData = watch();
 
-    // Skip validations when in edit mode: allow updating any field without
-    // blocking on exam-number or other validations.
     if (!isEditMode) {
-      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+    const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
 
-      if (!isExamNoValid) {
-        return;
-      }
+    if (!isExamNoValid) {
+      return;
     }
+  }
 
     let saveData: FormData & { memberId: number } = {
       ...currentData,
@@ -967,7 +965,7 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={isInputsDisabled || !requestId || !isSaved}
+              disabled={!requestId || !isSaved || isSubmitted}
             >
               Incomplete
             </Button>
@@ -976,16 +974,14 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              // Allow saving in edit mode even if the form is invalid; otherwise
-              // require validity for new/create flows.
-              disabled={isInputsDisabled || (!isEditMode && !isValid)}
+              disabled={isInputsDisabled || !isValid}
             >
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={isInputsDisabled || !requestId || !hasAllMandatoryDocuments}
+              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
               Submit
