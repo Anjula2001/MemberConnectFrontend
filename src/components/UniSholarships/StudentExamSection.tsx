@@ -56,6 +56,7 @@ type ScholarshipRecord = {
   hasMinorAccount?: string | null;
   minorAccountMonths?: string | null;
   incompleteReason?: string | null;
+  decisionReason?: string | null;
   requestDate?: string | null;
   programName?: string | null;
 };
@@ -76,6 +77,8 @@ export default function StudentExamSection() {
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const [member, setMember] = useState<any>(null);
   const [scholarshipRequestNo, setScholarshipRequestNo] = useState("");
@@ -83,12 +86,20 @@ export default function StudentExamSection() {
   const [requestId, setRequestId] = useState<number | null>(null);
   const [loadedRecord, setLoadedRecord] = useState<ScholarshipRecord | null>(null);
   const [status, setStatus] = useState<
-    "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
+    | "NEW"
+    | "INCOMPLETE"
+    | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
+    | "SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL"
+    | "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL"
+    | "APPROVED"
+    | "REJECTED"
   >("NEW");
   const [isSaved, setIsSaved] = useState(false);
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const whiteInputClass =
+    "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
 
 
   const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
@@ -96,8 +107,7 @@ export default function StudentExamSection() {
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
-  const canModifyForm = isExistingRequest ? isEditMode : !isSaved;
-  const isInputsDisabled = isViewMode || isSubmitted || !canModifyForm;
+  const isInputsDisabled = isViewMode || isSubmitted;
 
   const {
     register,
@@ -606,6 +616,119 @@ export default function StudentExamSection() {
     }
   };
 
+  const updateScholarshipStatus = (
+    nextStatus: typeof status,
+    reason?: string
+  ) => {
+    setStatus(nextStatus);
+    setLoadedRecord((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: nextStatus,
+            decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+          }
+        : prev
+    );
+  };
+
+  const handleApproveScholarship = async () => {
+    if (!requestId) return;
+
+    const confirmApprove = window.confirm(
+      "Approve this scholarship request?"
+    );
+
+    if (!confirmApprove) return;
+
+    // TODO: replace this placeholder with the actual deviation-check flag
+    // The real flag may be part of `loadedRecord` or the form values.
+    const deviationFlag = !!loadedRecord && (
+      !!(loadedRecord as any).followsDeviationProcess ||
+      !!(loadedRecord as any).isDeviation ||
+      !!(loadedRecord as any).followDeviation
+    );
+
+    const nextStatus = deviationFlag
+      ? "SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL"
+      : "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL";
+
+    try {
+      // Use the existing save/update endpoint to persist the status.
+      // The backend's POST /api/university-scholarships is used for create/update.
+      const res = await fetch(`http://localhost:8080/api/university-scholarships/approve/${requestId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: requestId, status: nextStatus }),
+      });
+
+      if (!res.ok) {
+        updateScholarshipStatus(nextStatus);
+        setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
+        setShowExamNoPopup(true);
+        console.error("Approve (save) API failed:", res.status, await res.text());
+        return;
+      }
+
+      const updated = await res.json();
+      const serverStatus = (updated && updated.status) || nextStatus;
+      updateScholarshipStatus(serverStatus as any);
+      setExamNoPopupMessage(
+        deviationFlag
+          ? "Scholarship approved — submitted for deviation board approval"
+          : "Scholarship approved — submitted for normal board approval"
+      );
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Approve failed:", error);
+      updateScholarshipStatus(nextStatus);
+      setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
+      setShowExamNoPopup(true);
+    }
+  };
+
+  const handleRejectScholarship = () => {
+    if (!requestId) return;
+    setRejectReason("");
+    setShowRejectModal(true);
+  };
+
+  const handleConfirmRejectScholarship = () => {
+    if (!requestId || rejectReason.trim() === "") return;
+
+    (async () => {
+      try {
+        const res = await fetch(`http://localhost:8080/api/university-scholarships/reject/${requestId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisionReason: rejectReason.trim() }),
+        });
+
+        if (!res.ok) {
+          updateScholarshipStatus("REJECTED", rejectReason.trim());
+          setShowRejectModal(false);
+          setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
+          setShowExamNoPopup(true);
+          console.error("Reject (save) API failed:", res.status, await res.text());
+          return;
+        }
+
+        const updated = await res.json();
+        const serverStatus = (updated && updated.status) || "REJECTED";
+        updateScholarshipStatus(serverStatus as any, rejectReason.trim());
+        setShowRejectModal(false);
+        setExamNoPopupMessage("Scholarship rejected successfully");
+        setShowExamNoPopup(true);
+      } catch (error) {
+        console.error("Reject failed:", error);
+        updateScholarshipStatus("REJECTED", rejectReason.trim());
+        setShowRejectModal(false);
+        setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
+        setShowExamNoPopup(true);
+      }
+    })();
+  };
+
   // Upload documents after saving request
   const uploadDocuments = async (savedRequestId: number) => {
     const uploadedItems: DocumentFileItem[] = [];
@@ -765,10 +888,15 @@ export default function StudentExamSection() {
     router.replace(`?${params.toString()}`);
   };
 
-  const statusLabel = loadedRecord?.status || status;
+  const statusLabel = status;
   const statusReason =
-    status === "INCOMPLETE" ? loadedRecord?.incompleteReason || "" : "";
+    status === "INCOMPLETE"
+      ? loadedRecord?.incompleteReason || ""
+      : status === "REJECTED"
+        ? loadedRecord?.decisionReason || ""
+        : "";
   const pageTitle = isExistingRequest ? "University Scholarship" : "New University Scholarship";
+  const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
 
   return (
     <>
@@ -780,7 +908,7 @@ export default function StudentExamSection() {
               {scholarshipRequestNo && `: ${scholarshipRequestNo}`}
             </h2>
 
-            <p className="text-sm text-gray-600 flex items-center gap-8">
+            <p className="mt-2 text-sm text-gray-600 flex items-center gap-8">
               <span>
                 Member: {member?.fullName} ({member?.memberId})
               </span>
@@ -848,50 +976,50 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="requestDate" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="requestDate" className="mb-1 block text-sm  text-gray-600">
                   Request Date <span className="text-red-500">*</span>
                 </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled} />
+                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="studentName" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="studentName" className="mb-1 block text-sm  text-gray-600">
                   Student Name <span className="text-red-500">*</span>
                 </label>
-                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled} />
+                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="nic" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="nic" className="mb-1 block text-sm text-gray-600">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
-                <Input id="nic" {...register("nic")} disabled={isInputsDisabled} />
+                <Input id="nic" {...register("nic")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="bcNo" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="bcNo" className="mb-1 block text-sm text-gray-600">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled} />
+                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="address" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="address" className="mb-1 block text-sm text-gray-600">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
-                <Input id="address" {...register("address")} disabled={isInputsDisabled} />
+                <Input id="address" {...register("address")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="mobile" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="mobile" className="mb-1 block text-sm text-gray-600">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled} />
+                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
@@ -904,33 +1032,33 @@ export default function StudentExamSection() {
                 disabled={isInputsDisabled}
                 className="h-4 w-4 accent-[#953002]"
               />
-              <label htmlFor="isSchoolApplicant" className="text-sm font-medium text-gray-700">
+              <label htmlFor="isSchoolApplicant" className="text-sm text-gray-600">
                 A/L Exam as School Applicant
               </label>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="examYear" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
-                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled} />
+                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="examNo" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="examNo" className="mb-1 block text-sm  text-gray-600">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled} />
+                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="zScore" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="zScore" className="mb-1 block text-sm  text-gray-600">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zScore")} disabled={isInputsDisabled} />
+                <Input id="zScore" {...register("zScore")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.zScore && <p className="mt-1 text-sm text-red-500">{errors.zScore.message}</p>}
               </div>
 
@@ -938,6 +1066,7 @@ export default function StudentExamSection() {
                 <Button
                   type="button"
                   variant="outline"
+                  className=" text-sm  text-gray-600"
                   onClick={handleValidateExamNo}
                   disabled={isValidatingExamNo || isInputsDisabled}
                 >
@@ -954,7 +1083,7 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="university" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="university" className="mb-1 block text-sm text-gray-600">
                   University <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -974,7 +1103,7 @@ export default function StudentExamSection() {
               </div>
 
               <div>
-                <label htmlFor="program" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="program" className="mb-1 block text-sm  text-gray-600">
                   Program <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -996,17 +1125,17 @@ export default function StudentExamSection() {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="duration" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="duration" className="mb-1 block text-sm text-gray-600">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} disabled={isInputsDisabled} readOnly />
+                <Input id="duration" {...register("duration")} disabled={isInputsDisabled} readOnly className={whiteInputClass} />
               </div>
 
               <div>
-                <label htmlFor="academicYearStart" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled}/>
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled} className={whiteInputClass}/>
               </div>
             </div>
           </section>
@@ -1019,7 +1148,7 @@ export default function StudentExamSection() {
               <Button
                 type="button"
                 variant="outline"
-                className="bg-gray text-black hover:bg-gray-200"
+                className=" text-sm  text-gray-600"
                 onClick={handleRefreshMinorAccount}
                 disabled={isInputsDisabled}
               >
@@ -1029,17 +1158,17 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm  text-gray-600">
                   Minor Account Availability
                 </label>
-                <Input {...register("hasMinorAccount")} readOnly disabled={isInputsDisabled} />
+                <Input {...register("hasMinorAccount")} readOnly disabled={isInputsDisabled} className={whiteInputClass} />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm  text-gray-600">
                   Remitted Months
                 </label>
-                <Input {...register("minorAccountMonths")} readOnly disabled={isInputsDisabled} />
+                <Input {...register("minorAccountMonths")} readOnly disabled={isInputsDisabled} className={whiteInputClass} />
               </div>
             </div>
           </section>
@@ -1051,15 +1180,15 @@ export default function StudentExamSection() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="accountNo" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="accountNo" className="mb-1 block text-sm  text-gray-600">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled} />
+                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled} className={whiteInputClass} />
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
               <div>
-                <label htmlFor="bank" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="bank" className="mb-1 block text-sm  text-gray-600">
                   Bank
                 </label>
                 <select
@@ -1078,7 +1207,7 @@ export default function StudentExamSection() {
               </div>
 
               <div>
-                <label htmlFor="branch" className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="branch" className="mb-1 block text-sm  text-gray-600">
                   Bank Branch
                 </label>
                 <select
@@ -1108,6 +1237,7 @@ export default function StudentExamSection() {
                 requestId={requestId}
                 disabled={isInputsDisabled}
                 isSaved={isSaved}
+                isSubmitted={isSubmitted}
                 files={documentFiles}
                 setFiles={setDocumentFiles}
                 documentTypes={requiredDocumentTypes}
@@ -1123,6 +1253,26 @@ export default function StudentExamSection() {
               </div>
             ))}
           </div>
+
+          {canReviewSubmission && (
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                className="bg-green-600 text-white hover:bg-green-700"
+                onClick={handleApproveScholarship}
+              >
+                Approve
+              </Button>
+
+              <Button
+                type="button"
+                className="bg-rose-600 text-white hover:bg-rose-700"
+                onClick={handleRejectScholarship}
+              >
+                Reject
+              </Button>
+            </div>
+          )}
         </div>
       </form>
 
@@ -1136,7 +1286,7 @@ export default function StudentExamSection() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
             <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              Validation
+              MESSAGE
             </h3>
 
             <p className="mb-5 text-sm text-black">
@@ -1150,6 +1300,46 @@ export default function StudentExamSection() {
                 className="bg-[#953002] text-white hover:bg-[#7a2500]"
               >
                 OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-[#953002]">
+              Reject Scholarship
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Enter the reason for rejection.
+            </p>
+
+            <div className="mt-4">
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="min-h-28 w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/20"
+                placeholder="Reason for rejection"
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowRejectModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-rose-600 text-white hover:bg-rose-700"
+                onClick={handleConfirmRejectScholarship}
+                disabled={rejectReason.trim() === ""}
+              >
+                Reject
               </Button>
             </div>
           </div>

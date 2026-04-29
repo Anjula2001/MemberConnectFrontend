@@ -23,6 +23,7 @@ type DocumentProps = {
   requestId: number | null;
   disabled: boolean;
   isSaved: boolean;
+  isSubmitted?: boolean;
   files: DocumentFileItem[];
   setFiles: React.Dispatch<React.SetStateAction<DocumentFileItem[]>>;
   documentTypes: RequiredDocType[];
@@ -31,6 +32,7 @@ type DocumentProps = {
 export default function Document({
   disabled,
   isSaved,
+  isSubmitted,
   files,
   setFiles,
   documentTypes,
@@ -130,7 +132,9 @@ export default function Document({
 
       {isSaved && disabled && (
         <div className="rounded-lg border border-dashed p-6 text-sm text-center text-gray-500 bg-gray-50">
-          Document upload is disabled after submission.
+          {isSubmitted
+            ? "Document upload is disabled after submission."
+            : "Can't upload files in view mode."}
         </div>
       )}
 

@@ -329,7 +329,7 @@ export default function Page() {
         </h1>
 
         <div className="flex gap-2">
-          <Link href="/scholarships/university/new">
+          <Link href="/membership/directory/university-scholarship">
             <Button className="bg-[#D4183D] text-white hover:bg-[#a3152f]">
               + New Application
             </Button>
