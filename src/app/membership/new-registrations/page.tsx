@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   RotateCcw,
@@ -50,6 +50,11 @@ import {
   type ApplicationStatus,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  createBoardApprovalList,
+  type BoardApprovalListDTO,
+} from "@/lib/api/boardApprovalLists";
 
 // ── Multi-select dropdown ─────────────────────────────────────────────────────
 interface MultiSelectProps {
@@ -166,6 +171,9 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 
 export default function NewRegistrationsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const applicationIdParam = searchParams.get("applicationId");
+  const isReadOnlyView = searchParams.get("mode") === "view";
   const [currentView, setCurrentView] = useState<"list" | "form">("list");
   const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -180,6 +188,9 @@ export default function NewRegistrationsPage() {
   const [isRetrieving, setIsRetrieving] = useState(false);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
   const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingBoardApprovalList, setIsSavingBoardApprovalList] = useState(false);
+  const [createdBoardApprovalList, setCreatedBoardApprovalList] = useState<BoardApprovalListDTO | null>(null);
   const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteRow, setPendingDeleteRow] = useState<Registration | null>(null);
@@ -187,6 +198,16 @@ export default function NewRegistrationsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!applicationIdParam) return;
+
+    const parsedId = Number(applicationIdParam);
+    if (Number.isFinite(parsedId)) {
+      setSelectedApplicationId(parsedId);
+      setCurrentView("form");
+    }
+  }, [applicationIdParam]);
 
   // Close action menu on outside click or scroll
   useEffect(() => {
@@ -205,6 +226,27 @@ export default function NewRegistrationsPage() {
       document.removeEventListener("scroll", closeOnScroll, true);
     };
   }, [openMenuId]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        if (!isCancelled) {
+          setBoardMeetings(meetings);
+        }
+      } catch (error) {
+        console.error("Failed to load board meetings", error);
+      }
+    };
+
+    void loadBoardMeetings();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const mapToRegistration = (
     item: MemberApplicationDTO,
@@ -227,13 +269,17 @@ export default function NewRegistrationsPage() {
       district: item.educationalDistrict ?? "-",
       zone: "-",
       status,
-      selectable: status === "NEW",
+      selectable:
+        status === "SUBMITTED_FOR_APPROVAL" || status === "REJECTED",
       hasWarning: false,
     };
   };
 
   const selectableNewRowIds = displayData
-    .filter((row) => row.selectable && row.status === "NEW")
+    .filter(
+      (row) => row.selectable &&
+        (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED")
+    )
     .map((row) => row.appId);
 
   const selectedNewRowsCount = selectableNewRowIds.filter((id) =>
@@ -264,11 +310,10 @@ export default function NewRegistrationsPage() {
     { value: "inactive", label: "Inactive" },
   ];
 
-  const boardMeetingOptions = [
-    { value: "2026-02-28 (108)", label: "2026-02-28 (108)" },
-    { value: "2026-03-15 (109)", label: "2026-03-15 (109)" },
-    { value: "2026-04-10 (110)", label: "2026-04-10 (110)" },
-  ];
+  const boardMeetingOptions = boardMeetings.map((meeting) => ({
+    value: String(meeting.id ?? ""),
+    label: `${meeting.scheduledDate ?? "Unknown date"} (${meeting.boardMeetingId ?? meeting.id ?? ""})`,
+  }));
 
   const toggleRow = (appId: string) => {
     setSelectedRows((prev) =>
@@ -386,12 +431,42 @@ export default function NewRegistrationsPage() {
     setSelectedBoardMeeting("");
   };
 
-  const handleSaveBoardMeeting = () => {
+  const handleSaveBoardMeeting = async () => {
     if (!selectedBoardMeeting) return;
 
-    setShowBoardMeetingModal(false);
-    setSelectedBoardMeeting("");
-    setShowCreationConfirmModal(true);
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting || !meeting.id || !meeting.scheduledDate) {
+      alert("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingBoardApprovalList(true);
+      const createdList = await createBoardApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        applicationIds: selectedRows,
+      });
+
+      setCreatedBoardApprovalList(createdList);
+      setDisplayData((prev) =>
+        prev.map((row) =>
+          selectedRows.includes(row.appId)
+            ? { ...row, status: "ADDED_TO_BOARD_APPROVAL_LIST", selectable: false }
+            : row
+        )
+      );
+
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+    } catch (error) {
+      console.error("Failed to create board approval list", error);
+      alert(error instanceof Error ? error.message : "Failed to create board approval list");
+    } finally {
+      setIsSavingBoardApprovalList(false);
+    }
   };
 
   const handleCloseCreationConfirmModal = () => {
@@ -458,6 +533,9 @@ export default function NewRegistrationsPage() {
           onClick={() => {
             setCurrentView("list");
             setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
           }}
           className="w-fit text-[#953002] hover:text-[#7a2700] hover:bg-transparent mb-2"
         >
@@ -466,9 +544,13 @@ export default function NewRegistrationsPage() {
         </Button>
         <NewMemberRegistrationForm
           applicationId={selectedApplicationId}
+          readOnly={isReadOnlyView}
           onDone={() => {
             setCurrentView("list");
             setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
             void handleRetrieve();
           }}
         />
@@ -630,7 +712,7 @@ export default function NewRegistrationsPage() {
                         : false
                   }
                   onCheckedChange={(checked) => toggleAllNewRows(checked === true)}
-                  aria-label="Select all new status rows"
+                  aria-label="Select all submitted or rejected status rows"
                   disabled={selectableNewRowIds.length === 0}
                   className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
                 />
@@ -882,7 +964,11 @@ export default function NewRegistrationsPage() {
                     <SelectValue placeholder="Select Meeting" />
                   </SelectTrigger>
                   <SelectContent>
-                    {boardMeetingOptions.map((option) => (
+                    {boardMeetingOptions.length === 0 ? (
+                      <SelectItem value="no-meetings" disabled>
+                        No board meetings available
+                      </SelectItem>
+                    ) : boardMeetingOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -903,10 +989,10 @@ export default function NewRegistrationsPage() {
                 <Button
                   type="button"
                   className="bg-[#953002] text-white hover:bg-[#7a2700]"
-                  disabled={!selectedBoardMeeting}
+                  disabled={!selectedBoardMeeting || isSavingBoardApprovalList}
                   onClick={handleSaveBoardMeeting}
                 >
-                  Save
+                  {isSavingBoardApprovalList ? "Saving..." : "Save"}
                 </Button>
               </div>
             </div>
@@ -933,8 +1019,9 @@ export default function NewRegistrationsPage() {
 
             <div className="px-5 pb-5 pt-1">
               <p className="text-lg leading-relaxed text-gray-600">
-                The Board Approval List for {selectedNewRowsCount} applications has been created. Do you
-                want to view the list?
+                {createdBoardApprovalList?.listId
+                  ? `The Board Approval List ${createdBoardApprovalList.listId} for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`
+                  : `The Board Approval List for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`}
               </p>
 
               <div className="mt-6 flex items-center justify-end gap-2">

@@ -17,6 +17,7 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
+import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,15 @@ import {
   SelectValue,
 } from "@/src/components/ui/select";
 import { createBoardMeeting, getBoardMeetings, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  getBoardApprovalLists,
+  deleteBoardApprovalList,
+  getBoardApprovalListApplications,
+  processBoardApprovalList,
+  type ProcessBoardApprovalListPayload,
+  type BoardApprovalListDTO,
+} from "@/lib/api/boardApprovalLists";
+import type { MemberApplicationDTO } from "@/lib/api/memberApplications";
 
 type BoardMeeting = BoardMeetingDTO & {
   date: string;
@@ -32,28 +42,24 @@ type BoardMeeting = BoardMeetingDTO & {
 
 type BoardTab = "meetings" | "approval-lists";
 
-type ApprovalListStatus = "CREATED" | "PROCESSED";
-
-type ApprovalListItem = {
-  listId: string;
-  status: ApprovalListStatus;
-  meetingId: number;
-  date: string;
-};
-
 type ApplicationDecision = "Approve" | "Reject";
 
 type ApprovalApplication = {
+  id: number;
   appId: string;
   name: string;
+  status: string;
+  nic: string;
   hasWarning?: boolean;
 };
 
 type ProcessedListState = {
   processedBy: string;
   processedAt: string;
+  actualMeetingDate: string;
   decision: ApplicationDecision;
   rejectReason: string;
+  boardRemarks: string;
 };
 
 type PendingDeleteMeeting = {
@@ -69,43 +75,44 @@ function formatDisplayDate(value: string) {
 }
 
 export default function BoardApprovalsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<BoardTab>("meetings");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
   const [dateFilter, setDateFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
-  const [approvalLists, setApprovalLists] = useState<ApprovalListItem[]>([
-    {
-      listId: "BAL-2026-001",
-      status: "CREATED",
-      meetingId: 108,
-      date: "2026-02-28",
-    },
-    {
-      listId: "BAL-6892",
-      status: "CREATED",
-      meetingId: 108,
-      date: "2026-02-28",
-    },
-  ]);
+  const [isRetrievingLists, setIsRetrievingLists] = useState(false);
+  const [isRetrievingApplications, setIsRetrievingApplications] = useState(false);
+  const [isDeletingSelectedList, setIsDeletingSelectedList] = useState(false);
+  const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
+  const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
   const [applicationDecision, setApplicationDecision] =
     useState<ApplicationDecision>("Approve");
   const [rejectReason, setRejectReason] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
+  const [showDeleteListModal, setShowDeleteListModal] = useState(false);
   const [pendingDeleteMeeting, setPendingDeleteMeeting] =
     useState<PendingDeleteMeeting | null>(null);
-  const [actualMeetingDateValue, setActualMeetingDateValue] = useState("");
-  const [signedListScan, setSignedListScan] = useState("");
   const [boardRemarks, setBoardRemarks] = useState("");
+  const [isEditingProcessedList, setIsEditingProcessedList] = useState(false);
   const [processedLists, setProcessedLists] = useState<Record<string, ProcessedListState>>(
     {}
   );
   const [showProcessToast, setShowProcessToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+
+  const mapApplicationToRow = (application: MemberApplicationDTO): ApprovalApplication => ({
+    id: application.id ?? 0,
+    appId: application.applicationID ?? `APP-${application.id ?? ""}`,
+    name: application.fullName ?? "-",
+    status: application.status ?? "NEW",
+    nic: application.nicNumber ?? "-",
+    hasWarning: application.rejoinFlag ?? false,
+  });
 
   // Fetch board meetings from database
   useEffect(() => {
@@ -141,27 +148,41 @@ export default function BoardApprovalsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [showProcessToast]);
 
-  const listApplications: Record<string, ApprovalApplication[]> = {
-    "BAL-2026-001": [
-      {
-        appId: "APP-2026-003",
-        name: "Rejoining Member",
-        hasWarning: true,
-      },
-    ],
-    "BAL-6892": [
-      {
-        appId: "APP-2026-001",
-        name: "New User One",
-      },
-    ],
-  };
+  const selectedApprovalList = useMemo(
+    () =>
+      approvalLists.find((item) => item.listId === selectedApprovalListId) ?? null,
+    [approvalLists, selectedApprovalListId]
+  );
 
-  const selectedListApplications =
-    (selectedApprovalListId && listApplications[selectedApprovalListId]) || [];
+  const selectedProcessedState = useMemo<ProcessedListState | null>(() => {
+    if (selectedApprovalListId && processedLists[selectedApprovalListId]) {
+      return processedLists[selectedApprovalListId];
+    }
 
-  const selectedProcessedState =
-    (selectedApprovalListId && processedLists[selectedApprovalListId]) || null;
+    if (!selectedApprovalList || selectedApprovalList.status !== "PROCESSED") {
+      return null;
+    }
+
+    return {
+      processedBy: selectedApprovalList.processedBy ?? "Head Office User",
+      processedAt: selectedApprovalList.processedAt ?? "",
+      actualMeetingDate:
+        selectedApprovalList.actualMeetingDate ??
+        selectedApprovalList.boardMeetingDate ??
+        "",
+      decision:
+        selectedApprovalList.decision?.toLowerCase() === "reject"
+          ? "Reject"
+          : "Approve",
+      rejectReason: selectedApprovalList.rejectReason ?? "",
+      boardRemarks: selectedApprovalList.boardRemarks ?? "",
+    };
+  }, [approvalLists, processedLists, selectedApprovalList, selectedApprovalListId]);
+
+  const isSelectedListProcessed =
+    selectedApprovalList?.status === "PROCESSED" || Boolean(selectedProcessedState);
+
+  const todayDate = new Date().toISOString().split("T")[0];
 
   const handleAddMeeting = async () => {
     if (!selectedDate) return;
@@ -237,7 +258,7 @@ export default function BoardApprovalsPage() {
 
     const now = new Date();
     return approvalLists.filter((item) => {
-      const itemDate = new Date(item.date);
+      const itemDate = new Date(item.createdAt ?? item.boardMeetingDate ?? "");
       if (dateFilter === "thisMonth") {
         return (
           itemDate.getFullYear() === now.getFullYear() &&
@@ -257,28 +278,21 @@ export default function BoardApprovalsPage() {
     });
   }, [approvalLists, dateFilter]);
 
-  const selectedApprovalList = useMemo(
-    () =>
-      filteredApprovalLists.find((item) => item.listId === selectedApprovalListId) ??
-      null,
-    [filteredApprovalLists, selectedApprovalListId]
-  );
-
   const actualMeetingDateOptions = useMemo(() => {
     const unique = new Map<string, { value: string; label: string }>();
 
-    approvalLists.forEach((item) => {
-      const value = `${item.date}|${item.meetingId}`;
+    createdMeetings.forEach((item) => {
+      const value = `${item.scheduledDate}|${item.id}`;
       if (!unique.has(value)) {
         unique.set(value, {
           value,
-          label: `${formatDisplayDate(item.date)} (${item.meetingId})`,
+          label: `${formatDisplayDate(item.scheduledDate ?? "")} (${item.boardMeetingId ?? item.id})`,
         });
       }
     });
 
     return Array.from(unique.values());
-  }, [approvalLists]);
+  }, [createdMeetings]);
 
   const totalCount = selectedListApplications.length;
   const approvedCount =
@@ -286,85 +300,139 @@ export default function BoardApprovalsPage() {
   const rejectedCount =
     applicationDecision === "Reject" ? selectedListApplications.length : 0;
 
-  const handleRetrieveApprovalLists = () => {
-    const generated = createdMeetings
-      .filter((meeting) => meeting.id !== undefined)
-      .map((meeting, index) => ({
-        listId: `BAL-${new Date(meeting.date).getFullYear()}-${String((meeting.id || 0) + index).padStart(3, "0")}`,
-        status: "CREATED" as const,
-        meetingId: meeting.id || 0,
-        date: meeting.date,
-      }));
-
-    if (generated.length > 0) {
-      setApprovalLists((prev) => {
-        const seen = new Set(prev.map((item) => item.listId));
-        const newItems = generated.filter((item) => !seen.has(item.listId));
-        return [...newItems, ...prev];
-      });
+  const handleRetrieveApprovalLists = async () => {
+    try {
+      setIsRetrievingLists(true);
+      const lists = await getBoardApprovalLists();
+      setApprovalLists(lists);
+      setSelectedApprovalListId("");
+      setApplicationsRetrieved(false);
+      setSelectedListApplications([]);
+    } catch (error) {
+      console.error("Error retrieving board approval lists:", error);
+      setToastMessage("Failed to retrieve board approval lists");
+      setShowProcessToast(true);
+    } finally {
+      setIsRetrievingLists(false);
     }
-
-    setSelectedApprovalListId("");
-    setApplicationsRetrieved(false);
   };
 
-  const handleRetrieveApplications = () => {
+  const handleRetrieveApplications = async () => {
     if (!selectedApprovalListId) return;
-    setApplicationsRetrieved(true);
+
+    try {
+      setIsRetrievingApplications(true);
+      const applications = await getBoardApprovalListApplications(selectedApprovalListId);
+      setSelectedListApplications(applications.map(mapApplicationToRow));
+      setApplicationsRetrieved(true);
+    } catch (error) {
+      console.error("Error retrieving board approval list applications:", error);
+      setToastMessage("Failed to retrieve applications for this list");
+      setShowProcessToast(true);
+    } finally {
+      setIsRetrievingApplications(false);
+    }
   };
 
   const handleDeleteSelectedList = () => {
     if (!selectedApprovalListId) return;
+    setShowDeleteListModal(true);
+  };
 
-    setApprovalLists((prev) =>
-      prev.filter((item) => item.listId !== selectedApprovalListId)
-    );
-    setProcessedLists((prev) => {
-      const next = { ...prev };
-      delete next[selectedApprovalListId];
-      return next;
-    });
-    setSelectedApprovalListId("");
-    setApplicationsRetrieved(false);
-    setApplicationDecision("Approve");
-    setRejectReason("");
-    setShowConfirmModal(false);
+  const handleConfirmDeleteList = async () => {
+    if (!selectedApprovalListId) return;
+
+    try {
+      setIsDeletingSelectedList(true);
+      await deleteBoardApprovalList(selectedApprovalListId);
+
+      setApprovalLists((prev) =>
+        prev.filter((item) => item.listId !== selectedApprovalListId)
+      );
+      setProcessedLists((prev) => {
+        const next = { ...prev };
+        delete next[selectedApprovalListId];
+        return next;
+      });
+      setSelectedApprovalListId("");
+      setApplicationsRetrieved(false);
+      setSelectedListApplications([]);
+      setApplicationDecision("Approve");
+      setRejectReason("");
+      setBoardRemarks("");
+      setIsEditingProcessedList(false);
+      setShowConfirmModal(false);
+      setShowDeleteListModal(false);
+      setToastMessage("Board approval list deleted successfully");
+      setShowProcessToast(true);
+    } catch (error) {
+      console.error("Error deleting board approval list:", error);
+      setToastMessage("Failed to delete board approval list");
+      setShowProcessToast(true);
+    } finally {
+      setIsDeletingSelectedList(false);
+    }
   };
 
   const handleOpenConfirmModal = () => {
     if (!selectedApprovalList) return;
-
-    const selectedValue = `${selectedApprovalList.date}|${selectedApprovalList.meetingId}`;
-    setActualMeetingDateValue(selectedValue);
     setShowConfirmModal(true);
   };
 
-  const handleProcessBoardDecision = () => {
+  const handleEditProcessedList = () => {
+    if (!selectedProcessedState) return;
+
+    setApplicationDecision(selectedProcessedState.decision);
+    setRejectReason(selectedProcessedState.rejectReason);
+    setBoardRemarks(selectedProcessedState.boardRemarks);
+    setIsEditingProcessedList(true);
+  };
+
+  const handleProcessBoardDecision = async () => {
     if (!selectedApprovalListId || !selectedApprovalList) return;
 
-    const now = new Date();
-    const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
-
-    setProcessedLists((prev) => ({
-      ...prev,
-      [selectedApprovalListId]: {
-        processedBy: "Head Office User",
-        processedAt: formatted,
+    try {
+      const now = new Date();
+      const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+      const payload: ProcessBoardApprovalListPayload = {
+        actualMeetingDate: todayDate,
         decision: applicationDecision,
-        rejectReason,
-      },
-    }));
+        rejectReason: applicationDecision === "Reject" ? rejectReason : undefined,
+        boardRemarks,
+        processedBy: "Super Admin User",
+      };
 
-    setApprovalLists((prev) =>
-      prev.map((item) =>
-        item.listId === selectedApprovalListId
-          ? { ...item, status: "PROCESSED" }
-          : item
-      )
-    );
+      const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
 
-    setShowConfirmModal(false);
-    setShowProcessToast(true);
+      setProcessedLists((prev) => ({
+        ...prev,
+        [selectedApprovalListId]: {
+          processedBy: processedList.processedBy ?? "Head Office User",
+          processedAt: formatted,
+          actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
+          decision: applicationDecision,
+          rejectReason: processedList.rejectReason ?? rejectReason,
+          boardRemarks: processedList.boardRemarks ?? boardRemarks,
+        },
+      }));
+
+      setApprovalLists((prev) =>
+        prev.map((item) =>
+          item.listId === selectedApprovalListId
+            ? { ...item, status: "PROCESSED", ...processedList }
+            : item
+        )
+      );
+
+      setIsEditingProcessedList(false);
+      setShowConfirmModal(false);
+      setShowProcessToast(true);
+      setToastMessage("Board approval list processed successfully");
+    } catch (error) {
+      console.error("Error processing board approval list:", error);
+      setToastMessage("Failed to process board approval list");
+      setShowProcessToast(true);
+    }
   };
 
   return (
@@ -540,21 +608,28 @@ export default function BoardApprovalsPage() {
                   ) : (
                     filteredApprovalLists.map((item) => (
                       <button
-                        key={item.listId}
+                        key={item.listId ?? item.id ?? item.boardMeetingId ?? "approval-list"}
                         type="button"
                         onClick={() => {
+                          if (!item.listId) return;
                           setSelectedApprovalListId(item.listId);
                           setApplicationsRetrieved(false);
+                          setSelectedListApplications([]);
                           setApplicationDecision("Approve");
                           setRejectReason("");
+                          setBoardRemarks("");
+                          setIsEditingProcessedList(false);
                         }}
                         className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${
                           selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
                         }`}
                       >
                         <div className="leading-tight">
-                          <p className="text-sm font-medium text-gray-800">{item.listId}</p>
-                          <p className="text-xs text-muted-foreground">{item.meetingId}</p>
+                          <p className="text-sm font-medium text-gray-800">{item.listId ?? "-"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.boardMeetingDate ?? "-"}
+                            {item.boardMeetingId ? ` (${item.boardMeetingId})` : ""}
+                          </p>
                         </div>
                         <span className="rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
                           {item.status}
@@ -568,10 +643,10 @@ export default function BoardApprovalsPage() {
                   <Button
                     type="button"
                     className="h-9 w-full bg-[#953002] text-white hover:bg-[#7a2700]"
-                    disabled={!selectedApprovalListId}
+                    disabled={!selectedApprovalListId || isRetrievingApplications}
                     onClick={handleRetrieveApplications}
                   >
-                    Retrieve Applications
+                    {isRetrievingApplications ? "Retrieving..." : "Retrieve Applications"}
                   </Button>
                 </div>
               </CardContent>
@@ -594,10 +669,30 @@ export default function BoardApprovalsPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {selectedProcessedState ? (
+                    {selectedProcessedState && !isEditingProcessedList ? (
                       <div className="rounded-md bg-[#d9d9d9] px-3 py-2 text-sm text-gray-600">
-                        Processed by <span className="font-semibold">{selectedProcessedState.processedBy}</span>{" "}
-                        on <span className="font-semibold">{selectedProcessedState.processedAt}</span>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            Processed by <span className="font-semibold">{selectedProcessedState.processedBy}</span>{" "}
+                            on <span className="font-semibold">{selectedProcessedState.processedAt}</span>
+                            <div className="mt-1 text-xs text-gray-500">
+                              Actual meeting date: <span className="font-semibold">{selectedProcessedState.actualMeetingDate}</span>
+                            </div>
+                            {selectedProcessedState.boardRemarks && (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Remarks: <span className="font-semibold">{selectedProcessedState.boardRemarks}</span>
+                              </div>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 px-3"
+                            onClick={handleEditProcessedList}
+                          >
+                            Edit
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-2">
@@ -623,7 +718,7 @@ export default function BoardApprovalsPage() {
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
                             <th className="pb-2 pr-3">App ID</th>
                             <th className="pb-2 pr-3">Name</th>
-                            <th className="pb-2 pr-3">{selectedProcessedState ? "Status" : "Decision"}</th>
+                            <th className="pb-2 pr-3">Decision</th>
                             <th className="pb-2">Reason (If Reject)</th>
                           </tr>
                         </thead>
@@ -631,16 +726,27 @@ export default function BoardApprovalsPage() {
                           {selectedListApplications.map((application) => (
                             <tr key={application.appId} className="align-top">
                               <td className="py-3 pr-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-gray-800">{application.appId}</span>
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-2 text-left"
+                                  onClick={() => {
+                                    if (!application.id) return;
+                                    router.push(
+                                      `/membership/new-registrations?applicationId=${application.id}&mode=view`
+                                    );
+                                  }}
+                                >
+                                  <span className="font-medium text-gray-800 hover:underline">
+                                    {application.appId}
+                                  </span>
                                   {application.hasWarning && (
                                     <AlertCircle size={13} className="text-red-500" />
                                   )}
-                                </div>
+                                </button>
                               </td>
                               <td className="py-3 pr-3 text-gray-700">{application.name}</td>
                               <td className="py-3 pr-3">
-                                {selectedProcessedState ? (
+                                {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${
                                       selectedProcessedState.decision === "Approve"
@@ -670,7 +776,7 @@ export default function BoardApprovalsPage() {
                                 )}
                               </td>
                               <td className="py-3">
-                                {selectedProcessedState ? (
+                                {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={
                                       selectedProcessedState.decision === "Reject"
@@ -702,7 +808,7 @@ export default function BoardApprovalsPage() {
                       </table>
                     </div>
 
-                    {!selectedProcessedState && (
+                    {(!selectedProcessedState || isEditingProcessedList) && (
                       <div className="flex justify-end">
                         <Button
                           type="button"
@@ -712,7 +818,7 @@ export default function BoardApprovalsPage() {
                           }
                           onClick={handleOpenConfirmModal}
                         >
-                          Proceed
+                          {isEditingProcessedList ? "Update" : "Proceed"}
                           <ArrowRight size={14} />
                         </Button>
                       </div>
@@ -785,6 +891,60 @@ export default function BoardApprovalsPage() {
         </div>
       )}
 
+      {showDeleteListModal && selectedApprovalList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Approval List
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {selectedApprovalList.listId} - {formatDisplayDate(selectedApprovalList.boardMeetingDate ?? "")}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => setShowDeleteListModal(false)}
+                aria-label="Close delete modal"
+                disabled={isDeletingSelectedList}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this board approval list? All applications will be reverted to their previous status.
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => setShowDeleteListModal(false)}
+                  disabled={isDeletingSelectedList}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isDeletingSelectedList}
+                  onClick={handleConfirmDeleteList}
+                >
+                  {isDeletingSelectedList ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showConfirmModal && selectedApprovalList && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
           <div className="w-full max-w-[760px] rounded-lg border bg-white shadow-xl">
@@ -828,38 +988,15 @@ export default function BoardApprovalsPage() {
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">Scheduled Date</label>
                   <Input
-                    value={formatDisplayDate(selectedApprovalList.date)}
+                    value={formatDisplayDate(selectedApprovalList.boardMeetingDate ?? "")}
                     readOnly
                     className="bg-gray-50"
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">Actual Meeting Date</label>
-                  <Select
-                    value={actualMeetingDateValue}
-                    onValueChange={setActualMeetingDateValue}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select meeting date" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {actualMeetingDateOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Input value={todayDate} readOnly className="bg-gray-50" />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Signed List Scan</label>
-                <Input
-                  value={signedListScan}
-                  onChange={(e) => setSignedListScan(e.target.value)}
-                  placeholder=""
-                />
               </div>
 
               <div className="space-y-1">
@@ -883,11 +1020,10 @@ export default function BoardApprovalsPage() {
                 <Button
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700"
-                  disabled={!actualMeetingDateValue}
                   onClick={handleProcessBoardDecision}
                 >
                   <CheckSquare size={14} />
-                  Process
+                  {isEditingProcessedList ? "Update" : "Process"}
                 </Button>
               </div>
             </div>

@@ -46,7 +46,8 @@ export interface MemberApplicationDTO {
   shareAccountAmount?: number;
   specialDepositAmount?: number;
   fixedDepositAmount?: number;
-  scholarshipDeathDonationPensionAmount?: number;
+  scholarshipDeathDonationPensionAmount?: number | string;
+  boardDecisionReason?: string;
   nomineeFullName?: string;
   nomineeRelationship?: string;
   identificationNumber?: string;

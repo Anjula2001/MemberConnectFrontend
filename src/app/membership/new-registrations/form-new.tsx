@@ -157,11 +157,13 @@ function FormField({
 
 type NewMemberRegistrationFormProps = {
   applicationId?: number | null;
+  readOnly?: boolean;
   onDone?: () => void;
 };
 
 export function NewMemberRegistrationForm({
   applicationId,
+  readOnly = false,
   onDone,
 }: NewMemberRegistrationFormProps) {
   const { addToast } = useToast();
@@ -177,6 +179,7 @@ export function NewMemberRegistrationForm({
   const [documentSummary, setDocumentSummary] =
     useState<DocumentSummaryDTO | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [boardDecisionReason, setBoardDecisionReason] = useState("");
   // Map of documentType -> { id, url, fileName } for previewing already-uploaded files
   const [existingDocumentUrls, setExistingDocumentUrls] = useState<
     Record<string, { id: number; url: string; fileName: string }>
@@ -346,6 +349,7 @@ export function NewMemberRegistrationForm({
     if (!targetApplicationId) {
       setSavedApplicationId(null);
       setDocumentSummary(null);
+      setBoardDecisionReason("");
       setCurrentTab("application");
       reset(defaultFormValues);
       return;
@@ -422,6 +426,7 @@ export function NewMemberRegistrationForm({
 
         reset(mappedValues);
         setSavedApplicationId(targetApplicationId);
+        setBoardDecisionReason(data.boardDecisionReason ?? "");
 
         const [summary, existingDocs] = await Promise.all([
           getDocumentSummary(targetApplicationId),
@@ -645,6 +650,7 @@ export function NewMemberRegistrationForm({
           </Card>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className={readOnly ? "pointer-events-none select-none" : ""}>
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -656,6 +662,13 @@ export function NewMemberRegistrationForm({
                 </p>
               </div>
             </div>
+
+            {readOnly && boardDecisionReason && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <span className="font-semibold">Board decision reason:</span>{" "}
+                {boardDecisionReason}
+              </div>
+            )}
 
             {/* Application Date */}
             <Card className="rounded-xl shadow-sm">
@@ -1258,28 +1271,31 @@ export function NewMemberRegistrationForm({
             </Card>
 
             {/* Action Buttons */}
-            <div className="flex justify-end gap-3 mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-gray-300 text-gray-700"
-                onClick={onDone}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-[#953002] hover:bg-[#7a2700] text-white"
-              >
-                {isSubmitting
-                  ? isEditMode
-                    ? "Updating..."
-                    : "Saving..."
-                  : isEditMode
-                    ? "Update Application"
-                    : "Save Application"}
-              </Button>
+            {!readOnly && (
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-gray-300 text-gray-700"
+                  onClick={onDone}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white"
+                >
+                  {isSubmitting
+                    ? isEditMode
+                      ? "Updating..."
+                      : "Saving..."
+                    : isEditMode
+                      ? "Update Application"
+                      : "Save Application"}
+                </Button>
+              </div>
+            )}
             </div>
           </form>
         )}
@@ -1338,38 +1354,41 @@ export function NewMemberRegistrationForm({
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-5 pb-5 space-y-4">
-                {(
-                  [
-                    "NIC_COPY",
-                    "APPOINTMENT_LETTER",
-                    "PAYSLIP_COPY",
-                  ] as DocumentType[]
-                ).map((docType) => {
-                  const entry = existingDocumentUrls[docType] ?? null;
-                  return (
-                    <DocumentUploadCard
-                      key={docType}
-                      label={docType.replace(/_/g, " ")}
-                      isUploading={isUploadingDoc}
-                      existingUrl={entry?.url ?? null}
-                      existingDocId={entry?.id ?? null}
-                      existingFileName={entry?.fileName ?? null}
-                      onFileSelected={(file) => handleDocumentUpload(file, docType)}
-                      onDelete={() => handleDocumentDelete(docType)}
-                    />
-                  );
-                })}
-
-                <div className="flex justify-end pt-2">
-                  <Button
-                    type="button"
-                    onClick={onDone}
-                    disabled={!hasCompletedMandatoryDocuments}
-                    className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    Done
-                  </Button>
+                <div className={readOnly ? "pointer-events-none select-none" : ""}>
+                  {(
+                    [
+                      "NIC_COPY",
+                      "APPOINTMENT_LETTER",
+                      "PAYSLIP_COPY",
+                    ] as DocumentType[]
+                  ).map((docType) => {
+                    const entry = existingDocumentUrls[docType] ?? null;
+                    return (
+                      <DocumentUploadCard
+                        key={docType}
+                        label={docType.replace(/_/g, " ")}
+                        isUploading={isUploadingDoc}
+                        existingUrl={entry?.url ?? null}
+                        existingDocId={entry?.id ?? null}
+                        existingFileName={entry?.fileName ?? null}
+                        onFileSelected={(file) => handleDocumentUpload(file, docType)}
+                        onDelete={() => handleDocumentDelete(docType)}
+                      />
+                    );
+                  })}
                 </div>
+                {!readOnly && (
+                  <div className="flex justify-end pt-2">
+                    <Button
+                      type="button"
+                      onClick={onDone}
+                      disabled={!hasCompletedMandatoryDocuments}
+                      className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      Done
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
