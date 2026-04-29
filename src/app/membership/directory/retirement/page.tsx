@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
 import RetirementForm, {
   RetirementFormRef,
@@ -10,7 +11,6 @@ import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarshi
 import AddBankDetails, {
   AddBankDetailsRef,
 } from "../../../../components/ui/retirement/addbankdetails";
-
 
 interface BankAccountRow {
   id: number;
@@ -37,11 +37,40 @@ interface RetirementValidation {
   message: string;
 }
 
+interface RetirementRequest {
+  id: number;
+  requestNo?: string;
+  requestedDate: string;
+  effectiveDate: string;
+  comment?: string;
+  status: string;
+  incompleteReason?: string;
+}
+
+interface MemberDetails {
+  memberId: string;
+  fullName: string;
+  nameWithInitials: string;
+  nic: string;
+}
+
 const API_BASE_URL = "http://localhost:8080";
+const DEFAULT_MEMBER_ID = "MEM009";
+
+const LOCKED_STATUSES = [
+  "SUBMITTED_FOR_APPROVAL",
+  "APPROVED",
+  "REJECTED",
+];
 
 export default function RetirementPage() {
+  const searchParams = useSearchParams();
   const formRef = useRef<RetirementFormRef>(null);
   const bankFormRef = useRef<AddBankDetailsRef>(null);
+  const requestId = searchParams.get("requestId");
+  const selectedMemberId = searchParams.get("memberId") || DEFAULT_MEMBER_ID;
+  const pageMode = searchParams.get("mode") || "";
+  const [isEditing, setIsEditing] = useState(pageMode === "edit");
 
   const [openModal, setOpenModal] = useState(false);
   const [openBankModal, setOpenBankModal] = useState(false);
@@ -52,148 +81,162 @@ export default function RetirementPage() {
   >([]);
 
   const [minorSavingsError, setMinorSavingsError] = useState("");
-  const [member, setMember] = useState({
+  const [saveError, setSaveError] = useState("");
+  const [approvalAction, setApprovalAction] = useState<
+    "approve" | "reject" | null
+  >(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectComment, setRejectComment] = useState("");
+
+  const [member, setMember] = useState<MemberDetails>({
     memberId: "",
     fullName: "",
     nameWithInitials: "",
     nic: "",
   });
-  const [saveError, setSaveError] = useState("");
-  const [retirementRequest, setRetirementRequest] = useState<any>(null);
 
-  const [validation, setValidation] = useState<RetirementValidation | null>(null);
+  const [retirementRequest, setRetirementRequest] =
+    useState<RetirementRequest | null>(null);
+  const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
 
-  const memberId = "MEM007";
+  const [validation, setValidation] =
+    useState<RetirementValidation | null>(null);
 
+  const isRequestLocked = retirementRequest?.status
+    ? LOCKED_STATUSES.includes(retirementRequest.status)
+    : false;
+  const isEditMode = isEditing && !isRequestLocked;
+  const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
+  const showApprovalActions =
+    retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
+  const hideRequestEditActions = showApprovalActions;
+  const isViewRequestMode = pageMode === "view" && !!requestId;
+  const showDisabledRequestActions =
+    !!retirementRequest?.id &&
+    !isEditMode &&
+    !isCurrentSessionSaved &&
+    !showApprovalActions &&
+    (isViewRequestMode);
+  const showRequestEditActions =
+    !hideRequestEditActions &&
+    !showDisabledRequestActions &&
+    (!isViewRequestMode || isEditMode || isCurrentSessionSaved);
+
+  // Loads all data needed when opening a retirement request record.
   useEffect(() => {
+    setIsEditing(pageMode === "edit");
+    setIsCurrentSessionSaved(false);
     fetchMember();
     fetchRetirementValidation();
     fetchMinorSavingsAccounts();
     fetchMemberBankAccounts();
     fetchRetirementRequests();
-    fetchRetirementRequestformdata(); 
-  }, []);
+  }, [pageMode, selectedMemberId]);
 
+  // Fetches the selected member details for the page header and member panel.
   const fetchMember = async () => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/${memberId}`
-      );
+      const response = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
 
-      if (!res.ok) {
+      if (!response.ok) {
         throw new Error("Failed to fetch member");
       }
 
-      const data = await res.json();
+      const memberData = await response.json();
+
       setMember({
-        memberId: data.memberId,
-        fullName: data.fullName,
-        nameWithInitials: data.nameWithInitials,
-        nic: data.nic,
+        memberId: memberData.memberId,
+        fullName: memberData.fullName,
+        nameWithInitials: memberData.nameWithInitials,
+        nic: memberData.nic,
       });
     } catch (error) {
       console.error("Fetch member error:", error);
     }
   };
 
+  // Checks whether the member can submit a retirement request.
   const fetchRetirementValidation = async () => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/${memberId}/retirement-validation`
+      const response = await fetch(
+        `${API_BASE_URL}/api/members/${selectedMemberId}/retirement-validation`
       );
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText);
       }
 
-      const data = await res.json();
-      setValidation(data);
+      const validationData = await response.json();
+      setValidation(validationData);
     } catch (error) {
       console.error("Retirement validation error:", error);
     }
   };
 
+  // Loads minor savings accounts linked to the selected member.
   const fetchMinorSavingsAccounts = async () => {
     try {
-      const url = `${API_BASE_URL}/api/members/${memberId}/minor-savings-accounts`;
+      const response = await fetch(
+        `${API_BASE_URL}/api/members/${selectedMemberId}/minor-savings-accounts`
+      );
 
-      const res = await fetch(url, {
-        method: "GET",
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const data = await res.json();
-      setMinorSavingsAccounts(data);
+      const accounts = await response.json();
+      setMinorSavingsAccounts(accounts);
     } catch (error) {
       console.error("Fetch minor savings accounts error:", error);
     }
   };
 
+  // Loads disbursement bank account details already saved for the member.
   const fetchMemberBankAccounts = async () => {
     try {
-      const url = `${API_BASE_URL}/api/members/${memberId}/bank-accounts`;
+      const response = await fetch(
+        `${API_BASE_URL}/api/members/${selectedMemberId}/bank-accounts`
+      );
 
-      const res = await fetch(url, {
-        method: "GET",
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const data = await res.json();
-      setBankAccounts(data);
+      const accounts = await response.json();
+      setBankAccounts(accounts);
     } catch (error) {
       console.error("Fetch member bank accounts error:", error);
     }
   };
 
+  // Loads the existing retirement request for the selected member.
   const fetchRetirementRequests = async () => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/${memberId}/retirement-requests`
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
       );
 
-      if (!res.ok) {
-        const errorData = await res.json();
+      if (!response.ok) {
+        const errorData = await response.json();
         setSaveError(errorData.message || "Failed to fetch retirement request");
         return;
       }
 
-      const data = await res.json();
+      const requests: RetirementRequest[] = await response.json();
 
-      if (data.length > 0) {
-        setRetirementRequest(data[0]);
+      if (requests.length > 0) {
+        setRetirementRequest(requests[0]);
+        setIsCurrentSessionSaved(false);
       }
     } catch (error) {
       console.error("Fetch retirement request error:", error);
     }
   };
 
-  const fetchRetirementRequestformdata = async () => {
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/${memberId}/retirement-requests`
-      );
-
-      if (!res.ok) return;
-
-      const data = await res.json();
-
-      if (data.length > 0) {
-        setRetirementRequest(data[0]); // load existing request
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
+  // Opens the bank detail modal when the member can add disbursement details.
   const handleAddAccountClick = () => {
     if (minorSavingsAccounts.length === 0) {
       setMinorSavingsError(
@@ -201,19 +244,21 @@ export default function RetirementPage() {
       );
       return;
     }
-     if (bankAccounts.length > 0) {
-    setMinorSavingsError(
-      "Disbursement bank details already added."
-    );
-    return;
-  }
+
+    if (bankAccounts.length > 0) {
+      setMinorSavingsError("Disbursement bank details already added.");
+      return;
+    }
 
     setMinorSavingsError("");
     setOpenBankModal(true);
   };
 
+  // Marks the retirement request as incomplete with a required reason.
   const handleConfirm = async (reason: string) => {
-    if (!reason.trim()) {
+    const trimmedReason = reason.trim();
+
+    if (!trimmedReason) {
       setSaveError("Incomplete reason is required.");
       return;
     }
@@ -225,24 +270,24 @@ export default function RetirementPage() {
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/retirement-requests/${retirementRequest.id}/mark-incomplete`,
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/mark-incomplete`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason: trimmedReason }),
         }
       );
 
-      if (!res.ok) {
-        const errorData = await res.json();
+      if (!response.ok) {
+        const errorData = await response.json();
         setSaveError(errorData.message || "Failed to mark incomplete.");
         return;
       }
 
-      const updatedRequest = await res.json();
+      const updatedRequest: RetirementRequest = await response.json();
 
       setRetirementRequest(updatedRequest);
       setOpenModal(false);
@@ -253,6 +298,7 @@ export default function RetirementPage() {
     }
   };
 
+  // Validates and saves the retirement request form.
   const handleSave = async () => {
     const formData = await formRef.current?.validateAndGetData();
 
@@ -261,8 +307,8 @@ export default function RetirementPage() {
     setSaveError("");
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/${memberId}/retirement-requests`,
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${selectedMemberId}`,
         {
           method: "POST",
           headers: {
@@ -272,22 +318,27 @@ export default function RetirementPage() {
         }
       );
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        setSaveError(errorData.message || errorData.error || "Failed to save request");
+      if (!response.ok) {
+        const errorData = await response.json();
+        setSaveError(
+          errorData.message || errorData.error || "Failed to save request"
+        );
         return;
       }
 
-      const savedRequest = await res.json();
-      setRetirementRequest(savedRequest);
-      setSaveError("");
+      const savedRequest: RetirementRequest = await response.json();
 
+      setRetirementRequest(savedRequest);
+      setIsEditing(false);
+      setIsCurrentSessionSaved(true);
+      setSaveError("");
     } catch (error) {
       console.error("Save request error:", error);
       setSaveError("Failed to save retirement request.");
     }
   };
 
+  // Submits a saved retirement request for approval.
   const handleSubmitForm = async () => {
     setSaveError("");
 
@@ -296,8 +347,18 @@ export default function RetirementPage() {
       return;
     }
 
+    if (minorSavingsAccounts.length > 0 && bankAccounts.length === 0) {
+      const missingBankDetailsMessage =
+        "Please add disbursement bank details before submitting.";
+
+      setSaveError(missingBankDetailsMessage);
+      return;
+    }
+
     if (validation && !validation.canSubmit) {
-      setSaveError("Cannot submit. Member has outstanding loans or loan obligations.");
+      setSaveError(
+        "Cannot submit. Member has outstanding loans or loan obligations."
+      );
       return;
     }
 
@@ -308,20 +369,20 @@ export default function RetirementPage() {
     if (!confirmed) return;
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/members/retirement-requests/${retirementRequest.id}/submit`,
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/submit`,
         {
           method: "POST",
         }
       );
 
-      if (!res.ok) {
-        const errorData = await res.json();
+      if (!response.ok) {
+        const errorData = await response.json();
         setSaveError(errorData.message || "Cannot submit request.");
         return;
       }
 
-      const submittedRequest = await res.json();
+      const submittedRequest: RetirementRequest = await response.json();
 
       setRetirementRequest(submittedRequest);
       setSaveError("");
@@ -331,27 +392,94 @@ export default function RetirementPage() {
     }
   };
 
+  // Approves or rejects a submitted retirement request.
+  const handleApprovalAction = async (
+    action: "approve" | "reject",
+    comment = ""
+  ) => {
+    setSaveError("");
+
+    if (!retirementRequest?.id) {
+      setSaveError("Please open a retirement request before approving or rejecting.");
+      return;
+    }
+
+    if (action === "approve") {
+      const confirmed = window.confirm(
+        "Do you want to approve this retirement request?"
+      );
+
+      if (!confirmed) return;
+    }
+
+    if (action === "reject" && !comment.trim()) {
+      setSaveError("Reject comment is required.");
+      return;
+    }
+
+    try {
+      setApprovalAction(action);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/${action}`,
+        {
+          method: "PUT", 
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body:
+            action === "reject"
+              ? JSON.stringify({ reason: comment.trim() })
+              : undefined,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        setSaveError(
+          errorData.message || `Failed to ${action} retirement request.`
+        );
+        return;
+      }
+
+      const responseText = await response.text();
+      const updatedRequest: RetirementRequest = responseText
+        ? JSON.parse(responseText)
+        : {
+            ...retirementRequest,
+            status: action === "approve" ? "APPROVED" : "REJECTED",
+          };
+      setRetirementRequest(updatedRequest);
+      await fetchMember();
+      setSaveError("");
+      setRejectModalOpen(false);
+      setRejectComment("");
+    } catch (error) {
+      console.error(`${action} request error:`, error);
+      setSaveError(`Failed to ${action} retirement request.`);
+    } finally {
+      setApprovalAction(null);
+    }
+  };
+
+  // Adds a newly saved bank account row to the displayed list.
   const handleBankSave = (savedAccount: BankAccountRow) => {
-    setBankAccounts((prev) => [...prev, savedAccount]);
+    setBankAccounts((previousAccounts) => [...previousAccounts, savedAccount]);
+    setMinorSavingsError("");
+    setSaveError("");
     setOpenBankModal(false);
   };
-  const requestIdDisplay = retirementRequest?.id
-  ? retirementRequest.id
-  : "NEW";
-
-  const statusDisplay = retirementRequest?.status
-  ? retirementRequest.status
-  : "NEW";
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 p-6">
+      <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
+        <div className="min-h-[100vh] flex-1 px-14 py-10 rounded-xl bg-muted/50 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold text-[#953002]">
+              <p className="text-2xl font-bold text-[#953002] ">
                 Retirement Request
-                {retirementRequest?.requestNo && `: ${retirementRequest.requestNo}`}
+                {retirementRequest?.requestNo &&
+                  `: ${retirementRequest.requestNo}`}
               </p>
 
               <div className="flex items-center gap-3 mt-1">
@@ -361,64 +489,115 @@ export default function RetirementPage() {
 
                 {retirementRequest?.status && (
                   <p className="text-sm font-semibold text-blue-600">
-                    • Status: {retirementRequest.status}
+                    Status: {retirementRequest.status}
+                    {isIncompleteStatus &&
+                      retirementRequest.incompleteReason &&
+                      ` (${retirementRequest.incompleteReason})`}
                   </p>
                 )}
 
-                {retirementRequest?.status === "INCOMPLETE" &&
-                  retirementRequest?.incompleteReason && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      ( {retirementRequest.incompleteReason})
-                    </p>
-                )}
               </div>
 
               {saveError && (
-                <p className="text-red-500 text-sm mt-2">
-                  {saveError}
-                </p>
+                <p className="text-red-500 text-sm mt-2">{saveError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              {(isViewRequestMode) &&
+                retirementRequest?.id &&
+                !isRequestLocked &&
+                !isEditMode &&
+                !isCurrentSessionSaved && (
+                  <Button
+                    onClick={() => setIsEditing(true)}
+                    className="bg-white text-black hover:bg-gray-100"
+                  >
+                    Edit
+                  </Button>
+                )}
+
+              {showApprovalActions && (
+                <>
+                  <Button
+                    onClick={() => handleApprovalAction("approve")}
+                    disabled={approvalAction !== null}
+                    className="bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    {approvalAction === "approve" ? "Approving..." : "Approve"}
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      setRejectComment("");
+                      setRejectModalOpen(true);
+                    }}
+                    disabled={approvalAction !== null}
+                    className="bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    {approvalAction === "reject" ? "Rejecting..." : "Reject"}
+                  </Button>
+                </>
               )}
 
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSave}
-                className="bg-white text-black hover:bg-gray-100"
-              >
-                Save
-              </Button>
+              {showDisabledRequestActions && (
+                  <>
+                    <Button
+                      type="button"
+                      disabled
+                      className="bg-[#D4183D] text-white disabled:bg-[#D4183D] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      Mark Incomplete
+                    </Button>
 
-              <Button
-                onClick={() => setOpenModal(true)}
-                disabled={
-                  !retirementRequest?.id ||
-                  retirementRequest?.status === "INCOMPLETE" ||
-                  retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" ||
-                  retirementRequest?.status === "APPROVED" ||
-                  retirementRequest?.status === "REJECTED"
-                }
-                className="bg-[#D4183D] text-white hover:bg-[#b31533] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
-              >
-                Mark Incomplete
-              </Button>
+                    <Button
+                      type="button"
+                      disabled
+                      className="bg-[#953002] text-white disabled:bg-[#953002] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      Submit for Approval
+                    </Button>
+                  </>
+                )}
 
-              <Button
-                onClick={handleSubmitForm}
-                disabled={
-                  !retirementRequest?.id ||
-                  retirementRequest?.status === "INCOMPLETE" ||
-                  retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" ||
-                  retirementRequest?.status === "APPROVED" ||
-                  retirementRequest?.status === "REJECTED" ||
-                  (validation ? !validation.canSubmit : true)
-                }
-                className="bg-[#953002] text-white hover:bg-[#672102] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
-              >
-                Submit for Approval
-              </Button>
+              {showRequestEditActions && (
+                <>
+                  <Button
+                    onClick={handleSave}
+                    className="bg-white text-black hover:bg-gray-100"
+                  >
+                    Save
+                  </Button>
 
+                  <Button
+                    onClick={() => setOpenModal(true)}
+                    disabled={
+                      !retirementRequest?.id ||
+                      isRequestLocked ||
+                      (isIncompleteStatus && !isEditMode)
+                    }
+                    className="bg-[#D4183D] text-white disabled:cursor-not-allowed"
+                  >
+                    Mark Incomplete
+                  </Button>
+
+                  <Button
+                    onClick={handleSubmitForm}
+                    disabled={
+                      !retirementRequest?.id ||
+                      isRequestLocked ||
+                      (isIncompleteStatus && !isEditMode) ||
+                      (validation ? !validation.canSubmit : true)
+                    }
+                    className="bg-[#953002] text-white disabled:cursor-not-allowed"
+                  >
+                    Submit for Approval
+                  </Button>
+                </>
+              )}
             </div>
           </div>
+
           {validation && !validation.canSubmit && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-4 border border-red-200">
               <p className="text-pink-500 font-semibold">
@@ -440,21 +619,14 @@ export default function RetirementPage() {
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-lg  px-5 py-5 mt-6 ">
-
-            {/* Header */}
+          <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
             <h2 className="text-lg font-bold text-[#953002] mb-4">
               Member Details
             </h2>
 
-            {/* Form Layout */}
             <div className="grid grid-cols-3 gap-5">
-
-              {/* Member ID */}
               <div>
-                <label className=" block font-medium mb-1">
-                  Member ID
-                </label>
+                <label className="block font-medium mb-1">Member ID</label>
                 <input
                   type="text"
                   value={member.memberId || ""}
@@ -463,7 +635,6 @@ export default function RetirementPage() {
                 />
               </div>
 
-              {/* Name with Initials */}
               <div>
                 <label className="block font-medium mb-1">
                   Surname with Initials
@@ -476,11 +647,8 @@ export default function RetirementPage() {
                 />
               </div>
 
-              {/* NIC */}
               <div>
-                <label className="block font-medium mb-1">
-                  NIC Number
-                </label>
+                <label className="block font-medium mb-1">NIC Number</label>
                 <input
                   type="text"
                   value={member.nic || ""}
@@ -488,15 +656,20 @@ export default function RetirementPage() {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
                 />
               </div>
-
             </div>
           </div>
+
           <div className="flex gap-6 mt-6">
             <div className="flex-1 flex flex-col space-y-6">
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <RetirementForm
+                  key={`${selectedMemberId}-${retirementRequest?.id || "new"}-${
+                    retirementRequest?.requestedDate || ""
+                  }-${retirementRequest?.effectiveDate || ""}-${
+                    retirementRequest?.comment || ""
+                  }`}
                   ref={formRef}
-                  readOnly={!!retirementRequest?.id}
+                  readOnly={!!retirementRequest?.id && !isEditMode}
                   initialData={{
                     requestedDate: retirementRequest?.requestedDate || "",
                     effectiveDate: retirementRequest?.effectiveDate || "",
@@ -554,6 +727,7 @@ export default function RetirementPage() {
                             </th>
                           </tr>
                         </thead>
+
                         <tbody>
                           {minorSavingsAccounts.map((account) => (
                             <tr key={account.minorAccountNo}>
@@ -596,6 +770,7 @@ export default function RetirementPage() {
                               </th>
                             </tr>
                           </thead>
+
                           <tbody>
                             {bankAccounts.map((account) => (
                               <tr key={account.id}>
@@ -622,11 +797,13 @@ export default function RetirementPage() {
                 <p className="text-xl font-bold text-[#953002] mb-4">
                   Supporting Documents
                 </p>
+
                 <DocumentUpload
                   requestId={retirementRequest?.id || null}
-                  memberId={memberId}
+                  memberId={selectedMemberId}
                   requestStatus={retirementRequest?.status || "NEW"}
                   requestType="retirement-requests"
+                  readOnly={isViewRequestMode && !!retirementRequest?.id && !isEditMode}
                 />
               </div>
             </div>
@@ -640,6 +817,53 @@ export default function RetirementPage() {
         onConfirm={handleConfirm}
       />
 
+      {rejectModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6">
+            <h2 className="text-lg font-bold text-[#953002]">
+              Reject Retirement Request
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-1">
+              Add a reject comment before rejecting this request.
+            </p>
+
+            <div className="mt-4 space-y-4">
+              <textarea
+                value={rejectComment}
+                onChange={(event) => setRejectComment(event.target.value)}
+                placeholder="Reject comment..."
+                className="w-full min-h-[100px] rounded-md border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]"
+              />
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setRejectModalOpen(false);
+                    setRejectComment("");
+                    setSaveError("");
+                  }}
+                  disabled={approvalAction === "reject"}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={() => handleApprovalAction("reject", rejectComment)}
+                  disabled={!rejectComment.trim() || approvalAction === "reject"}
+                  className="bg-[#953002] text-white hover:bg-[#672102] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  {approvalAction === "reject" ? "Rejecting..." : "Reject"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {openBankModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
           <div className="bg-white p-6 rounded shadow-lg w-96">
@@ -649,7 +873,7 @@ export default function RetirementPage() {
 
             <AddBankDetails
               ref={bankFormRef}
-              memberId={memberId}
+              memberId={selectedMemberId}
               onSave={handleBankSave}
               onClose={() => setOpenBankModal(false)}
             />

@@ -1,6 +1,12 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useState, useEffect } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useState,
+} from "react";
+import type { ChangeEvent } from "react";
+import { z } from "zod";
 
 export interface RetirementFormRef {
   validateAndGetData: () => {
@@ -19,100 +25,171 @@ interface Props {
   readOnly?: boolean;
 }
 
+/**
+ * Get today's date in YYYY-MM-DD format.
+ * This avoids repeating the same date logic in multiple places.
+ */
+const getTodayDate = () => {
+  return new Date().toISOString().split("T")[0];
+};
+
+const getEffectiveDateError = (date: string) => {
+  return date && date > getTodayDate()
+    ? "Effective Date cannot be a future date"
+    : "";
+};
+
+const retirementFormSchema = z
+  .object({
+    requestedDate: z.string().min(1, "Requested Date is required"),
+    effectiveDate: z.string().min(1, "Effective Date is required"),
+    comment: z.string(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.requestedDate && data.requestedDate > getTodayDate()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Requested Date cannot be a future date",
+        path: ["requestedDate"],
+      });
+    }
+
+    if (data.effectiveDate && data.effectiveDate > getTodayDate()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Effective Date cannot be a future date",
+        path: ["effectiveDate"],
+      });
+    }
+  });
+
+type RetirementFormErrors = {
+  requestedDate?: string;
+  effectiveDate?: string;
+};
+
 const RetirementForm = forwardRef<RetirementFormRef, Props>(
-  ({ initialData, readOnly=false }, ref) => {
-    const [requestedDate, setRequestedDate] = useState("");
-    const [effectiveDate, setEffectiveDate] = useState("");
-    const [comment, setComment] = useState("");
-
+  ({ initialData, readOnly = false }, ref) => {
+    const [requestedDate, setRequestedDate] = useState(
+      initialData?.requestedDate || ""
+    );
+    const [effectiveDate, setEffectiveDate] = useState(
+      initialData?.effectiveDate || ""
+    );
+    const [comment, setComment] = useState(initialData?.comment || "");
     const [error, setError] = useState("");
+    const [fieldErrors, setFieldErrors] = useState<RetirementFormErrors>({
+      effectiveDate: getEffectiveDateError(initialData?.effectiveDate || ""),
+    });
 
-    // Load initial data (EDIT mode)
-    useEffect(() => {
-      if (initialData) {
-        setRequestedDate(initialData.requestedDate || "");
-        setEffectiveDate(initialData.effectiveDate || "");
-        setComment(initialData.comment || "");
-      }
-    }, [initialData]);
+    const handleRequestedDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+      const selectedDate = e.target.value;
 
-    // Expose validation to parent
+      setRequestedDate(selectedDate);
+      setFieldErrors((previousErrors) => ({
+        ...previousErrors,
+        requestedDate: selectedDate ? "" : previousErrors.requestedDate,
+      }));
+    };
+
+    const handleEffectiveDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+      const selectedDate = e.target.value;
+
+      setEffectiveDate(selectedDate);
+      setFieldErrors((previousErrors) => ({
+        ...previousErrors,
+        effectiveDate: getEffectiveDateError(selectedDate),
+      }));
+    };
+
+    /**
+     * Expose validation to the parent component.
+     * The parent page can call this before saving the retirement request.
+     */
     useImperativeHandle(ref, () => ({
       validateAndGetData: () => {
         setError("");
 
-        if (!requestedDate) {
-          setError("Requested Date is required");
-          return null;
-        }
-
-        if (!effectiveDate) {
-          setError("Effective Date is required");
-          return null;
-        }
-
-        const today = new Date().toISOString().split("T")[0];
-
-        if (requestedDate > today) {
-          setError("Requested Date cannot be a future date");
-          return null;
-        }
-
-        //Effective date CAN be future → backend will validate
-        return {
+        const validationResult = retirementFormSchema.safeParse({
           requestedDate,
           effectiveDate,
           comment,
+        });
+
+        if (!validationResult.success) {
+          const errors = validationResult.error.flatten().fieldErrors;
+          const nextFieldErrors = {
+            requestedDate: errors.requestedDate?.[0] || "",
+            effectiveDate: errors.effectiveDate?.[0] || "",
+          };
+
+          setFieldErrors(nextFieldErrors);
+          setError(
+            nextFieldErrors.requestedDate ||
+              nextFieldErrors.effectiveDate ||
+              "Please check the form details."
+          );
+          return null;
+        }
+
+        setFieldErrors({});
+
+        return {
+          ...validationResult.data,
+          comment: validationResult.data.comment.trim(),
         };
       },
     }));
 
     return (
       <div className="space-y-4">
-        {/* Error Message */}
-        {error && (
-          <div className="text-red-500 text-sm font-medium">
-            {error}
-          </div>
-        )}
 
-        {/* Dates */}
         <div className="grid grid-cols-2 gap-4">
-          {/* Requested Date */}
           <div>
             <label className="block font-medium mb-1">
               Requested Date <span className="text-red-500">*</span>
             </label>
+
             <input
               type="date"
               value={requestedDate}
-              max={new Date().toISOString().split("T")[0]}
-              onChange={(e) => setRequestedDate(e.target.value)}
+              max={getTodayDate()}
+              onChange={handleRequestedDateChange}
               disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"
             />
+
+            {fieldErrors.requestedDate && (
+              <div className="text-red-500 text-sm mt-1">
+                {fieldErrors.requestedDate}
+              </div>
+            )}
           </div>
 
-          {/* Effective Date */}
           <div>
             <label className="block font-medium mb-1">
               Effective Date <span className="text-red-500">*</span>
             </label>
+
             <input
               type="date"
               value={effectiveDate}
-              onChange={(e) => setEffectiveDate(e.target.value)}
+              onChange={handleEffectiveDateChange}
               disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"
             />
+
+            {fieldErrors.effectiveDate && (
+              <div className="text-red-500 text-sm mt-1">
+                {fieldErrors.effectiveDate}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Comment */}
         <div>
-          <label className="block font-medium mb-1">
-            Comments
-          </label>
+          <label className="block font-medium mb-1">Comments</label>
+
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}

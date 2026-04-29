@@ -2,8 +2,8 @@
 
 import {
   forwardRef,
-  useImperativeHandle,
   useEffect,
+  useImperativeHandle,
   useState,
 } from "react";
 import { Input } from "../../ui/input";
@@ -39,16 +39,34 @@ interface AddBankDetailsProps {
   onClose: () => void;
 }
 
+const API_BASE_URL = "http://localhost:8080";
+const ACCOUNT_NUMBER_PATTERN = /^[0-9]{6,20}$/;
+
+/**
+ * Validates the bank account number before sending it to the backend.
+ * This prevents empty or invalid account numbers from being submitted.
+ */
+const validateAccountNumber = (accountNumber: string) => {
+  if (!accountNumber.trim()) {
+    return "Account number is required";
+  }
+
+  if (!ACCOUNT_NUMBER_PATTERN.test(accountNumber.trim())) {
+    return "Account number must contain 6 to 20 digits";
+  }
+
+  return "";
+};
+
 const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
   ({ memberId, onSave, onClose }, ref) => {
-    /**
-     * Local UI state
-     */
     const [banks, setBanks] = useState<Bank[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
+
     const [selectedBank, setSelectedBank] = useState("");
     const [selectedBranch, setSelectedBranch] = useState("");
     const [accountNumber, setAccountNumber] = useState("");
+
     const [loadingBanks, setLoadingBanks] = useState(false);
     const [loadingBranches, setLoadingBranches] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -59,7 +77,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     const [generalError, setGeneralError] = useState("");
 
     /**
-     * Fetch all banks from backend
+     * Loads all available banks when the component opens.
+     * This keeps the bank dropdown updated from the backend.
      */
     useEffect(() => {
       const fetchBanks = async () => {
@@ -67,14 +86,14 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
           setLoadingBanks(true);
           setGeneralError("");
 
-          const res = await fetch("http://localhost:8080/api/banks");
+          const response = await fetch(`${API_BASE_URL}/api/banks`);
 
-          if (!res.ok) {
+          if (!response.ok) {
             throw new Error("Failed to load banks");
           }
 
-          const data = await res.json();
-          setBanks(data);
+          const bankList: Bank[] = await response.json();
+          setBanks(bankList);
         } catch (error) {
           console.error("Error fetching banks:", error);
           setGeneralError("Unable to load banks");
@@ -87,7 +106,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     }, []);
 
     /**
-     * Fetch branches when bank changes
+     * Loads branches only after a bank is selected.
+     * This avoids unnecessary API calls and ensures branch options match the bank.
      */
     useEffect(() => {
       if (!selectedBank) {
@@ -102,16 +122,16 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
           setGeneralError("");
           setSelectedBranch("");
 
-          const res = await fetch(
-            `http://localhost:8080/api/banks/${selectedBank}/branches`
+          const response = await fetch(
+            `${API_BASE_URL}/api/banks/${selectedBank}/branches`
           );
 
-          if (!res.ok) {
+          if (!response.ok) {
             throw new Error("Failed to load branches");
           }
 
-          const data = await res.json();
-          setBranches(data);
+          const branchList: Branch[] = await response.json();
+          setBranches(branchList);
         } catch (error) {
           console.error("Error fetching branches:", error);
           setBranches([]);
@@ -125,7 +145,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     }, [selectedBank]);
 
     /**
-     * Simple frontend validation
+     * Validates all required fields before saving.
+     * Keeping validation separate makes the code easier to maintain and test.
      */
     const validateForm = () => {
       let isValid = true;
@@ -145,8 +166,10 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
         isValid = false;
       }
 
-      if (!accountNumber.trim()) {
-        setAccountNumberError("Account number is required");
+      const accountValidationMessage = validateAccountNumber(accountNumber);
+
+      if (accountValidationMessage) {
+        setAccountNumberError(accountValidationMessage);
         isValid = false;
       }
 
@@ -154,18 +177,20 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     };
 
     /**
-     * Save bank account
+     * Saves the selected bank details to the backend.
+     * The function first validates inputs, then sends only clean data.
      */
     const submitBankForm = async () => {
       const isValid = validateForm();
+
       if (!isValid) return;
 
       try {
         setSaving(true);
         setGeneralError("");
 
-        const res = await fetch(
-          `http://localhost:8080/api/members/${memberId}/bank-accounts`,
+        const response = await fetch(
+          `${API_BASE_URL}/api/members/${memberId}/bank-accounts`,
           {
             method: "POST",
             headers: {
@@ -174,18 +199,18 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
             body: JSON.stringify({
               bankId: selectedBank,
               branchId: selectedBranch,
-              accountNumber: accountNumber,
+              accountNumber: accountNumber.trim(),
             }),
           }
         );
 
-        if (!res.ok) {
-          const errorText = await res.text();
+        if (!response.ok) {
+          const errorText = await response.text();
           throw new Error(errorText || "Failed to save bank account");
         }
 
-        const savedData: SavedBankAccount = await res.json();
-        onSave(savedData);
+        const savedAccount: SavedBankAccount = await response.json();
+        onSave(savedAccount);
       } catch (error) {
         console.error("Save error:", error);
         setGeneralError("Failed to save bank account");
@@ -195,7 +220,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     };
 
     /**
-     * Expose submit function to parent component
+     * Allows the parent component to trigger this form's submit function.
+     * This is useful when the save button is controlled from outside the form.
      */
     useImperativeHandle(ref, () => ({
       submitBankForm,
@@ -204,9 +230,9 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     return (
       <form className="space-y-6">
         <div className="grid grid-cols-1 gap-4">
-          {/* Bank */}
           <div>
             <label className="block font-medium mb-1">Bank</label>
+
             <select
               value={selectedBank}
               onChange={(e) => {
@@ -220,20 +246,22 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
               <option value="">
                 {loadingBanks ? "Loading banks..." : "Select bank"}
               </option>
+
               {banks.map((bank) => (
                 <option key={bank.bankId} value={bank.bankId}>
                   {bank.name}
                 </option>
               ))}
             </select>
+
             {bankError && (
               <p className="text-red-500 text-sm mt-1">{bankError}</p>
             )}
           </div>
 
-          {/* Branch */}
           <div>
             <label className="block font-medium mb-1">Branch</label>
+
             <select
               value={selectedBranch}
               onChange={(e) => {
@@ -247,23 +275,25 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
                 {!selectedBank
                   ? "Select bank first"
                   : loadingBranches
-                  ? "Loading branches..."
-                  : "Select branch"}
+                    ? "Loading branches..."
+                    : "Select branch"}
               </option>
+
               {branches.map((branch) => (
                 <option key={branch.branchId} value={branch.branchId}>
                   {branch.name}
                 </option>
               ))}
             </select>
+
             {branchError && (
               <p className="text-red-500 text-sm mt-1">{branchError}</p>
             )}
           </div>
 
-          {/* Account Number */}
           <div>
             <label className="block font-medium mb-1">Account Number</label>
+
             <Input
               value={accountNumber}
               onChange={(e) => {
@@ -272,6 +302,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
               }}
               placeholder="Enter account number"
             />
+
             {accountNumberError && (
               <p className="text-red-500 text-sm mt-1">
                 {accountNumberError}
@@ -279,12 +310,10 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
             )}
           </div>
 
-          {/* General Error */}
           {generalError && (
             <p className="text-red-500 text-sm">{generalError}</p>
           )}
 
-          {/* Buttons */}
           <div className="flex justify-center gap-8 pt-4">
             <Button
               type="button"

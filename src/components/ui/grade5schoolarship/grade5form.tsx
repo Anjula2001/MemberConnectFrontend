@@ -14,10 +14,49 @@ import { Button } from "../../ui/button";
 
 interface Grade5FormProps {
   memberId: string;
-  initialData?: any;
+  initialData?: Grade5InitialData | null;
   readOnly?: boolean;
 }
 
+export type Grade5InitialData = {
+  requestedDate?: string;
+  studentName?: string;
+  birthCertificateNumber?: string;
+  school?: string;
+  district?: string;
+  examYear?: number;
+  districtCutOffMark?: number | string | null;
+  marksObtained?: number;
+  examinationNumber?: string;
+};
+
+export type Grade5SavedRequest = Grade5InitialData & {
+  id?: number;
+  requestNo?: string;
+  status?: string;
+  incompleteReason?: string;
+};
+
+type EligibilityValidationResponse = {
+  eligible?: boolean;
+  isEligible?: boolean;
+  valid?: boolean;
+  canCreate?: boolean;
+  message?: string;
+  reason?: string;
+  error?: string;
+  errors?: string[];
+  memberActiveDuringExam?: boolean;
+  activeDuringExam?: boolean;
+  membershipPeriodValid?: boolean;
+  membershipAgeValid?: boolean;
+  scholarshipRemittedPreviousMonth?: boolean;
+  previousMonthRemitted?: boolean;
+  continuousScholarshipRemittanceValid?: boolean;
+  continuousRemittanceValid?: boolean;
+};
+
+// For Validate Form
 const grade5Schema = z.object({
   requestedDate: z
     .string()
@@ -85,7 +124,7 @@ const grade5Schema = z.object({
 export type Grade5FormValues = z.infer<typeof grade5Schema>;
 
 export interface Grade5FormRef {
-  submitForm: () => Promise<any>;
+  submitForm: () => Promise<Grade5SavedRequest | undefined>;
   getBirthCertificateNo: () => string;
 }
 
@@ -140,7 +179,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         ? String(initialData.districtCutOffMark)
         : ""
     );
-    setValue("marksObtained", initialData.marksObtained || undefined);
+    setValue("marksObtained", initialData.marksObtained ?? 0);
     setValue("examinationNumber", initialData.examinationNumber || "");
   }
 }, [initialData, setValue]);
@@ -149,6 +188,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 const [checkingExamNo, setCheckingExamNo] = useState(false);
 
 const [examValidated, setExamValidated] = useState(false);
+const [eligibilityError, setEligibilityError] = useState("");
 
 useEffect(() => {
   if (!selectedDistrict || !selectedYear) {
@@ -245,8 +285,94 @@ useEffect(() => {
     }
   };
 
+  const buildEligibilityMessage = (data: EligibilityValidationResponse) => {
+    if (data.message) return data.message;
+    if (data.reason) return data.reason;
+    if (data.error) return data.error;
+    if (data.errors?.length) return data.errors.join(" ");
+
+    if (
+      data.memberActiveDuringExam === false ||
+      data.activeDuringExam === false
+    ) {
+      return "The Grade 5 Scholarship Request cannot be saved. The Member is not Active during the selected Exam";
+    }
+
+    if (
+      data.membershipPeriodValid === false ||
+      data.membershipAgeValid === false
+    ) {
+      return "The required continues Membership period does not comply (36 months)";
+    }
+
+    if (
+      data.continuousScholarshipRemittanceValid === false ||
+      data.continuousRemittanceValid === false
+    ) {
+      return "Scholarship deduction was not continuously remitted from Member for the specific period (6 months)";
+    }
+
+    if (
+      data.scholarshipRemittedPreviousMonth === false ||
+      data.previousMonthRemitted === false
+    ) {
+      return "The Scholarship Account should be remitted on the previous month.";
+    }
+
+    return "The Grade 5 Scholarship Request cannot be saved. Member is not eligible to apply for a Grade 5 Scholarship.";
+  };
+
+  const validateMemberEligibility = async (data: Grade5FormValues) => {
+    setEligibilityError("");
+
+    if (!data.examYear) {
+      setEligibilityError("Exam year is required to validate member eligibility.");
+      return false;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        memberId,
+        examYear: String(data.examYear),
+      });
+
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/eligibility/validate?${params.toString()}`
+      );
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        setEligibilityError(
+          errorText ||
+            "Unable to validate member eligibility for Grade 5 Scholarship."
+        );
+        return false;
+      }
+
+      const result = (await res.json()) as EligibilityValidationResponse;
+      const eligible =
+        result.eligible ?? result.isEligible ?? result.valid ?? result.canCreate;
+
+      if (eligible === false) {
+        setEligibilityError(buildEligibilityMessage(result));
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Eligibility validation error:", error);
+      setEligibilityError(
+        "Unable to validate member eligibility for Grade 5 Scholarship."
+      );
+      return false;
+    }
+  };
+
   
   const onValid = async (data: Grade5FormValues) => {
+    const eligibilityOk = await validateMemberEligibility(data);
+    if (!eligibilityOk) return;
+
     const examOk = await validateExamNumber();
     if (!examOk) return;
 
@@ -319,8 +445,17 @@ useEffect(() => {
    * Parent page calls formRef.current?.submitForm()
    */
   useImperativeHandle(ref, () => ({
-    submitForm: () => {
-      return handleSubmit(onValid, onInvalid)();
+    submitForm: async () => {
+      let savedRequest: Grade5SavedRequest | undefined;
+
+      await handleSubmit(
+        async (data) => {
+          savedRequest = await onValid(data);
+        },
+        onInvalid
+      )();
+
+      return savedRequest;
     },
     getBirthCertificateNo: () => {
       return getValues("birthCertificateNo");
@@ -330,6 +465,12 @@ useEffect(() => {
   return (
     <form className="space-y-6">
       <p className="text-[#953002] text-xl font-bold">Request Details</p>
+
+      {eligibilityError && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {eligibilityError}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Requested Date */}
