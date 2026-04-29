@@ -203,6 +203,7 @@ export default function StudentExamSection() {
     fetchRequest();
   }, [requestKey]);
 
+  // Populate form when loadedRecord changes
   useEffect(() => {
     if (!loadedRecord) return;
 
@@ -234,6 +235,7 @@ export default function StudentExamSection() {
     setIsSaved(true);
   }, [loadedRecord, reset]);
 
+  // Set university, program, bank, branch dropdowns based on loaded record
   useEffect(() => {
     if (!loadedRecord || universities.length === 0) return;
 
@@ -262,6 +264,7 @@ export default function StudentExamSection() {
     }
   }, [loadedRecord, programs, setValue]);
 
+  // Set bank and branch based on loaded record
   useEffect(() => {
     if (!loadedRecord || banks.length === 0) return;
 
@@ -275,7 +278,8 @@ export default function StudentExamSection() {
       setValue("bank", String(bank.id));
     }
   }, [loadedRecord, banks, setValue]);
-
+ 
+  // Set branch based on loaded record
   useEffect(() => {
     if (!loadedRecord || branches.length === 0) return;
 
@@ -290,6 +294,7 @@ export default function StudentExamSection() {
     }
   }, [loadedRecord, branches, setValue]);
 
+  /*Load uploaded documents for the existing request
   useEffect(() => {
     if (!loadedRecord?.id) return;
 
@@ -312,7 +317,7 @@ export default function StudentExamSection() {
     };
 
     fetchDocuments();
-  }, [loadedRecord?.id]);
+  }, [loadedRecord?.id]);*/
   
   
   /* Load uploaded documents for existing request
@@ -739,7 +744,7 @@ export default function StudentExamSection() {
       formData.append("documentType", file.documentType);
 
       const response = await fetch(
-        `http://localhost:8080/api/documents/upload/${savedRequestId}`,
+        `http://localhost:8080/api/documents/upload`,
         {
           method: "POST",
           body: formData,
@@ -1335,7 +1340,7 @@ export default function StudentExamSection() {
               </Button>
               <Button
                 type="button"
-                className="bg-rose-600 text-white hover:bg-rose-700"
+                className="bg-red-100 border-red-200 text-red-500 hover:bg-red-200"
                 onClick={handleConfirmRejectScholarship}
                 disabled={rejectReason.trim() === ""}
               >
