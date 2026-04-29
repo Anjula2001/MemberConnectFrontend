@@ -104,6 +104,8 @@ export default function Page() {
       return "bg-green-100 border-green-200 text-green-500";
     } else if (statusLower === "rejected") {
       return "bg-red-100 border-red-200 text-red-500";
+    } else if (statusLower === "submitted_for_committee_approval") {
+      return "bg-purple-100 border-purple-200 text-purple-500";
     } else {
       return "bg-yellow-100 border-yellow-200 text-yellow-500";
     }

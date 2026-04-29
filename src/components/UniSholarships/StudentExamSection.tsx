@@ -1258,7 +1258,7 @@ export default function StudentExamSection() {
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"
-                className="bg-green-600 text-white hover:bg-green-700"
+                className="bg-green-100 border-green-200 text-green-500 hover:bg-green-200"
                 onClick={handleApproveScholarship}
               >
                 Approve
@@ -1266,7 +1266,7 @@ export default function StudentExamSection() {
 
               <Button
                 type="button"
-                className="bg-rose-600 text-white hover:bg-rose-700"
+                className="bg-red-100 border-red-200 text-red-500 hover:bg-red-200"
                 onClick={handleRejectScholarship}
               >
                 Reject
@@ -1286,7 +1286,7 @@ export default function StudentExamSection() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
             <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              MESSAGE
+              POPUP MESSAGE
             </h3>
 
             <p className="mb-5 text-sm text-black">
