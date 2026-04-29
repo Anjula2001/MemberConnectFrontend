@@ -39,6 +39,7 @@ import {
   getMemberApplicationById,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
+import { createMember, type MemberDTO } from "@/lib/api/member";
 
 type BoardMeeting = BoardMeetingDTO & {
   date: string;
@@ -500,6 +501,68 @@ export default function BoardApprovalsPage() {
 
       const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
 
+      // ── If APPROVED: create a Member record for every application in the list ──
+      let approveToastMessage: string | null = null;
+      if (applicationDecision === "Approve") {
+        const memberCreationErrors: string[] = [];
+
+        await Promise.allSettled(
+          selectedListApplications.map(async (app) => {
+            try {
+              const appDetails: MemberApplicationDTO = await getMemberApplicationById(app.id);
+
+              // Map application fields → MemberDTO
+              // Key difference: application uses nicNumber, Member entity uses nic
+              const memberPayload: MemberDTO = {
+                status: "INACTIVE",                          // new members start INACTIVE
+                applicationId: appDetails.id,               // link to originating application
+                nic: appDetails.nicNumber,                   // nicNumber → nic
+                title: appDetails.title,
+                fullName: appDetails.fullName,
+                nameAsInPayroll: appDetails.nameAsInPayroll,
+                nameWithInitials: appDetails.nameWithInitials,
+                dateOfBirth: appDetails.dateOfBirth,
+                gender: appDetails.gender as MemberDTO["gender"],
+                preferredLanguage: appDetails.preferredLanguage as MemberDTO["preferredLanguage"],
+                permanentPrivateAddress: appDetails.permanentPrivateAddress,
+                privateTelephone: appDetails.privateTelephone,
+                mobileNumber: appDetails.mobileNumber,
+                emailAddress: appDetails.emailAddress,
+                computerNoInPayslip: appDetails.computerNoInPayslip,
+                salaryPayingOffice: appDetails.salaryPayingOffice,
+                workingLocationType: appDetails.workingLocationType,
+                designation: appDetails.designation,
+                natureOfOccupation: appDetails.natureOfOccupation as MemberDTO["natureOfOccupation"],
+                educationalDistrict: appDetails.educationalDistrict,
+                educationalZone: appDetails.educationalZone,
+                workingLocation: appDetails.workingLocation,
+                workingLocationAddress: appDetails.workingLocationAddress,
+                officeTelephone: appDetails.officeTelephone,
+                nomineeFullName: appDetails.nomineeFullName,
+                nomineeRelationship: appDetails.nomineeRelationship,
+                nomineeAddress: appDetails.nomineeAddress,
+                identification: appDetails.identification as MemberDTO["identification"],
+                identificationNumber: appDetails.identificationNumber,
+                identificationDetails: appDetails.identificationDetails,
+                membershipStartDate: appDetails.applicationDate ?? todayDate,
+              };
+
+              await createMember(memberPayload);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Unknown error";
+              memberCreationErrors.push(`${app.appId}: ${msg}`);
+            }
+          })
+        );
+
+        if (memberCreationErrors.length > 0) {
+          console.warn("Some members could not be created:", memberCreationErrors);
+          approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
+        } else {
+          approveToastMessage = `Board approval list processed. ${selectedListApplications.length} member(s) created with INACTIVE status.`;
+        }
+      }
+
       setProcessedLists((prev) => ({
         ...prev,
         [selectedApprovalListId]: {
@@ -523,7 +586,10 @@ export default function BoardApprovalsPage() {
       setIsEditingProcessedList(false);
       setShowConfirmModal(false);
       setShowProcessToast(true);
-      setToastMessage("Board approval list processed successfully");
+      setToastMessage(
+        approveToastMessage ?? "Board approval list processed successfully."
+      );
+
     } catch (error) {
       console.error("Error processing board approval list:", error);
       setToastMessage("Failed to process board approval list");
