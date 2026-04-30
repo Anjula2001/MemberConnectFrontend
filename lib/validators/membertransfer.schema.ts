@@ -15,6 +15,8 @@ export const memberTransferSchema = z.object({
     .string()
     .min(1, "New working location is required"),
 
+  workingLocationAddressNew: z.string().optional(),
+
   educationalZoneNew: z
     .string()
     .min(1, "New educational zone is required"),
@@ -30,6 +32,8 @@ export const memberTransferSchema = z.object({
   salaryPayingOfficeNew: z
     .string()
     .min(1, "New salary paying office is required"),
+
+  
 });
 
 export type MemberTransferFormData = z.infer<typeof memberTransferSchema>;
