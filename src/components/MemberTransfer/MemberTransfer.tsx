@@ -44,431 +44,199 @@ export default function ChangeMemberTransferForm() {
   } = useForm<MemberTransferFormData>({
     resolver: zodResolver(memberTransferSchema),
     mode: "onChange",
-    defaultValues: {
-      designationNew: "",
-      natureOfOccupationNew: "",
-      workingLocationTypeNew: "",
-      workingLocationNew: "",
-      educationalZoneNew: "",
-      educationalDistrictNew: "",
-      computerNoNameNew: "",
-      salaryPayingOfficeNew: "",
-    },
   });
 
   useEffect(() => {
     const fetchOldValues = async () => {
-      try {
-        // Replace this mock with your backend API call
-        const data: MemberTransferOldValues = {
-          fullName: "K.H.G.L.S. Kumari",
-          dateOfBirth: "1985-05-20",
-          nicNumber: "851401234V",
-          gender: "Female",
-          preferredLanguage: "English",
-          permanentAddress: "123, Galle Road, Colombo 03",
-          privateTelephone: "0112345678",
-          mobileNumber: "0771234567",
-          emailAddress: "info@example.com",
-          designation: "Teacher",
-          natureOfOccupation: "Permanent",
-          workingLocationType: "School",
-          workingLocation: "Royal College",
-          educationalZone: "Colombo South",
-          educationalDistrict: "Colombo",
-          computerNoName: "PC-001",
-          salaryPayingOffice: "Zonal Education Office",
-        };
+      const data: MemberTransferOldValues = {
+        fullName: "K.H.G.L.S. Kumari",
+        dateOfBirth: "1985-05-20",
+        nicNumber: "851401234V",
+        gender: "Female",
+        preferredLanguage: "English",
+        permanentAddress: "123, Galle Road, Colombo 03",
+        privateTelephone: "0112345678",
+        mobileNumber: "0771234567",
+        emailAddress: "info@example.com",
+        designation: "Teacher",
+        natureOfOccupation: "Permanent",
+        workingLocationType: "School",
+        workingLocation: "Royal College",
+        educationalZone: "Colombo South",
+        educationalDistrict: "Colombo",
+        computerNoName: "PC-001",
+        salaryPayingOffice: "Zonal Education Office",
+      };
 
-        setOldValues(data);
+      setOldValues(data);
 
-        reset({
-          designationNew: data.designation,
-          natureOfOccupationNew: data.natureOfOccupation,
-          workingLocationTypeNew: data.workingLocationType,
-          workingLocationNew: data.workingLocation,
-          educationalZoneNew: data.educationalZone,
-          educationalDistrictNew: data.educationalDistrict,
-          computerNoNameNew: data.computerNoName,
-          salaryPayingOfficeNew: data.salaryPayingOffice,
-        });
-      } catch (error) {
-        console.error("Failed to load member transfer data", error);
-      } finally {
-        setLoading(false);
-      }
+      reset({
+        designationNew: data.designation,
+        natureOfOccupationNew: data.natureOfOccupation,
+        workingLocationTypeNew: data.workingLocationType,
+        workingLocationNew: data.workingLocation,
+        educationalZoneNew: data.educationalZone,
+        educationalDistrictNew: data.educationalDistrict,
+        computerNoNameNew: data.computerNoName,
+        salaryPayingOfficeNew: data.salaryPayingOffice,
+      });
+
+      setLoading(false);
     };
 
     fetchOldValues();
   }, [reset]);
 
   const onSubmit = (data: MemberTransferFormData) => {
-    if (!oldValues) return;
-
-    const payload = {
-      oldValues,
-      newValues: {
-        fullNameNew: oldValues.fullName,
-        dateOfBirthNew: oldValues.dateOfBirth,
-        nicNumberNew: oldValues.nicNumber,
-        genderNew: oldValues.gender,
-        preferredLanguageNew: oldValues.preferredLanguage,
-        permanentAddressNew: oldValues.permanentAddress,
-        privateTelephoneNew: oldValues.privateTelephone,
-        mobileNumberNew: oldValues.mobileNumber,
-        emailAddressNew: oldValues.emailAddress,
-        designationNew: data.designationNew,
-        natureOfOccupationNew: data.natureOfOccupationNew,
-        workingLocationTypeNew: data.workingLocationTypeNew,
-        workingLocationNew: data.workingLocationNew,
-        educationalZoneNew: data.educationalZoneNew,
-        educationalDistrictNew: data.educationalDistrictNew,
-        computerNoNameNew: data.computerNoNameNew,
-        salaryPayingOfficeNew: data.salaryPayingOfficeNew,
-      },
-    };
-
-    console.log("SUBMIT MEMBER TRANSFER:", payload);
-
-    // Example:
-    // await fetch("/api/member-transfer", {
-    //   method: "POST",
-    //   headers: { "Content-Type": "application/json" },
-    //   body: JSON.stringify(payload),
-    // });
+    console.log("SUBMIT:", data);
   };
 
-  if (loading) {
-    return <div className="p-6">Loading...</div>;
-  }
-
-  if (!oldValues) {
-    return <div className="p-6 text-red-600">Failed to load member data.</div>;
-  }
+  if (loading) return <div className="p-6">Loading...</div>;
+  if (!oldValues) return <div className="p-6 text-red-600">Error loading data</div>;
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto max-w-5xl px-6 space-y-6">
+
+      {/* HEADER */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#953002]">Member Transfer</h1>
-          <br/>
+          <h1 className="text-2xl font-bold text-[#953002]">
+            Member Transfer
+          </h1>
           <p className="text-sm text-gray-500">Change Details</p>
         </div>
 
         <Button
           onClick={handleSubmit(onSubmit)}
           disabled={!isValid}
-          className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+          className="bg-[#953002] text-white hover:bg-[#7a2500]"
         >
           Submit
         </Button>
       </div>
 
-      <div className="rounded-lg border bg-white p-6">
+      {/* ===================== SECTION 1: FORM ===================== */}
+      <section className="rounded-lg border bg-white p-6">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <FieldPair
-            oldLabel="FULL NAME (CURRENT)"
-            oldValue={oldValues.fullName}
-            newLabel="FULL NAME (NEW)"
-            newValue={oldValues.fullName}
-            disabled
+
+          <FieldPair oldLabel="FULL NAME" oldValue={oldValues.fullName} newLabel="FULL NAME" newValue={oldValues.fullName} disabled />
+          <FieldPair oldLabel="DATE OF BIRTH" oldValue={oldValues.dateOfBirth} newLabel="DATE OF BIRTH" newValue={oldValues.dateOfBirth} disabled />
+          <FieldPair oldLabel="NIC NUMBER" oldValue={oldValues.nicNumber} newLabel="NIC NUMBER" newValue={oldValues.nicNumber} disabled />
+          <FieldPair oldLabel="GENDER" oldValue={oldValues.gender} newLabel="GENDER" newValue={oldValues.gender} disabled />
+
+          {/* DESIGNATION */}
+          <EditableSelect
+            label="DESIGNATION"
+            oldValue={oldValues.designation}
+            register={register("designationNew")}
+            error={errors.designationNew?.message}
+            options={["Teacher", "Principal", "Lecturer", "Administrator"]}
           />
 
-          <FieldPair
-            oldLabel="DATE OF BIRTH (CURRENT)"
-            oldValue={oldValues.dateOfBirth}
-            newLabel="DATE OF BIRTH (NEW)"
-            newValue={oldValues.dateOfBirth}
-            disabled
+          {/* NATURE */}
+          <EditableSelect
+            label="NATURE OF OCCUPATION"
+            oldValue={oldValues.natureOfOccupation}
+            register={register("natureOfOccupationNew")}
+            error={errors.natureOfOccupationNew?.message}
+            options={["Permanent", "Probation", "Temporary", "Casual"]}
           />
 
-          <FieldPair
-            oldLabel="NIC NUMBER (CURRENT)"
-            oldValue={oldValues.nicNumber}
-            newLabel="NIC NUMBER (NEW)"
-            newValue={oldValues.nicNumber}
-            disabled
+          {/* LOCATION TYPE */}
+          <EditableSelect
+            label="WORKING LOCATION TYPE"
+            oldValue={oldValues.workingLocationType}
+            register={register("workingLocationTypeNew")}
+            error={errors.workingLocationTypeNew?.message}
+            options={["School", "Office", "Institute"]}
           />
 
-          <FieldPair
-            oldLabel="GENDER (CURRENT)"
-            oldValue={oldValues.gender}
-            newLabel="GENDER (NEW)"
-            newValue={oldValues.gender}
-            disabled
+          {/* TEXT FIELDS */}
+          <EditableInput label="WORKING LOCATION" oldValue={oldValues.workingLocation} register={register("workingLocationNew")} error={errors.workingLocationNew?.message} />
+          <EditableInput label="EDUCATIONAL ZONE" oldValue={oldValues.educationalZone} register={register("educationalZoneNew")} error={errors.educationalZoneNew?.message} />
+          <EditableInput label="EDUCATIONAL DISTRICT" oldValue={oldValues.educationalDistrict} register={register("educationalDistrictNew")} error={errors.educationalDistrictNew?.message} />
+          <EditableInput label="COMPUTER NO" oldValue={oldValues.computerNoName} register={register("computerNoNameNew")} error={errors.computerNoNameNew?.message} />
+
+          {/* SALARY */}
+          <EditableSelect
+            label="SALARY PAYING OFFICE"
+            oldValue={oldValues.salaryPayingOffice}
+            register={register("salaryPayingOfficeNew")}
+            error={errors.salaryPayingOfficeNew?.message}
+            options={[
+              "Zonal Education Office",
+              "Provincial Education Office",
+              "Ministry of Education",
+            ]}
           />
 
-          <FieldPair
-            oldLabel="PREFERRED LANGUAGE (CURRENT)"
-            oldValue={oldValues.preferredLanguage}
-            newLabel="PREFERRED LANGUAGE (NEW)"
-            newValue={oldValues.preferredLanguage}
-            disabled
-          />
-
-          <FieldPair
-            oldLabel="PERMANENT ADDRESS (CURRENT)"
-            oldValue={oldValues.permanentAddress}
-            newLabel="PERMANENT ADDRESS (NEW)"
-            newValue={oldValues.permanentAddress}
-            disabled
-          />
-
-          <FieldPair
-            oldLabel="PRIVATE TELEPHONE (CURRENT)"
-            oldValue={oldValues.privateTelephone}
-            newLabel="PRIVATE TELEPHONE (NEW)"
-            newValue={oldValues.privateTelephone}
-            disabled
-          />
-
-          <FieldPair
-            oldLabel="MOBILE NUMBER (CURRENT)"
-            oldValue={oldValues.mobileNumber}
-            newLabel="MOBILE NUMBER (NEW)"
-            newValue={oldValues.mobileNumber}
-            disabled
-          />
-
-          <FieldPair
-            oldLabel="EMAIL ADDRESS (CURRENT)"
-            oldValue={oldValues.emailAddress}
-            newLabel="EMAIL ADDRESS (NEW)"
-            newValue={oldValues.emailAddress}
-            disabled
-          />
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              DESIGNATION (CURRENT)
-            </label>
-            <Input value={oldValues.designation} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              DESIGNATION (NEW)
-            </label>
-            <select
-              {...register("designationNew")}
-              className="h-10 w-full rounded-md border px-3 text-sm"
-            >
-              <option value="">Select designation</option>
-              <option value="Teacher">Teacher</option>
-              <option value="Principal">Principal</option>
-              <option value="Lecturer">Lecturer</option>
-              <option value="Administrator">Administrator</option>
-            </select>
-            {errors.designationNew && (
-              <p className="text-sm text-red-500">
-                {errors.designationNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              NATURE OF OCCUPATION (CURRENT)
-            </label>
-            <Input value={oldValues.natureOfOccupation} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              NATURE OF OCCUPATION (NEW)
-            </label>
-            <select
-              {...register("natureOfOccupationNew")}
-              className="h-10 w-full rounded-md border px-3 text-sm"
-            >
-              <option value="">Select nature of occupation</option>
-              <option value="Permanent">Permanent</option>
-              <option value="Probation">Probation</option>
-              <option value="Temporary">Temporary</option>
-              <option value="Casual">Casual</option>
-            </select>
-            {errors.natureOfOccupationNew && (
-              <p className="text-sm text-red-500">
-                {errors.natureOfOccupationNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              WORKING LOCATION TYPE (CURRENT)
-            </label>
-            <Input value={oldValues.workingLocationType} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              WORKING LOCATION TYPE (NEW)
-            </label>
-            <select
-              {...register("workingLocationTypeNew")}
-              className="h-10 w-full rounded-md border px-3 text-sm"
-            >
-              <option value="">Select working location type</option>
-              <option value="School">School</option>
-              <option value="Office">Office</option>
-              <option value="Institute">Institute</option>
-            </select>
-            {errors.workingLocationTypeNew && (
-              <p className="text-sm text-red-500">
-                {errors.workingLocationTypeNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              WORKING LOCATION (CURRENT)
-            </label>
-            <Input value={oldValues.workingLocation} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              WORKING LOCATION (NEW)
-            </label>
-            <Input {...register("workingLocationNew")} />
-            {errors.workingLocationNew && (
-              <p className="text-sm text-red-500">
-                {errors.workingLocationNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              EDUCATIONAL ZONE (CURRENT)
-            </label>
-            <Input value={oldValues.educationalZone} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              EDUCATIONAL ZONE (NEW)
-            </label>
-            <Input {...register("educationalZoneNew")} />
-            {errors.educationalZoneNew && (
-              <p className="text-sm text-red-500">
-                {errors.educationalZoneNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              EDUCATIONAL DISTRICT (CURRENT)
-            </label>
-            <Input value={oldValues.educationalDistrict} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              EDUCATIONAL DISTRICT (NEW)
-            </label>
-            <Input {...register("educationalDistrictNew")} />
-            {errors.educationalDistrictNew && (
-              <p className="text-sm text-red-500">
-                {errors.educationalDistrictNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              COMPUTER NO IN PAYSLIP (CURRENT)
-            </label>
-            <Input value={oldValues.computerNoName} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              COMPUTER NO IN PAYSLIP (NEW)
-            </label>
-            <Input {...register("computerNoNameNew")} />
-            {errors.computerNoNameNew && (
-              <p className="text-sm text-red-500">
-                {errors.computerNoNameNew.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-gray-500">
-              SALARY PAYING OFFICE (CURRENT)
-            </label>
-            <Input value={oldValues.salaryPayingOffice} disabled />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold uppercase text-blue-700">
-              SALARY PAYING OFFICE (NEW)
-            </label>
-            <select
-              {...register("salaryPayingOfficeNew")}
-              className="h-10 w-full rounded-md border px-3 text-sm"
-            >
-              <option value="">Select salary paying office</option>
-              <option value="Zonal Education Office">Zonal Education Office</option>
-              <option value="Provincial Education Office">Provincial Education Office</option>
-              <option value="Ministry of Education">Ministry of Education</option>
-              <option value="Divisional Education Office">Divisional Education Office</option>
-            </select>
-            {errors.salaryPayingOfficeNew && (
-              <p className="text-sm text-red-500">
-                {errors.salaryPayingOfficeNew.message}
-              </p>
-            )}
-          </div>
         </div>
-        <br />
+      </section>
 
-        <section className="space-y-6 rounded-lg border bg-white p-6">
+      {/* ===================== SECTION 2: DOCUMENT ===================== */}
+      <section className="rounded-lg border bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-[#953002]">
+          Documents
+        </h3>
 
-        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
-            <Document />
+        <div className="border border-dashed rounded-lg p-6 text-center text-gray-500">
+          <Document />
         </div>
-        </section>
-      </div>
-      
+      </section>
+
     </div>
   );
 }
 
+/* ---------------- Components ---------------- */
 
-type FieldPairProps = {
-  oldLabel: string;
-  oldValue: string;
-  newLabel: string;
-  newValue: string;
-  disabled?: boolean;
-};
-
-function FieldPair({
-  oldLabel,
-  oldValue,
-  newLabel,
-  newValue,
-  disabled = true,
-}: FieldPairProps) {
+function FieldPair({ oldLabel, oldValue, newLabel, newValue, disabled = true }: any) {
   return (
     <>
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold uppercase text-gray-500">
-          {oldLabel}
-        </label>
+      <div>
+        <label className="text-xs text-gray-500">{oldLabel} (Current)</label>
         <Input value={oldValue} disabled />
       </div>
-
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold uppercase text-blue-700">
-          {newLabel}
-        </label>
+      <div>
+        <label className="text-xs text-blue-600">{newLabel} (New)</label>
         <Input value={newValue} disabled={disabled} readOnly />
+      </div>
+    </>
+  );
+}
+
+function EditableInput({ label, oldValue, register, error }: any) {
+  return (
+    <>
+      <div>
+        <label className="text-xs text-gray-500">{label} (Current)</label>
+        <Input value={oldValue} disabled />
+      </div>
+      <div>
+        <label className="text-xs text-blue-600">{label} (New)</label>
+        <Input {...register} />
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+      </div>
+    </>
+  );
+}
+
+function EditableSelect({ label, oldValue, register, error, options }: any) {
+  return (
+    <>
+      <div>
+        <label className="text-xs text-gray-500">{label} (Current)</label>
+        <Input value={oldValue} disabled />
+      </div>
+      <div>
+        <label className="text-xs text-blue-600">{label} (New)</label>
+        <select {...register} className="w-full border rounded-md h-10 px-2">
+          <option value="">Select</option>
+          {options.map((o: string) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
       </div>
     </>
   );
