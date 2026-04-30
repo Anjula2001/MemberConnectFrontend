@@ -17,6 +17,7 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
+import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -24,36 +25,52 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { createBoardMeeting, getBoardMeetings, updateBoardMeeting, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  getBoardApprovalLists,
+  getBoardApprovalListByListId,
+  deleteBoardApprovalList,
+  getBoardApprovalListApplications,
+  processBoardApprovalList,
+  type ProcessBoardApprovalListPayload,
+  type BoardApprovalListDTO,
+} from "@/lib/api/boardApprovalLists";
+import {
+  getMemberApplicationById,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
+import { createMember, type MemberDTO } from "@/lib/api/member";
 
-type BoardMeeting = {
-  id: number;
+type BoardMeeting = BoardMeetingDTO & {
   date: string;
 };
 
 type BoardTab = "meetings" | "approval-lists";
 
-type ApprovalListStatus = "CREATED" | "PROCESSED";
-
-type ApprovalListItem = {
-  listId: string;
-  status: ApprovalListStatus;
-  meetingId: number;
-  date: string;
-};
-
 type ApplicationDecision = "Approve" | "Reject";
 
 type ApprovalApplication = {
+  id: number;
   appId: string;
   name: string;
+  status: string;
+  nic: string;
   hasWarning?: boolean;
 };
 
 type ProcessedListState = {
   processedBy: string;
   processedAt: string;
+  actualMeetingDate: string;
   decision: ApplicationDecision;
   rejectReason: string;
+  boardRemarks: string;
+};
+
+type PendingDeleteMeeting = {
+  id: number;
+  boardMeetingId?: string;
+  date: string;
 };
 
 function formatDisplayDate(value: string) {
@@ -63,82 +80,244 @@ function formatDisplayDate(value: string) {
 }
 
 export default function BoardApprovalsPage() {
-  const [activeTab, setActiveTab] = useState<BoardTab>("meetings");
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
   const [dateFilter, setDateFilter] = useState("all");
-  const [approvalLists, setApprovalLists] = useState<ApprovalListItem[]>([
-    {
-      listId: "BAL-2026-001",
-      status: "CREATED",
-      meetingId: 108,
-      date: "2026-02-28",
-    },
-    {
-      listId: "BAL-6892",
-      status: "CREATED",
-      meetingId: 108,
-      date: "2026-02-28",
-    },
-  ]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
+  const [isRetrievingLists, setIsRetrievingLists] = useState(false);
+  const [isRetrievingApplications, setIsRetrievingApplications] = useState(false);
+  const [isDeletingSelectedList, setIsDeletingSelectedList] = useState(false);
+  const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
+  const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
   const [applicationDecision, setApplicationDecision] =
     useState<ApplicationDecision>("Approve");
   const [rejectReason, setRejectReason] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [actualMeetingDateValue, setActualMeetingDateValue] = useState("");
-  const [signedListScan, setSignedListScan] = useState("");
+  const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
+  const [showDeleteListModal, setShowDeleteListModal] = useState(false);
+  const [showEditMeetingModal, setShowEditMeetingModal] = useState(false);
+  const [pendingDeleteMeeting, setPendingDeleteMeeting] =
+    useState<PendingDeleteMeeting | null>(null);
+  const [pendingEditMeeting, setPendingEditMeeting] = useState<BoardMeeting | null>(null);
+  const [editedMeetingDate, setEditedMeetingDate] = useState("");
   const [boardRemarks, setBoardRemarks] = useState("");
+  const [isEditingProcessedList, setIsEditingProcessedList] = useState(false);
   const [processedLists, setProcessedLists] = useState<Record<string, ProcessedListState>>(
     {}
   );
   const [showProcessToast, setShowProcessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [showApplicationDetailsModal, setShowApplicationDetailsModal] = useState(false);
+  const [selectedApplicationForDetails, setSelectedApplicationForDetails] = useState<ApprovalApplication | null>(null);
+  const [selectedApplicationDetails, setSelectedApplicationDetails] = useState<ApprovalApplication | null>(null);
+  const [selectedListDetails, setSelectedListDetails] = useState<BoardApprovalListDTO | null>(null);
+  const [isLoadingApplicationDetails, setIsLoadingApplicationDetails] = useState(false);
+  const [isUpdatingMeeting, setIsUpdatingMeeting] = useState(false);
 
-  const listApplications: Record<string, ApprovalApplication[]> = {
-    "BAL-2026-001": [
-      {
-        appId: "APP-2026-003",
-        name: "Rejoining Member",
-        hasWarning: true,
-      },
-    ],
-    "BAL-6892": [
-      {
-        appId: "APP-2026-001",
-        name: "New User One",
-      },
-    ],
-  };
+  const mapApplicationToRow = (application: MemberApplicationDTO): ApprovalApplication => ({
+    id: application.id ?? 0,
+    appId: application.applicationID ?? `APP-${application.id ?? ""}`,
+    name: application.fullName ?? "-",
+    status: application.status ?? "NEW",
+    nic: application.nicNumber ?? "-",
+    hasWarning: application.rejoinFlag ?? false,
+  });
 
-  const selectedListApplications =
-    (selectedApprovalListId && listApplications[selectedApprovalListId]) || [];
+  // Fetch board meetings from database
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      try {
+        setIsFetching(true);
+        const meetings = await getBoardMeetings();
+        const formattedMeetings = meetings.map((m) => ({
+          ...m,
+          date: m.scheduledDate,
+        }));
+        setCreatedMeetings(formattedMeetings);
+      } catch (error) {
+        console.error("Error fetching board meetings:", error);
+        setToastMessage("Failed to load board meetings");
+        setShowProcessToast(true);
+      } finally {
+        setIsFetching(false);
+      }
+    };
 
-  const selectedProcessedState =
-    (selectedApprovalListId && processedLists[selectedApprovalListId]) || null;
+    fetchMeetings();
+  }, []);
 
-  const nextMeetingId = useMemo(() => {
-    if (createdMeetings.length === 0) return 108;
-    return Math.max(...createdMeetings.map((meeting) => meeting.id)) + 1;
-  }, [createdMeetings]);
+  // Toast timeout effect
+  useEffect(() => {
+    if (!showProcessToast) return;
 
-  const handleAddMeeting = () => {
+    const timeoutId = window.setTimeout(() => {
+      setShowProcessToast(false);
+    }, 3000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [showProcessToast]);
+
+  const selectedApprovalList = useMemo(
+    () =>
+      approvalLists.find((item) => item.listId === selectedApprovalListId) ?? null,
+    [approvalLists, selectedApprovalListId]
+  );
+
+  const selectedProcessedState = useMemo<ProcessedListState | null>(() => {
+    if (selectedApprovalListId && processedLists[selectedApprovalListId]) {
+      return processedLists[selectedApprovalListId];
+    }
+
+    if (!selectedApprovalList || selectedApprovalList.status !== "PROCESSED") {
+      return null;
+    }
+
+    return {
+      processedBy: selectedApprovalList.processedBy ?? "Head Office User",
+      processedAt: selectedApprovalList.processedAt ?? "",
+      actualMeetingDate:
+        selectedApprovalList.actualMeetingDate ??
+        selectedApprovalList.boardMeetingDate ??
+        "",
+      decision:
+        selectedApprovalList.decision?.toLowerCase() === "reject"
+          ? "Reject"
+          : "Approve",
+      rejectReason: selectedApprovalList.rejectReason ?? "",
+      boardRemarks: selectedApprovalList.boardRemarks ?? "",
+    };
+  }, [approvalLists, processedLists, selectedApprovalList, selectedApprovalListId]);
+
+  const isSelectedListProcessed =
+    selectedApprovalList?.status === "PROCESSED" || Boolean(selectedProcessedState);
+
+  const todayDate = new Date().toISOString().split("T")[0];
+
+  const handleAddMeeting = async () => {
     if (!selectedDate) return;
 
     const isDuplicateDate = createdMeetings.some(
       (meeting) => meeting.date === selectedDate
     );
-    if (isDuplicateDate) return;
+    if (isDuplicateDate) {
+      setToastMessage("A meeting already exists for this date");
+      setShowProcessToast(true);
+      return;
+    }
 
-    setCreatedMeetings((prev) => [
-      { id: nextMeetingId, date: selectedDate },
-      ...prev,
-    ]);
-    setSelectedDate("");
+    try {
+      setIsLoading(true);
+      const newMeeting = await createBoardMeeting({
+        scheduledDate: selectedDate,
+      });
+      
+      const formattedMeeting = {
+        ...newMeeting,
+        date: newMeeting.scheduledDate,
+      };
+      
+      setCreatedMeetings((prev) => [formattedMeeting, ...prev]);
+      setSelectedDate("");
+      setToastMessage("Board meeting created successfully");
+      setShowProcessToast(true);
+    } catch (error) {
+      console.error("Error creating board meeting:", error);
+      setToastMessage("Failed to create board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDeleteMeeting = (id: number) => {
-    setCreatedMeetings((prev) => prev.filter((meeting) => meeting.id !== id));
+  const handleOpenDeleteMeetingModal = (meeting: BoardMeeting) => {
+    if (!meeting.id) return;
+
+    setPendingDeleteMeeting({
+      id: meeting.id,
+      boardMeetingId: meeting.boardMeetingId,
+      date: meeting.date,
+    });
+    setShowDeleteMeetingModal(true);
+  };
+
+  const handleConfirmDeleteMeeting = async () => {
+    if (!pendingDeleteMeeting) return;
+
+    try {
+      setIsLoading(true);
+      await deleteBoardMeeting(pendingDeleteMeeting.id);
+      setCreatedMeetings((prev) =>
+        prev.filter((meeting) => meeting.id !== pendingDeleteMeeting.id)
+      );
+      setToastMessage("Board meeting deleted successfully");
+      setShowProcessToast(true);
+      setShowDeleteMeetingModal(false);
+      setPendingDeleteMeeting(null);
+    } catch (error) {
+      console.error("Error deleting board meeting:", error);
+      setToastMessage("Failed to delete board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOpenEditMeetingModal = (meeting: BoardMeeting) => {
+    if (!meeting.id) return;
+
+    setPendingEditMeeting(meeting);
+    setEditedMeetingDate(meeting.date);
+    setShowEditMeetingModal(true);
+  };
+
+  const handleConfirmUpdateMeeting = async () => {
+    if (!pendingEditMeeting?.id || !editedMeetingDate) return;
+
+    const duplicateDate = createdMeetings.some(
+      (meeting) => meeting.id !== pendingEditMeeting.id && meeting.date === editedMeetingDate
+    );
+
+    if (duplicateDate) {
+      setToastMessage("A meeting already exists for this date");
+      setShowProcessToast(true);
+      return;
+    }
+
+    try {
+      setIsUpdatingMeeting(true);
+      const updatedMeeting = await updateBoardMeeting(pendingEditMeeting.id, {
+        scheduledDate: editedMeetingDate,
+      });
+
+      setCreatedMeetings((prev) =>
+        prev.map((meeting) =>
+          meeting.id === pendingEditMeeting.id
+            ? {
+                ...meeting,
+                ...updatedMeeting,
+                date: updatedMeeting.scheduledDate ?? editedMeetingDate,
+              }
+            : meeting
+        )
+      );
+
+      setToastMessage("Board meeting updated successfully");
+      setShowProcessToast(true);
+      setShowEditMeetingModal(false);
+      setPendingEditMeeting(null);
+      setEditedMeetingDate("");
+    } catch (error) {
+      console.error("Error updating board meeting:", error);
+      setToastMessage("Failed to update board meeting");
+      setShowProcessToast(true);
+    } finally {
+      setIsUpdatingMeeting(false);
+    }
   };
 
   const filteredApprovalLists = useMemo(() => {
@@ -146,7 +325,7 @@ export default function BoardApprovalsPage() {
 
     const now = new Date();
     return approvalLists.filter((item) => {
-      const itemDate = new Date(item.date);
+      const itemDate = new Date(item.createdAt ?? item.boardMeetingDate ?? "");
       if (dateFilter === "thisMonth") {
         return (
           itemDate.getFullYear() === now.getFullYear() &&
@@ -166,28 +345,21 @@ export default function BoardApprovalsPage() {
     });
   }, [approvalLists, dateFilter]);
 
-  const selectedApprovalList = useMemo(
-    () =>
-      filteredApprovalLists.find((item) => item.listId === selectedApprovalListId) ??
-      null,
-    [filteredApprovalLists, selectedApprovalListId]
-  );
-
   const actualMeetingDateOptions = useMemo(() => {
     const unique = new Map<string, { value: string; label: string }>();
 
-    approvalLists.forEach((item) => {
-      const value = `${item.date}|${item.meetingId}`;
+    createdMeetings.forEach((item) => {
+      const value = `${item.scheduledDate}|${item.id}`;
       if (!unique.has(value)) {
         unique.set(value, {
           value,
-          label: `${formatDisplayDate(item.date)} (${item.meetingId})`,
+          label: `${formatDisplayDate(item.scheduledDate ?? "")} (${item.boardMeetingId ?? item.id})`,
         });
       }
     });
 
     return Array.from(unique.values());
-  }, [approvalLists]);
+  }, [createdMeetings]);
 
   const totalCount = selectedListApplications.length;
   const approvedCount =
@@ -195,93 +367,234 @@ export default function BoardApprovalsPage() {
   const rejectedCount =
     applicationDecision === "Reject" ? selectedListApplications.length : 0;
 
-  useEffect(() => {
-    if (!showProcessToast) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setShowProcessToast(false);
-    }, 3000);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [showProcessToast]);
-
-  const handleRetrieveApprovalLists = () => {
-    const generated = createdMeetings.map((meeting, index) => ({
-      listId: `BAL-${new Date(meeting.date).getFullYear()}-${String(meeting.id + index).padStart(3, "0")}`,
-      status: "CREATED" as const,
-      meetingId: meeting.id,
-      date: meeting.date,
-    }));
-
-    if (generated.length > 0) {
-      setApprovalLists((prev) => {
-        const seen = new Set(prev.map((item) => item.listId));
-        const newItems = generated.filter((item) => !seen.has(item.listId));
-        return [...newItems, ...prev];
-      });
+  const handleRetrieveApprovalLists = async () => {
+    try {
+      setIsRetrievingLists(true);
+      const lists = await getBoardApprovalLists();
+      setApprovalLists(lists);
+      setSelectedApprovalListId("");
+      setApplicationsRetrieved(false);
+      setSelectedListApplications([]);
+    } catch (error) {
+      console.error("Error retrieving board approval lists:", error);
+      setToastMessage("Failed to retrieve board approval lists");
+      setShowProcessToast(true);
+    } finally {
+      setIsRetrievingLists(false);
     }
-
-    setSelectedApprovalListId("");
-    setApplicationsRetrieved(false);
   };
 
-  const handleRetrieveApplications = () => {
+  const handleRetrieveApplications = async () => {
     if (!selectedApprovalListId) return;
-    setApplicationsRetrieved(true);
+
+    try {
+      setIsRetrievingApplications(true);
+      const applications = await getBoardApprovalListApplications(selectedApprovalListId);
+      setSelectedListApplications(applications.map(mapApplicationToRow));
+      setApplicationsRetrieved(true);
+    } catch (error) {
+      console.error("Error retrieving board approval list applications:", error);
+      setToastMessage("Failed to retrieve applications for this list");
+      setShowProcessToast(true);
+    } finally {
+      setIsRetrievingApplications(false);
+    }
   };
 
   const handleDeleteSelectedList = () => {
     if (!selectedApprovalListId) return;
+    setShowDeleteListModal(true);
+  };
 
-    setApprovalLists((prev) =>
-      prev.filter((item) => item.listId !== selectedApprovalListId)
-    );
-    setProcessedLists((prev) => {
-      const next = { ...prev };
-      delete next[selectedApprovalListId];
-      return next;
-    });
-    setSelectedApprovalListId("");
-    setApplicationsRetrieved(false);
-    setApplicationDecision("Approve");
-    setRejectReason("");
-    setShowConfirmModal(false);
+  const handleConfirmDeleteList = async () => {
+    if (!selectedApprovalListId) return;
+
+    try {
+      setIsDeletingSelectedList(true);
+      await deleteBoardApprovalList(selectedApprovalListId);
+
+      setApprovalLists((prev) =>
+        prev.filter((item) => item.listId !== selectedApprovalListId)
+      );
+      setProcessedLists((prev) => {
+        const next = { ...prev };
+        delete next[selectedApprovalListId];
+        return next;
+      });
+      setSelectedApprovalListId("");
+      setApplicationsRetrieved(false);
+      setSelectedListApplications([]);
+      setApplicationDecision("Approve");
+      setRejectReason("");
+      setBoardRemarks("");
+      setIsEditingProcessedList(false);
+      setShowConfirmModal(false);
+      setShowDeleteListModal(false);
+      setToastMessage("Board approval list deleted successfully");
+      setShowProcessToast(true);
+    } catch (error) {
+      console.error("Error deleting board approval list:", error);
+      setToastMessage("Failed to delete board approval list");
+      setShowProcessToast(true);
+    } finally {
+      setIsDeletingSelectedList(false);
+    }
   };
 
   const handleOpenConfirmModal = () => {
     if (!selectedApprovalList) return;
-
-    const selectedValue = `${selectedApprovalList.date}|${selectedApprovalList.meetingId}`;
-    setActualMeetingDateValue(selectedValue);
     setShowConfirmModal(true);
   };
 
-  const handleProcessBoardDecision = () => {
+  const handleEditProcessedList = () => {
+    if (!selectedProcessedState) return;
+
+    setApplicationDecision(selectedProcessedState.decision);
+    setRejectReason(selectedProcessedState.rejectReason);
+    setBoardRemarks(selectedProcessedState.boardRemarks);
+    setIsEditingProcessedList(true);
+  };
+
+  const handleOpenApplicationDetails = async (application: ApprovalApplication) => {
+    if (!selectedApprovalListId || !application.id) return;
+
+    try {
+      setIsLoadingApplicationDetails(true);
+      const [listDetails, applicationDetails] = await Promise.all([
+        getBoardApprovalListByListId(selectedApprovalListId),
+        getMemberApplicationById(application.id),
+      ]);
+
+      setSelectedListDetails(listDetails);
+      setSelectedApplicationDetails({
+        id: applicationDetails.id ?? application.id,
+        appId: applicationDetails.applicationID ?? application.appId,
+        name: applicationDetails.fullName ?? application.name,
+        status: applicationDetails.status ?? application.status,
+        nic: applicationDetails.nicNumber ?? application.nic,
+        hasWarning: applicationDetails.rejoinFlag ?? application.hasWarning ?? false,
+      });
+      setSelectedApplicationForDetails(application);
+      setShowApplicationDetailsModal(true);
+    } catch (error) {
+      console.error("Error loading application details:", error);
+      setToastMessage("Failed to load application details");
+      setShowProcessToast(true);
+    } finally {
+      setIsLoadingApplicationDetails(false);
+    }
+  };
+
+  const handleProcessBoardDecision = async () => {
     if (!selectedApprovalListId || !selectedApprovalList) return;
 
-    const now = new Date();
-    const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
-
-    setProcessedLists((prev) => ({
-      ...prev,
-      [selectedApprovalListId]: {
-        processedBy: "Head Office User",
-        processedAt: formatted,
+    try {
+      const now = new Date();
+      const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+      const payload: ProcessBoardApprovalListPayload = {
+        actualMeetingDate: todayDate,
         decision: applicationDecision,
-        rejectReason,
-      },
-    }));
+        rejectReason: applicationDecision === "Reject" ? rejectReason : undefined,
+        boardRemarks,
+        processedBy: "Super Admin User",
+      };
 
-    setApprovalLists((prev) =>
-      prev.map((item) =>
-        item.listId === selectedApprovalListId
-          ? { ...item, status: "PROCESSED" }
-          : item
-      )
-    );
+      const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
 
-    setShowConfirmModal(false);
-    setShowProcessToast(true);
+      // ── If APPROVED: create a Member record for every application in the list ──
+      let approveToastMessage: string | null = null;
+      if (applicationDecision === "Approve") {
+        const memberCreationErrors: string[] = [];
+
+        await Promise.allSettled(
+          selectedListApplications.map(async (app) => {
+            try {
+              const appDetails: MemberApplicationDTO = await getMemberApplicationById(app.id);
+
+              // Map application fields → MemberDTO
+              // Key difference: application uses nicNumber, Member entity uses nic
+              const memberPayload: MemberDTO = {
+                status: "INACTIVE",                          // new members start INACTIVE
+                applicationId: appDetails.id,               // link to originating application
+                nic: appDetails.nicNumber,                   // nicNumber → nic
+                title: appDetails.title,
+                fullName: appDetails.fullName,
+                nameAsInPayroll: appDetails.nameAsInPayroll,
+                nameWithInitials: appDetails.nameWithInitials,
+                dateOfBirth: appDetails.dateOfBirth,
+                gender: appDetails.gender as MemberDTO["gender"],
+                preferredLanguage: appDetails.preferredLanguage as MemberDTO["preferredLanguage"],
+                permanentPrivateAddress: appDetails.permanentPrivateAddress,
+                privateTelephone: appDetails.privateTelephone,
+                mobileNumber: appDetails.mobileNumber,
+                emailAddress: appDetails.emailAddress,
+                computerNoInPayslip: appDetails.computerNoInPayslip,
+                salaryPayingOffice: appDetails.salaryPayingOffice,
+                workingLocationType: appDetails.workingLocationType,
+                designation: appDetails.designation,
+                natureOfOccupation: appDetails.natureOfOccupation as MemberDTO["natureOfOccupation"],
+                educationalDistrict: appDetails.educationalDistrict,
+                educationalZone: appDetails.educationalZone,
+                workingLocation: appDetails.workingLocation,
+                workingLocationAddress: appDetails.workingLocationAddress,
+                officeTelephone: appDetails.officeTelephone,
+                nomineeFullName: appDetails.nomineeFullName,
+                nomineeRelationship: appDetails.nomineeRelationship,
+                nomineeAddress: appDetails.nomineeAddress,
+                identification: appDetails.identification as MemberDTO["identification"],
+                identificationNumber: appDetails.identificationNumber,
+                identificationDetails: appDetails.identificationDetails,
+                membershipStartDate: appDetails.applicationDate ?? todayDate,
+              };
+
+              await createMember(memberPayload);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Unknown error";
+              memberCreationErrors.push(`${app.appId}: ${msg}`);
+            }
+          })
+        );
+
+        if (memberCreationErrors.length > 0) {
+          console.warn("Some members could not be created:", memberCreationErrors);
+          approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
+        } else {
+          approveToastMessage = `Board approval list processed. ${selectedListApplications.length} member(s) created with INACTIVE status.`;
+        }
+      }
+
+      setProcessedLists((prev) => ({
+        ...prev,
+        [selectedApprovalListId]: {
+          processedBy: processedList.processedBy ?? "Head Office User",
+          processedAt: formatted,
+          actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
+          decision: applicationDecision,
+          rejectReason: processedList.rejectReason ?? rejectReason,
+          boardRemarks: processedList.boardRemarks ?? boardRemarks,
+        },
+      }));
+
+      setApprovalLists((prev) =>
+        prev.map((item) =>
+          item.listId === selectedApprovalListId
+            ? { ...item, status: "PROCESSED", ...processedList }
+            : item
+        )
+      );
+
+      setIsEditingProcessedList(false);
+      setShowConfirmModal(false);
+      setShowProcessToast(true);
+      setToastMessage(
+        approveToastMessage ?? "Board approval list processed successfully."
+      );
+
+    } catch (error) {
+      console.error("Error processing board approval list:", error);
+      setToastMessage("Failed to process board approval list");
+      setShowProcessToast(true);
+    }
   };
 
   return (
@@ -289,18 +602,6 @@ export default function BoardApprovalsPage() {
       <h1 className="text-3xl font-bold text-[#953002]">Board Administration</h1>
 
       <div className="inline-flex w-fit rounded-md border bg-muted p-1">
-        <Button
-          type="button"
-          variant={activeTab === "meetings" ? "secondary" : "ghost"}
-          className={`h-8 rounded-sm px-3 text-xs ${
-            activeTab === "meetings"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
-          }`}
-          onClick={() => setActiveTab("meetings")}
-        >
-          Board Meetings
-        </Button>
         <Button
           type="button"
           variant={activeTab === "approval-lists" ? "secondary" : "ghost"}
@@ -312,6 +613,18 @@ export default function BoardApprovalsPage() {
           onClick={() => setActiveTab("approval-lists")}
         >
           Board Approval Lists
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "meetings" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${
+            activeTab === "meetings"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-transparent"
+          }`}
+          onClick={() => setActiveTab("meetings")}
+        >
+          Board Meetings
         </Button>
       </div>
 
@@ -341,10 +654,10 @@ export default function BoardApprovalsPage() {
                 <Button
                   type="button"
                   onClick={handleAddMeeting}
-                  disabled={!selectedDate}
+                  disabled={!selectedDate || isLoading}
                   className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
-                  Add
+                  {isLoading ? "Creating..." : "Add"}
                 </Button>
               </div>
             </CardContent>
@@ -357,7 +670,11 @@ export default function BoardApprovalsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-5 pb-5">
-              {createdMeetings.length === 0 ? (
+              {isFetching ? (
+                <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
+                  Loading meetings...
+                </div>
+              ) : createdMeetings.length === 0 ? (
                 <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
                   No meetings added yet.
                 </div>
@@ -369,9 +686,17 @@ export default function BoardApprovalsPage() {
                       className="flex items-center justify-between rounded-lg border px-4 py-3"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="rounded bg-[#f7ede8] p-1.5 text-[#953002]">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded bg-[#f7ede8] text-[#953002] hover:bg-[#f0dfd8] hover:text-[#7a2700]"
+                          onClick={() => handleOpenEditMeetingModal(meeting)}
+                          aria-label={`Edit meeting ${meeting.id}`}
+                          disabled={!meeting.id}
+                        >
                           <CalendarDays size={14} />
-                        </div>
+                        </Button>
                         <div className="leading-tight">
                           <p className="font-semibold text-foreground">{meeting.id}</p>
                           <p className="text-sm text-muted-foreground">
@@ -385,8 +710,9 @@ export default function BoardApprovalsPage() {
                         variant="ghost"
                         size="icon-sm"
                         className="text-gray-400 hover:text-gray-600"
-                        onClick={() => handleDeleteMeeting(meeting.id)}
+                        onClick={() => handleOpenDeleteMeetingModal(meeting)}
                         aria-label={`Delete meeting ${meeting.id}`}
+                        disabled={!meeting.id}
                       >
                         <Trash2 size={16} />
                       </Button>
@@ -452,21 +778,28 @@ export default function BoardApprovalsPage() {
                   ) : (
                     filteredApprovalLists.map((item) => (
                       <button
-                        key={item.listId}
+                        key={item.listId ?? item.id ?? item.boardMeetingId ?? "approval-list"}
                         type="button"
                         onClick={() => {
+                          if (!item.listId) return;
                           setSelectedApprovalListId(item.listId);
                           setApplicationsRetrieved(false);
+                          setSelectedListApplications([]);
                           setApplicationDecision("Approve");
                           setRejectReason("");
+                          setBoardRemarks("");
+                          setIsEditingProcessedList(false);
                         }}
                         className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${
                           selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
                         }`}
                       >
                         <div className="leading-tight">
-                          <p className="text-sm font-medium text-gray-800">{item.listId}</p>
-                          <p className="text-xs text-muted-foreground">{item.meetingId}</p>
+                          <p className="text-sm font-medium text-gray-800">{item.listId ?? "-"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.boardMeetingDate ?? "-"}
+                            {item.boardMeetingId ? ` (${item.boardMeetingId})` : ""}
+                          </p>
                         </div>
                         <span className="rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
                           {item.status}
@@ -480,10 +813,10 @@ export default function BoardApprovalsPage() {
                   <Button
                     type="button"
                     className="h-9 w-full bg-[#953002] text-white hover:bg-[#7a2700]"
-                    disabled={!selectedApprovalListId}
+                    disabled={!selectedApprovalListId || isRetrievingApplications}
                     onClick={handleRetrieveApplications}
                   >
-                    Retrieve Applications
+                    {isRetrievingApplications ? "Retrieving..." : "Retrieve Applications"}
                   </Button>
                 </div>
               </CardContent>
@@ -506,12 +839,19 @@ export default function BoardApprovalsPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {selectedProcessedState ? (
-                      <div className="rounded-md bg-[#d9d9d9] px-3 py-2 text-sm text-gray-600">
-                        Processed by <span className="font-semibold">{selectedProcessedState.processedBy}</span>{" "}
-                        on <span className="font-semibold">{selectedProcessedState.processedAt}</span>
+                    {selectedProcessedState && !isEditingProcessedList && (
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3"
+                          onClick={handleEditProcessedList}
+                        >
+                          Edit
+                        </Button>
                       </div>
-                    ) : (
+                    )}
+                    {(!selectedProcessedState || isEditingProcessedList) && (
                       <div className="flex items-center justify-end gap-2">
                         <Button type="button" variant="outline" className="h-8 px-3">
                           <Printer size={14} />
@@ -535,24 +875,36 @@ export default function BoardApprovalsPage() {
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
                             <th className="pb-2 pr-3">App ID</th>
                             <th className="pb-2 pr-3">Name</th>
-                            <th className="pb-2 pr-3">{selectedProcessedState ? "Status" : "Decision"}</th>
-                            <th className="pb-2">Reason (If Reject)</th>
+                            <th className="pb-2 pr-3">Decision</th>
+                            <th className="pb-2 pr-3">Reason (If Reject)</th>
+                            <th className="pb-2 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {selectedListApplications.map((application) => (
                             <tr key={application.appId} className="align-top">
                               <td className="py-3 pr-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-gray-800">{application.appId}</span>
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-2 text-left"
+                                  onClick={() => {
+                                    if (!application.id) return;
+                                    router.push(
+                                      `/membership/new-registrations?applicationId=${application.id}&mode=view`
+                                    );
+                                  }}
+                                >
+                                  <span className="font-medium text-gray-800 hover:underline">
+                                    {application.appId}
+                                  </span>
                                   {application.hasWarning && (
                                     <AlertCircle size={13} className="text-red-500" />
                                   )}
-                                </div>
+                                </button>
                               </td>
                               <td className="py-3 pr-3 text-gray-700">{application.name}</td>
                               <td className="py-3 pr-3">
-                                {selectedProcessedState ? (
+                                {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${
                                       selectedProcessedState.decision === "Approve"
@@ -581,8 +933,8 @@ export default function BoardApprovalsPage() {
                                   </Select>
                                 )}
                               </td>
-                              <td className="py-3">
-                                {selectedProcessedState ? (
+                              <td className="py-3 pr-3">
+                                {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={
                                       selectedProcessedState.decision === "Reject"
@@ -608,13 +960,28 @@ export default function BoardApprovalsPage() {
                                   />
                                 )}
                               </td>
+                              <td className="py-3 text-center">
+                                {selectedProcessedState && !isEditingProcessedList ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-[#953002] hover:bg-[#f7ede8]"
+                                    onClick={() => handleOpenApplicationDetails(application)}
+                                  >
+                                    View
+                                  </Button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
 
-                    {!selectedProcessedState && (
+                    {(!selectedProcessedState || isEditingProcessedList) && (
                       <div className="flex justify-end">
                         <Button
                           type="button"
@@ -624,7 +991,7 @@ export default function BoardApprovalsPage() {
                           }
                           onClick={handleOpenConfirmModal}
                         >
-                          Proceed
+                          {isEditingProcessedList ? "Update" : "Proceed"}
                           <ArrowRight size={14} />
                         </Button>
                       </div>
@@ -635,6 +1002,194 @@ export default function BoardApprovalsPage() {
             </Card>
           </div>
         </>
+      )}
+
+      {showDeleteMeetingModal && pendingDeleteMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {(pendingDeleteMeeting.boardMeetingId || pendingDeleteMeeting.id)} - {formatDisplayDate(pendingDeleteMeeting.date)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => {
+                  setShowDeleteMeetingModal(false);
+                  setPendingDeleteMeeting(null);
+                }}
+                aria-label="Close delete modal"
+                disabled={isLoading}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this board meeting?
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => {
+                    setShowDeleteMeetingModal(false);
+                    setPendingDeleteMeeting(null);
+                  }}
+                  disabled={isLoading}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isLoading}
+                  onClick={handleConfirmDeleteMeeting}
+                >
+                  {isLoading ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteListModal && selectedApprovalList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Approval List
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {selectedApprovalList.listId} - {formatDisplayDate(selectedApprovalList.boardMeetingDate ?? "")}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => setShowDeleteListModal(false)}
+                aria-label="Close delete modal"
+                disabled={isDeletingSelectedList}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this board approval list? All applications will be reverted to their previous status.
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => setShowDeleteListModal(false)}
+                  disabled={isDeletingSelectedList}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isDeletingSelectedList}
+                  onClick={handleConfirmDeleteList}
+                >
+                  {isDeletingSelectedList ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditMeetingModal && pendingEditMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#953002]">
+                  Edit Board Meeting
+                </h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {(pendingEditMeeting.boardMeetingId || pendingEditMeeting.id)} - {formatDisplayDate(pendingEditMeeting.date)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => {
+                  setShowEditMeetingModal(false);
+                  setPendingEditMeeting(null);
+                  setEditedMeetingDate("");
+                }}
+                aria-label="Close edit modal"
+                disabled={isUpdatingMeeting}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Scheduled Date</label>
+                <div className="relative">
+                  <CalendarDays
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    type="date"
+                    value={editedMeetingDate}
+                    onChange={(e) => setEditedMeetingDate(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => {
+                    setShowEditMeetingModal(false);
+                    setPendingEditMeeting(null);
+                    setEditedMeetingDate("");
+                  }}
+                  disabled={isUpdatingMeeting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={isUpdatingMeeting || !editedMeetingDate}
+                  onClick={handleConfirmUpdateMeeting}
+                >
+                  {isUpdatingMeeting ? "Updating..." : "Update"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showConfirmModal && selectedApprovalList && (
@@ -680,38 +1235,15 @@ export default function BoardApprovalsPage() {
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">Scheduled Date</label>
                   <Input
-                    value={formatDisplayDate(selectedApprovalList.date)}
+                    value={formatDisplayDate(selectedApprovalList.boardMeetingDate ?? "")}
                     readOnly
                     className="bg-gray-50"
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">Actual Meeting Date</label>
-                  <Select
-                    value={actualMeetingDateValue}
-                    onValueChange={setActualMeetingDateValue}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select meeting date" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {actualMeetingDateOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Input value={todayDate} readOnly className="bg-gray-50" />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Signed List Scan</label>
-                <Input
-                  value={signedListScan}
-                  onChange={(e) => setSignedListScan(e.target.value)}
-                  placeholder=""
-                />
               </div>
 
               <div className="space-y-1">
@@ -735,11 +1267,10 @@ export default function BoardApprovalsPage() {
                 <Button
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700"
-                  disabled={!actualMeetingDateValue}
                   onClick={handleProcessBoardDecision}
                 >
                   <CheckSquare size={14} />
-                  Process
+                  {isEditingProcessedList ? "Update" : "Process"}
                 </Button>
               </div>
             </div>
@@ -751,7 +1282,154 @@ export default function BoardApprovalsPage() {
         <div className="fixed bottom-6 right-6 z-50 rounded-lg border bg-white px-4 py-3 shadow-lg">
           <div className="flex items-center gap-2 text-sm text-gray-800">
             <CheckCircle2 size={16} className="text-black" />
-            <span>Board Approval List Processed Successfully</span>
+            <span>{toastMessage || "Board Approval List Processed Successfully"}</span>
+          </div>
+        </div>
+      )}
+
+      {showApplicationDetailsModal && selectedApplicationForDetails && selectedProcessedState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="flex max-h-[80vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b px-5 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-[#953002]">
+                  Application Decision
+                </h2>
+                <p className="mt-1 text-xs text-gray-600">
+                  {selectedApplicationForDetails.appId}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowApplicationDetailsModal(false)}
+                aria-label="Close details modal"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              {isLoadingApplicationDetails ? (
+                <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed bg-gray-50 text-sm text-muted-foreground">
+                  Loading latest details...
+                </div>
+              ) : (
+                <>
+              {/* Applicant Information Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Applicant Information</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Name</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedApplicationDetails?.name ?? selectedApplicationForDetails.name}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">NIC Number</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedApplicationDetails?.nic ?? selectedApplicationForDetails.nic}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Meeting Information Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Meeting Information</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Scheduled Date</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {formatDisplayDate(selectedListDetails?.boardMeetingDate ?? selectedApprovalList?.boardMeetingDate ?? "")}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Actual Date</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedListDetails?.actualMeetingDate ?? selectedProcessedState.actualMeetingDate}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Processing Details Section */}
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Processing Details</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed By</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">
+                        {selectedListDetails?.processedBy ?? selectedProcessedState.processedBy}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed At</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">
+                      {selectedListDetails?.processedAt ?? selectedProcessedState.processedAt}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Decision Section */}
+              <div className="rounded-lg border border-[#f0d9cf] bg-gradient-to-r from-[#f7ede8] to-[#faf5f2] p-3.5">
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600">Decision</h3>
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold text-white ${
+                      (selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                        ? "bg-green-600"
+                        : "bg-rose-600"
+                    }`}
+                  >
+                    {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                      ? "✓ Approved"
+                      : "✕ Rejected"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Additional Information */}
+              {((selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
+                <div className="space-y-3">
+                  {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" && (selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason) && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-red-700">Reject Reason</p>
+                      <p className="mt-1 text-sm font-medium text-red-800">
+                        {selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks) && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-blue-700">Board Remarks</p>
+                      <p className="mt-1 text-sm font-medium text-blue-800">
+                        {selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t bg-gray-50 px-5 py-3.5">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-200"
+                onClick={() => setShowApplicationDetailsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}
