@@ -122,8 +122,8 @@ export default function MemberProfilePage({
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
 			<div className="flex items-center">
-				<Link 
-					href="/membership/directory" 
+				<Link
+					href="/membership/directory"
 					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
 				>
 					<ArrowLeft className="h-4 w-4" />
@@ -222,68 +222,68 @@ export default function MemberProfilePage({
 
 				<div className="p-4">
 					{activeTab === "Profile Details" && (
-					<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
-						<CardContent className="space-y-5 p-4">
-							<div>
-								<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
-									Member Information
-								</h2>
-								<p className="mt-1 text-xs text-neutral-500">Personal and official details</p>
-							</div>
-
-							<SectionTitle title="Personal Information" />
-							<div className="grid gap-4 md:grid-cols-4">
-								<Field label="Full Name" value={profile.fullName} />
-								<Field label="Name with Initials" value={profile.nameWithInitials} />
-								<Field label="NIC" value={profile.nic || profile.nicNumber} />
-								<Field label="Date of Birth" value={profile.dateOfBirth} />
-								<Field label="Gender" value={profile.gender} />
-								<Field label="Preferred Language" value={profile.preferredLanguage} />
-								<Field label="Joined Date" value={profile.membershipStartDate} />
-							</div>
-
-							<Separator />
-							<SectionTitle title="Contact Information" />
-							<div className="grid gap-4 md:grid-cols-4">
-								<Field label="Mobile" value={profile.mobileNumber} />
-								<Field label="Email" value={profile.emailAddress} />
-								<Field label="Private Tel" value={profile.privateTelephone} />
-								<Field label="Office Tel" value={profile.officeTelephone} />
-								<div className="md:col-span-4">
-									<Field label="Permanent Address" value={profile.permanentPrivateAddress} />
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-5 p-4">
+								<div>
+									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+										Member Information
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Personal and official details</p>
 								</div>
-							</div>
 
-							<Separator />
-							<SectionTitle title="Employment Details" />
-							<div className="grid gap-4 md:grid-cols-4">
-								<Field label="Designation" value={profile.designation} />
-								<Field label="Working Location Type" value={profile.workingLocationType} />
-								<Field label="Working Location" value={profile.workingLocation} />
-								<Field label="District" value={profile.educationalDistrict} />
-								<Field label="Zone" value={profile.educationalZone} />
-								<Field label="Salary Paying Office" value={profile.salaryPayingOffice} />
-								<Field label="Name in Payroll" value={profile.nameAsInPayroll} />
-								<Field label="Computer No. in Payslip" value={profile.computerNoInPayslip} />
-							</div>
-
-							<Separator />
-							<SectionTitle title="Nominee Details" />
-							<div className="grid gap-4 md:grid-cols-4">
-								<Field label="Nominee Name" value={profile.nomineeFullName} />
-								<Field label="Relationship" value={profile.nomineeRelationship} />
-								<Field label="Nominee Identification" value={`${profile.identification ?? ""} ${profile.identificationNumber ?? ""}`} />
-								<div className="md:col-span-4">
-									<Field label="Address" value={profile.nomineeAddress} />
+								<SectionTitle title="Personal Information" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Full Name" value={profile.fullName} />
+									<Field label="Name with Initials" value={profile.nameWithInitials} />
+									<Field label="NIC" value={profile.nic || profile.nicNumber} />
+									<Field label="Date of Birth" value={profile.dateOfBirth} />
+									<Field label="Gender" value={profile.gender} />
+									<Field label="Preferred Language" value={profile.preferredLanguage} />
+									<Field label="Joined Date" value={profile.membershipStartDate} />
 								</div>
-							</div>
 
-							<div className="grid gap-4 pt-2 md:grid-cols-2">
-								<ImageDropzoneCard title="Profile Picture" buttonLabel="Add Profile Image" />
-								<ImageDropzoneCard title="Signature" buttonLabel="Add Signature Image" />
-							</div>
-						</CardContent>
-					</Card>
+								<Separator />
+								<SectionTitle title="Contact Information" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Mobile" value={profile.mobileNumber} />
+									<Field label="Email" value={profile.emailAddress} />
+									<Field label="Private Tel" value={profile.privateTelephone} />
+									<Field label="Office Tel" value={profile.officeTelephone} />
+									<div className="md:col-span-4">
+										<Field label="Permanent Address" value={profile.permanentPrivateAddress} />
+									</div>
+								</div>
+
+								<Separator />
+								<SectionTitle title="Employment Details" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Designation" value={profile.designation} />
+									<Field label="Working Location Type" value={profile.workingLocationType} />
+									<Field label="Working Location" value={profile.workingLocation} />
+									<Field label="District" value={profile.educationalDistrict} />
+									<Field label="Zone" value={profile.educationalZone} />
+									<Field label="Salary Paying Office" value={profile.salaryPayingOffice} />
+									<Field label="Name in Payroll" value={profile.nameAsInPayroll} />
+									<Field label="Computer No. in Payslip" value={profile.computerNoInPayslip} />
+								</div>
+
+								<Separator />
+								<SectionTitle title="Nominee Details" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Nominee Name" value={profile.nomineeFullName} />
+									<Field label="Relationship" value={profile.nomineeRelationship} />
+									<Field label="Nominee Identification" value={`${profile.identification ?? ""} ${profile.identificationNumber ?? ""}`} />
+									<div className="md:col-span-4">
+										<Field label="Address" value={profile.nomineeAddress} />
+									</div>
+								</div>
+
+								<div className="grid gap-4 pt-2 md:grid-cols-2">
+									<ImageDropzoneCard title="Profile Picture" buttonLabel="Add Profile Image" />
+									<ImageDropzoneCard title="Signature" buttonLabel="Add Signature Image" />
+								</div>
+							</CardContent>
+						</Card>
 					)}
 
 					{activeTab === "Documents" && (
@@ -295,7 +295,7 @@ export default function MemberProfilePage({
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
 								</div>
-								
+
 								{documents.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
 										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
@@ -363,9 +363,9 @@ export default function MemberProfilePage({
 															</div>
 														</div>
 														{doc.storagePath && (
-															<a 
-																href={doc.storagePath} 
-																target="_blank" 
+															<a
+																href={doc.storagePath}
+																target="_blank"
 																rel="noreferrer"
 																download={doc.fileName}
 																className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-100"
