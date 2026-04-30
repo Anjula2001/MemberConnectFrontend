@@ -1,3 +1,5 @@
+'use client';
+
 import {
   Sidebar,
   SidebarContent,
@@ -7,9 +9,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarSeparator,
 } from "../ui/sidebar";
 
 import {
@@ -19,14 +18,23 @@ import {
 } from "../ui/collapsible";
 
 import { ChevronDown, Home, Users, GraduationCap, Heart, BarChart } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link"; // Use Link for better Next.js integration
 
 export default function NavigationSideBar() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Return a placeholder with the same width to prevent "flicker"
+    return <div className="w-[260px] h-screen bg-sidebar" />; 
+  }
+
   const menuItems = [
-    {
-      title: "Dashboard",
-      icon: Home,
-      url: "/",
-    },
+    { title: "Dashboard", icon: Home, url: "/" },
     {
       title: "Membership",
       icon: Users,
@@ -48,43 +56,37 @@ export default function NavigationSideBar() {
         { title: "Fund Requests", url: "/scholarships/fund-requests" },
       ],
     },
-    {
-      title: "Death Donation",
-      icon: Heart,
-      url: "/death-donation",
-    },
-    {
-      title: "Reports",
-      icon: BarChart,
-      url: "/reports",
-    },
+    { title: "Death Donation", icon: Heart, url: "/death-donation" },
+    { title: "Reports", icon: BarChart, url: "/reports" },
   ];
 
   return (
     <Sidebar>
       <SidebarContent>
-        <SidebarMenu>
+        <SidebarMenu className="p-2">
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.title}>
               {item.subMenu ? (
                 <Collapsible defaultOpen className="group/collapsible">
-                  <SidebarGroup>
-                    <SidebarGroupLabel asChild>
-                      <CollapsibleTrigger>
-                        <item.icon />
-                        <span className="ml-2">{item.title}</span>
+                  <SidebarGroup className="p-0">
+                    {/* FIXED: Removed SidebarGroupLabel nesting issue */}
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip={item.title}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
                         <ChevronDown className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                      </CollapsibleTrigger>
-                    </SidebarGroupLabel>
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    
                     <CollapsibleContent>
-                      <SidebarGroupContent>
+                      <SidebarGroupContent className="ml-4 border-l border-orange-100 pl-2">
                         <SidebarMenu>
                           {item.subMenu.map((subItem) => (
                             <SidebarMenuItem key={subItem.title}>
-                              <SidebarMenuButton asChild>
-                                <a href={subItem.url}>
+                              <SidebarMenuButton asChild size="sm">
+                                <Link href={subItem.url}>
                                   <span>{subItem.title}</span>
-                                </a>
+                                </Link>
                               </SidebarMenuButton>
                             </SidebarMenuItem>
                           ))}
@@ -94,11 +96,11 @@ export default function NavigationSideBar() {
                   </SidebarGroup>
                 </Collapsible>
               ) : (
-                <SidebarMenuButton asChild>
-                  <a href={item.url}>
-                    <item.icon />
+                <SidebarMenuButton asChild tooltip={item.title}>
+                  <Link href={item.url}>
+                    <item.icon className="w-4 h-4" />
                     <span>{item.title}</span>
-                  </a>
+                  </Link>
                 </SidebarMenuButton>
               )}
             </SidebarMenuItem>
