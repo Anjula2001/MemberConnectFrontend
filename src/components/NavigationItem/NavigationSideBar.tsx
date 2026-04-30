@@ -105,16 +105,8 @@ export default function NavigationSideBar() {
         { title: "Fund Requests", url: "/scholarships/fund-requests" },
       ],
     },
-    {
-      title: "Death Donation",
-      icon: Heart,
-      url: "/death-donation",
-    },
-    {
-      title: "Reports",
-      icon: BarChart,
-      url: "/reports",
-    },
+    { title: "Death Donation", icon: Heart, url: "/death-donation" },
+    { title: "Reports", icon: BarChart, url: "/reports" },
   ];
 
   const isItemActive = (url?: string) => {
@@ -124,6 +116,7 @@ export default function NavigationSideBar() {
   };
 
   return (
+    
     <Sidebar className="border-r border-neutral-200 bg-[#f4f4f5]">
       <SidebarContent className="gap-0 bg-[#f4f4f5] px-3 py-5">
         <div className="mb-5 flex items-center gap-3 px-2">
