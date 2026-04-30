@@ -7,6 +7,12 @@ import {
   memberRegistrationSchema,
   type MemberRegistration,
 } from "@/lib/validators/memberRegistration.schema";
+import {
+  createMemberApplication,
+  type Gender,
+  type Language,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import {
@@ -25,6 +31,22 @@ import {
 
 export function NewMemberRegistrationForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const mapGender = (value: string): Gender =>
+    value.toUpperCase() === "FEMALE" ? "FEMALE" : "MALE";
+
+  const mapLanguage = (value: string): Language => {
+    const normalized = value.toUpperCase();
+    if (normalized === "SINHALA") return "SINHALA";
+    if (normalized === "TAMIL") return "TAMIL";
+    return "ENGLISH";
+  };
+
+  const parseAmount = (value?: string) => {
+    if (!value || value.trim() === "") return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
 
   const {
     control,
@@ -54,9 +76,36 @@ export function NewMemberRegistrationForm() {
   const onSubmit = async (data: MemberRegistration) => {
     setIsSubmitting(true);
     try {
-      console.log("Form data:", data);
-      // TODO: Send data to API
+      const payload: MemberApplicationDTO = {
+        title: data.title,
+        fullName: data.fullName,
+        nameAsInPayroll: data.nameAsInPayroll,
+        nameWithInitials: data.nameWithInitials,
+        nicNumber: data.nicNumber,
+        dateOfBirth: data.dateOfBirth,
+        gender: mapGender(data.gender),
+        preferredLanguage: mapLanguage(data.preferredLanguage),
+        permanentPrivateAddress: data.permanentAddress,
+        computerNoInPayslip: data.computerNoInPayroll,
+        salaryPayingOffice: data.salaryPayingOffice,
+        officeTelephone: data.officePhone,
+        privateTelephone: data.privatePhone,
+        mobileNumber: data.mobileNumber,
+        emailAddress: data.emailAddress,
+        shareAccountAmount: parseAmount(data.shareAccount),
+        specialDepositAmount: parseAmount(data.specialDepositAccount),
+        fixedDepositAmount: parseAmount(data.fixedDepositAccount),
+        scholarshipDeathDonationPensionAmount: parseAmount(
+          data.scholarshipDeathDonationPension
+        ),
+      };
+
+      await createMemberApplication(payload);
       alert("Registration saved successfully!");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save registration";
+      alert(message);
     } finally {
       setIsSubmitting(false);
     }
