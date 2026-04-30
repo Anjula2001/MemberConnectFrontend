@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
+import { z } from "zod";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
 
@@ -35,31 +36,23 @@ interface SavedBankAccount {
 
 interface AddBankDetailsProps {
   memberId: string;
+  initialData?: SavedBankAccount | null;
   onSave: (savedAccount: SavedBankAccount) => void;
   onClose: () => void;
 }
 
 const API_BASE_URL = "http://localhost:8080";
-const ACCOUNT_NUMBER_PATTERN = /^[0-9]{6,20}$/;
 
-/**
- * Validates the bank account number before sending it to the backend.
- * This prevents empty or invalid account numbers from being submitted.
- */
-const validateAccountNumber = (accountNumber: string) => {
-  if (!accountNumber.trim()) {
-    return "Account number is required";
-  }
-
-  if (!ACCOUNT_NUMBER_PATTERN.test(accountNumber.trim())) {
-    return "Account number must contain 6 to 20 digits";
-  }
-
-  return "";
-};
+const bankDetailsSchema = z.object({
+  accountNumber: z
+    .string()
+    .trim()
+    .min(1, "Account number is required")
+    .regex(/^[0-9]{6,15}$/, "Account number must contain 6 to 15 digits"),
+});
 
 const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
-  ({ memberId, onSave, onClose }, ref) => {
+  ({ memberId, initialData, onSave, onClose }, ref) => {
     const [banks, setBanks] = useState<Bank[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
 
@@ -105,6 +98,14 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
       fetchBanks();
     }, []);
 
+    useEffect(() => {
+      if (initialData) {
+        setSelectedBank(initialData.bankId);
+        setSelectedBranch(initialData.branchId);
+        setAccountNumber("");
+      }
+    }, [initialData]);
+
     /**
      * Loads branches only after a bank is selected.
      * This avoids unnecessary API calls and ensures branch options match the bank.
@@ -120,7 +121,6 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
         try {
           setLoadingBranches(true);
           setGeneralError("");
-          setSelectedBranch("");
 
           const response = await fetch(
             `${API_BASE_URL}/api/banks/${selectedBank}/branches`
@@ -166,10 +166,15 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
         isValid = false;
       }
 
-      const accountValidationMessage = validateAccountNumber(accountNumber);
+      const accountValidationResult = bankDetailsSchema.safeParse({
+        accountNumber,
+      });
 
-      if (accountValidationMessage) {
-        setAccountNumberError(accountValidationMessage);
+      if (!accountValidationResult.success) {
+        setAccountNumberError(
+          accountValidationResult.error.flatten().fieldErrors.accountNumber?.[0] ||
+            ""
+        );
         isValid = false;
       }
 
@@ -189,10 +194,14 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
         setSaving(true);
         setGeneralError("");
 
+        const isEdit = !!initialData?.id;
+
         const response = await fetch(
-          `${API_BASE_URL}/api/members/${memberId}/bank-accounts`,
+          isEdit
+            ? `${API_BASE_URL}/api/members/${memberId}/bank-accounts/${initialData.id}`
+            : `${API_BASE_URL}/api/members/${memberId}/bank-accounts`,
           {
-            method: "POST",
+            method: isEdit ? "PUT" : "POST",
             headers: {
               "Content-Type": "application/json",
             },
@@ -237,6 +246,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
               value={selectedBank}
               onChange={(e) => {
                 setSelectedBank(e.target.value);
+                setSelectedBranch("");
                 setBankError("");
                 setBranchError("");
               }}

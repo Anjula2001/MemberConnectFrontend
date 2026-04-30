@@ -15,7 +15,6 @@ const SUBMITTED_STATUSES = [
   "REJECTED",
 ];
 const MAX_FILE_SIZE_MB = 5;
-const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png",];
 
 interface RequiredDocument {
   id: number;
@@ -48,10 +47,6 @@ interface DocumentUploadProps {
 const validateSelectedFile = (file: File | null) => {
   if (!file) {
     return "Please select a file.";
-  }
-
-  if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-    return "Only PDF, JPG, and PNG files are allowed.";
   }
 
   if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
@@ -88,6 +83,13 @@ export default function DocumentUpload({
   const isSubmitted = SUBMITTED_STATUSES.includes(requestStatus);
   const isReadOnly = readOnly || isSubmitted;
   const canUpload = !!requestId && !isReadOnly && !uploading;
+
+  const isDocumentTypeUploaded = (documentId: number) => {
+    return uploadedDocuments.some(
+      (file) => file.requiredDocumentId === documentId
+    );
+  };
+
 
   /**
    * Loads required documents and uploaded documents when request details change.
@@ -181,6 +183,11 @@ export default function DocumentUpload({
 
     if (!selectedDocumentId) {
       setMessage("Please select a required document type.");
+      return;
+    }
+
+    if (isDocumentTypeUploaded(selectedDocumentId)) {
+      setMessage("Only one file is allowed for this document type. Delete the existing file first.");
       return;
     }
 
@@ -315,12 +322,21 @@ export default function DocumentUpload({
         >
           <option value="">Select document type</option>
 
-          {requiredDocuments.map((document) => (
-            <option key={document.id} value={document.id}>
-              {document.documentName}{" "}
-              {document.mandatory ? "(Mandatory)" : "(Optional)"}
-            </option>
-          ))}
+          {requiredDocuments.map((document) => {
+            const alreadyUploaded = isDocumentTypeUploaded(document.id);
+
+            return (
+              <option
+                key={document.id}
+                value={document.id}
+                disabled={alreadyUploaded}
+              >
+                {document.documentName}{" "}
+                {document.mandatory ? "(Mandatory)" : "(Optional)"}
+                {alreadyUploaded ? " - Already uploaded" : ""}
+              </option>
+            );
+          })}
         </select>
 
         <input

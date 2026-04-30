@@ -55,7 +55,7 @@ interface MemberDetails {
 }
 
 const API_BASE_URL = "http://localhost:8080";
-const DEFAULT_MEMBER_ID = "MEM009";
+const DEFAULT_MEMBER_ID = "MEM001";
 
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
@@ -76,6 +76,7 @@ export default function RetirementPage() {
   const [openBankModal, setOpenBankModal] = useState(false);
 
   const [bankAccounts, setBankAccounts] = useState<BankAccountRow[]>([]);
+  const [editingBankAccount, setEditingBankAccount] = useState<BankAccountRow | null>(null);
   const [minorSavingsAccounts, setMinorSavingsAccounts] = useState<
     MinorSavingsAccount[]
   >([]);
@@ -246,10 +247,13 @@ export default function RetirementPage() {
     }
 
     if (bankAccounts.length > 0) {
-      setMinorSavingsError("Disbursement bank details already added.");
+      setMinorSavingsError(
+        "Only one disbursement bank account is allowed."
+      );
       return;
     }
 
+    setEditingBankAccount(null);
     setMinorSavingsError("");
     setOpenBankModal(true);
   };
@@ -307,10 +311,14 @@ export default function RetirementPage() {
     setSaveError("");
 
     try {
+      const isUpdate = !!retirementRequest?.id && isEditMode;
+
       const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${selectedMemberId}`,
+        isUpdate
+          ? `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}`
+          : `${API_BASE_URL}/api/retirement-requests/${selectedMemberId}`,
         {
-          method: "POST",
+          method: isUpdate ? "PUT" : "POST",
           headers: {
             "Content-Type": "application/json",
           },
@@ -319,10 +327,15 @@ export default function RetirementPage() {
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(
-          errorData.message || errorData.error || "Failed to save request"
-        );
+        const errorText = await response.text();
+
+        try {
+          const errorData = JSON.parse(errorText);
+          setSaveError(errorData.message || errorData.error || "Failed to save request");
+        } catch {
+          setSaveError(errorText || "Failed to save request");
+        }
+
         return;
       }
 
@@ -464,7 +477,8 @@ export default function RetirementPage() {
 
   // Adds a newly saved bank account row to the displayed list.
   const handleBankSave = (savedAccount: BankAccountRow) => {
-    setBankAccounts((previousAccounts) => [...previousAccounts, savedAccount]);
+    setBankAccounts([savedAccount]);
+    setEditingBankAccount(null);
     setMinorSavingsError("");
     setSaveError("");
     setOpenBankModal(false);
@@ -599,7 +613,7 @@ export default function RetirementPage() {
           </div>
 
           {validation && !validation.canSubmit && (
-            <div className="bg-white rounded-lg shadow-sm p-4 mt-4 border border-red-200">
+            <div className="bg-white rounded-lg shadow-sm p-4 mt-4 px-6 border border-red-200">
               <p className="text-pink-500 font-semibold">
                 Cannot Submit Request
               </p>
@@ -619,7 +633,7 @@ export default function RetirementPage() {
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
+          <div className="bg-white border border-gray-200 rounded-lg px-6 py-5 mt-6">
             <h2 className="text-lg font-bold text-[#953002] mb-4">
               Member Details
             </h2>
@@ -678,7 +692,7 @@ export default function RetirementPage() {
                 />
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm p-4">
+              <div className="bg-white rounded-lg px-6 shadow-sm p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xl font-bold text-[#953002]">
                     Minor Saving Disbursement
@@ -740,6 +754,7 @@ export default function RetirementPage() {
                               <td className="px-4 py-2 border-b">
                                 {account.balance}
                               </td>
+
                             </tr>
                           ))}
                         </tbody>
@@ -768,6 +783,10 @@ export default function RetirementPage() {
                               <th className="text-left px-4 py-2 border-b">
                                 Account Number
                               </th>
+                              
+                              {isEditMode && (
+                                <th className="text-left px-4 py-2 border-b">Action</th>
+                              )}
                             </tr>
                           </thead>
 
@@ -783,6 +802,21 @@ export default function RetirementPage() {
                                 <td className="px-4 py-2 border-b">
                                   {account.accountNumber}
                                 </td>
+                                
+                                {isEditMode && (
+                                  <td className="px-4 py-2 border-b">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingBankAccount(account);
+                                      setOpenBankModal(true);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
@@ -793,7 +827,7 @@ export default function RetirementPage() {
                 )}
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm p-4">
+              <div className="bg-white rounded-lg px-6 shadow-sm p-4">
                 <p className="text-xl font-bold text-[#953002] mb-4">
                   Supporting Documents
                 </p>
@@ -872,11 +906,15 @@ export default function RetirementPage() {
             </h2>
 
             <AddBankDetails
-              ref={bankFormRef}
-              memberId={selectedMemberId}
-              onSave={handleBankSave}
-              onClose={() => setOpenBankModal(false)}
-            />
+            ref={bankFormRef}
+            memberId={selectedMemberId}
+            initialData={editingBankAccount} 
+            onSave={handleBankSave}
+            onClose={() => {
+              setOpenBankModal(false);
+              setEditingBankAccount(null);
+            }}
+          />
           </div>
         </div>
       )}
