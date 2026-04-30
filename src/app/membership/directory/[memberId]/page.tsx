@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { ChevronDown, User, Loader2, ArrowLeft, FileText, Download, Folder } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -32,7 +31,7 @@ const actionGroups = {
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Death Donation Request", "Add Documents"],
+	secondary: ["Death Donation Request", "Add Documents", "Record Member Death"],
 };
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
@@ -88,6 +87,22 @@ export default function MemberProfilePage({
 		loadMember();
 	}, [memberIdParam]);
 
+
+	if (error || !profile) {
+		return (
+			<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
+				<div className="rounded-xl border border-red-200 bg-red-50 p-4">
+					<div className="flex items-center gap-3">
+						<AlertCircle className="h-6 w-6 text-red-600" />
+						<div>
+							<h3 className="font-semibold text-red-900">Error Loading Profile</h3>
+							<p className="text-sm text-red-700">{error || "Member profile not found."}</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
 	const handleActionClick = (action: string) => {
 		const routeMap: Record<string, string> = {
 			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
@@ -99,11 +114,18 @@ export default function MemberProfilePage({
 			"Request Termination": "/membership/directory/request-termination",
 			"Death Donation Request": "/membership/directory/death-donation-request",
 			"Add Documents": "/membership/directory/add-documents",
+			"Record Member Death": "/membership/directory/record-member-death",
 		};
 
 		const route = routeMap[action];
 		if (route) {
-			router.push(route);
+			// Pass memberId as a query parameter for secondary actions
+			const secondaryActions = ["Death Donation Request", "Add Documents", "Record Member Death"];
+			if (secondaryActions.includes(action)) {
+				router.push(`${route}?memberId=${memberId}`);
+			} else {
+				router.push(route);
+			}
 		}
 	};
 
