@@ -443,12 +443,7 @@ export default function StudentExamSection() {
   const onSubmit = async () => {
     // If editing, persist changes first
     let actionId: string | number | null = requestId;
-    if (isEditMode) {
-      const saved = await handleSave();
-      if (!saved) return;
-      // prefer numeric DB id if returned
-      actionId = saved.id || saved.universityScholarshipRequestID || requestId;
-    }
+   
 
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
@@ -848,14 +843,8 @@ export default function StudentExamSection() {
   
   // Handle marking request as incomplete
   const handleMarkIncomplete = async (reason: string) => {
-    // If editing, persist changes first
     let actionId: string | number | null = requestId;
-    if (isEditMode) {
-      const saved = await handleSave();
-      if (!saved) return;
-      // prefer numeric DB id if returned
-      actionId = saved.id || saved.universityScholarshipRequestID || requestId;
-    }
+    
 
     if (!actionId) {
       alert("Please save request first");
@@ -889,6 +878,8 @@ export default function StudentExamSection() {
       alert("Failed to mark incomplete");
     }
   };
+
+  
 
 
   const mandatoryDocumentTypes = requiredDocumentTypes
@@ -974,7 +965,7 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid}
+              disabled={isInputsDisabled || !isValid ||isSaved}
             >
               Save
             </Button>
@@ -1000,7 +991,7 @@ export default function StudentExamSection() {
                 <label htmlFor="requestDate" className="mb-1 block text-sm  text-gray-600">
                   Request Date <span className="text-red-500">*</span>
                 </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
               </div>
 
@@ -1008,7 +999,7 @@ export default function StudentExamSection() {
                 <label htmlFor="studentName" className="mb-1 block text-sm  text-gray-600">
                   Student Name <span className="text-red-500">*</span>
                 </label>
-                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
@@ -1016,7 +1007,7 @@ export default function StudentExamSection() {
                 <label htmlFor="nic" className="mb-1 block text-sm text-gray-600">
                   Student NIC <span className="text-red-500">*</span>
                 </label>
-                <Input id="nic" {...register("nic")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="nic" {...register("nic")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
               </div>
 
@@ -1024,7 +1015,7 @@ export default function StudentExamSection() {
                 <label htmlFor="bcNo" className="mb-1 block text-sm text-gray-600">
                   Birth Certificate Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
               </div>
 
@@ -1032,7 +1023,7 @@ export default function StudentExamSection() {
                 <label htmlFor="address" className="mb-1 block text-sm text-gray-600">
                   Permanent Address <span className="text-red-500">*</span>
                 </label>
-                <Input id="address" {...register("address")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="address" {...register("address")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
               </div>
 
@@ -1040,7 +1031,7 @@ export default function StudentExamSection() {
                 <label htmlFor="mobile" className="mb-1 block text-sm text-gray-600">
                   Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
               </div>
             </div>
@@ -1050,7 +1041,7 @@ export default function StudentExamSection() {
                 id="isSchoolApplicant"
                 type="checkbox"
                 {...register("isSchoolApplicant")}
-                disabled={isInputsDisabled}
+                disabled={isInputsDisabled ||isSaved}
                 className="h-4 w-4 accent-[#953002]"
               />
               <label htmlFor="isSchoolApplicant" className="text-sm text-gray-600">
@@ -1063,7 +1054,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
                   Exam Year <span className="text-red-500">*</span>
                 </label>
-                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
               </div>
 
@@ -1071,7 +1062,7 @@ export default function StudentExamSection() {
                 <label htmlFor="examNo" className="mb-1 block text-sm  text-gray-600">
                   Examination Number <span className="text-red-500">*</span>
                 </label>
-                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
               </div>
 
@@ -1079,7 +1070,7 @@ export default function StudentExamSection() {
                 <label htmlFor="zScore" className="mb-1 block text-sm  text-gray-600">
                   Z-Score <span className="text-red-500">*</span>
                 </label>
-                <Input id="zScore" {...register("zscore")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="zScore" {...register("zscore")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.zscore && <p className="mt-1 text-sm text-red-500">{errors.zscore.message}</p>}
               </div>
 
@@ -1089,7 +1080,7 @@ export default function StudentExamSection() {
                   variant="outline"
                   className=" text-sm  text-gray-600"
                   onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo || isInputsDisabled}
+                  disabled={isValidatingExamNo || isInputsDisabled ||isSaved}
                 >
                   {isValidatingExamNo ? "Validating..." : "Validate"}
                 </Button>
@@ -1110,7 +1101,7 @@ export default function StudentExamSection() {
                 <select
                   id="university"
                   {...register("university")}
-                  disabled={isInputsDisabled}
+                  disabled={isInputsDisabled ||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select University</option>
@@ -1130,7 +1121,7 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university") || isInputsDisabled}
+                  disabled={!watch("university") || isInputsDisabled ||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
@@ -1149,14 +1140,14 @@ export default function StudentExamSection() {
                 <label htmlFor="duration" className="mb-1 block text-sm text-gray-600">
                   Program Duration
                 </label>
-                <Input id="duration" {...register("duration")} disabled={isInputsDisabled} readOnly className={whiteInputClass} />
+                <Input id="duration" {...register("duration")} disabled={isInputsDisabled ||isSaved} readOnly className={whiteInputClass} />
               </div>
 
               <div>
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled} className={whiteInputClass}/>
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass}/>
               </div>
             </div>
           </section>
@@ -1171,7 +1162,7 @@ export default function StudentExamSection() {
                 variant="outline"
                 className=" text-sm  text-gray-600"
                 onClick={handleRefreshMinorAccount}
-                disabled={isInputsDisabled}
+                disabled={isInputsDisabled ||isSaved}
               >
                 Refresh
               </Button>
@@ -1204,7 +1195,7 @@ export default function StudentExamSection() {
                 <label htmlFor="accountNo" className="mb-1 block text-sm  text-gray-600">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled ||isSaved} className={whiteInputClass} />
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
@@ -1215,7 +1206,7 @@ export default function StudentExamSection() {
                 <select
                   id="bank"
                   {...register("bank")}
-                  disabled={isInputsDisabled}
+                  disabled={isInputsDisabled ||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select Bank</option>
@@ -1234,7 +1225,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank") || isInputsDisabled}
+                  disabled={!watch("bank") || isInputsDisabled ||isSaved}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>
