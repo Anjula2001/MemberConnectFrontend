@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "../../../components/ui/button";
 
@@ -18,22 +18,42 @@ const filterSchema = z
     const today = new Date();
 
     if (!data.fromDate) {
-      ctx.addIssue({ code: "custom", path: ["fromDate"], message: "From Date is required" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromDate"],
+        message: "From Date is required",
+      });
     }
 
     if (!data.toDate) {
-      ctx.addIssue({ code: "custom", path: ["toDate"], message: "To Date is required" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["toDate"],
+        message: "To Date is required",
+      });
     }
 
     if (data.fromDate && new Date(data.fromDate) > today) {
-      ctx.addIssue({ code: "custom", path: ["fromDate"], message: "From Date cannot be a future date" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromDate"],
+        message: "From Date cannot be a future date",
+      });
     }
 
     if (data.toDate && new Date(data.toDate) > today) {
-      ctx.addIssue({ code: "custom", path: ["toDate"], message: "To Date cannot be a future date" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["toDate"],
+        message: "To Date cannot be a future date",
+      });
     }
 
-    if (data.fromDate && data.toDate && new Date(data.fromDate) > new Date(data.toDate)) {
+    if (
+      data.fromDate &&
+      data.toDate &&
+      new Date(data.fromDate) > new Date(data.toDate)
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["fromDate"],
@@ -77,6 +97,24 @@ function MultiSelectDropdown({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const toggleValue = (value: string) => {
     if (value === "ALL") {
@@ -99,11 +137,12 @@ function MultiSelectDropdown({
       : selected.length === 0
       ? "Select"
       : selected.length === 1
-      ? options.find((option) => option.value === selected[0])?.label || "Select"
+      ? options.find((option) => option.value === selected[0])?.label ||
+        "Select"
       : `${selected.length} selected`;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       <label className="block text-sm font-medium mb-1">{label}</label>
 
       <button
@@ -173,10 +212,22 @@ const yearOptions = ["2026", "2025", "2024", "2023", "2022"].map((year) => ({
 const statusOptions = [
   { value: "NEW", label: "New" },
   { value: "INCOMPLETE", label: "Incomplete" },
-  { value: "SUBMITTED_FOR_NORMAL_APPROVAL", label: "Submitted for Normal Approval" },
-  { value: "SUBMITTED_FOR_DEVIATION_APPROVAL", label: "Submitted for Deviation Approval" },
-  { value: "ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST", label: "Added to Scholarship Normal Approval List" },
-  { value: "ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST", label: "Added to Scholarship Deviation Approval List" },
+  {
+    value: "SUBMITTED_FOR_NORMAL_APPROVAL",
+    label: "Submitted for Normal Approval",
+  },
+  {
+    value: "SUBMITTED_FOR_DEVIATION_APPROVAL",
+    label: "Submitted for Deviation Approval",
+  },
+  {
+    value: "ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST",
+    label: "Added to Scholarship Normal Approval List",
+  },
+  {
+    value: "ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST",
+    label: "Added to Scholarship Deviation Approval List",
+  },
   { value: "REJECTED", label: "Rejected" },
   { value: "APPROVED", label: "Approved" },
   { value: "INACTIVE", label: "Inactive" },
@@ -218,7 +269,9 @@ export default function Grade5ScholarshipRequestsListPage() {
       params.append("sortBy", sortBy);
       params.append("sortDirection", sortDirection);
 
-      if (search.trim()) params.append("search", search.trim());
+      if (search.trim()) {
+        params.append("search", search.trim());
+      }
 
       if (receivedOn === "DATE_PERIOD") {
         params.append("fromDate", fromDate);
@@ -231,7 +284,9 @@ export default function Grade5ScholarshipRequestsListPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        setError(errorData.message || "Failed to retrieve scholarship requests.");
+        setError(
+          errorData.message || "Failed to retrieve scholarship requests."
+        );
         return;
       }
 
@@ -285,16 +340,37 @@ export default function Grade5ScholarshipRequestsListPage() {
     status === "REJECTED";
 
   return (
-    <div className="min-h-screen bg-[#f7f7f7] p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    
+      <div className="max-w-7xl mx-auto px-10 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-[#953002]">
             Grade 5 Scholarship Requests
           </h1>
 
-          <Button className="bg-white text-gray-700 border hover:bg-gray-100">
-            View Approval Lists
-          </Button>
+          <div className="flex gap-3">
+            {/* Create Approval List */}
+            <Button
+              className="bg-[#C49A7C] text-white hover:bg-[#B0896A] px-5"
+              onClick={() => {
+                // TODO: handle create approval list
+                console.log("Create Approval List");
+              }}
+            >
+              Create Approval List
+            </Button>
+
+            {/* View Approval Lists */}
+            <Button
+              variant="outline"
+              className="border-[#953002] text-[#953002] hover:bg-[#953002] hover:text-white px-5"
+              onClick={() => {
+                // navigate to approval list page
+                window.location.href = "/membership/scholarships/approval-lists";
+              }}
+            >
+              View Approval Lists
+            </Button>
+          </div>
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -332,7 +408,9 @@ export default function Grade5ScholarshipRequestsListPage() {
               >
                 <option value="ALL_DAYS">All Days</option>
                 <option value="THIS_MONTH">This Month</option>
-                <option value="THIS_AND_LAST_MONTH">This and Last Month</option>
+                <option value="THIS_AND_LAST_MONTH">
+                  This and Last Month
+                </option>
                 <option value="DATE_PERIOD">Date Period</option>
               </select>
             </div>
@@ -461,13 +539,19 @@ export default function Grade5ScholarshipRequestsListPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-6 text-center text-gray-500">
+                  <td
+                    colSpan={10}
+                    className="px-4 py-6 text-center text-gray-500"
+                  >
                     Loading...
                   </td>
                 </tr>
               ) : requests.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-6 text-center text-gray-500">
+                  <td
+                    colSpan={10}
+                    className="px-4 py-6 text-center text-gray-500"
+                  >
                     No scholarship requests found.
                   </td>
                 </tr>
@@ -480,7 +564,11 @@ export default function Grade5ScholarshipRequestsListPage() {
                       <td className="px-4 py-3 font-medium">
                         {row.requestNo || `G5-${row.id}`}
                       </td>
-                      <td className="px-4 py-3">{row.requestedDate || "-"}</td>
+
+                      <td className="px-4 py-3">
+                        {row.requestedDate || "-"}
+                      </td>
+
                       <td className="px-4 py-3">
                         <button
                           onClick={() => handleView(row.memberId, row.id)}
@@ -489,36 +577,59 @@ export default function Grade5ScholarshipRequestsListPage() {
                           {row.memberId}
                         </button>
                       </td>
+
                       <td className="px-4 py-3">
                         {row.memberFullName || row.nameWithInitials || "-"}
                       </td>
+
                       <td className="px-4 py-3">{row.nic || "-"}</td>
-                      <td className="px-4 py-3">{row.studentName || "-"}</td>
-                      <td className="px-4 py-3">{row.examinationNumber || "-"}</td>
+
+                      <td className="px-4 py-3">
+                        {row.studentName || "-"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {row.examinationNumber || "-"}
+                      </td>
+
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           {row.hasDeviation && (
-                            <span title="Saved with deviation criteria" className="text-red-500">
+                            <span
+                              title="Saved with deviation criteria"
+                              className="text-red-500"
+                            >
                               ●
                             </span>
                           )}
+
                           {row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" && (
-                            <span title="Submitted for normal approval" className="text-blue-600">
+                            <span
+                              title="Submitted for normal approval"
+                              className="text-blue-600"
+                            >
                               ●
                             </span>
                           )}
-                          {row.status === "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
-                            <span title="Submitted for deviation approval" className="text-orange-500">
+
+                          {row.status ===
+                            "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
+                            <span
+                              title="Submitted for deviation approval"
+                              className="text-orange-500"
+                            >
                               ●
                             </span>
                           )}
                         </div>
                       </td>
+
                       <td className="px-4 py-3">
                         <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
                           {row.status?.replaceAll("_", " ") || "-"}
                         </span>
                       </td>
+
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button
@@ -548,6 +659,6 @@ export default function Grade5ScholarshipRequestsListPage() {
           </table>
         </div>
       </div>
-    </div>
+  
   );
 }

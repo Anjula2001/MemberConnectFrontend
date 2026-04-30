@@ -696,11 +696,12 @@ export default function TerminationPage() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Search & Filter</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <h2 className="text-lg font-semibold text-[#953002] mb-4">
+          Search & Filter
+        </h2>
+       
+       
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-52">
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
@@ -813,8 +814,8 @@ export default function TerminationPage() {
             </div>
             <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
           </div>
-        </CardContent>
-      </Card>
+      </div>
+      
 
       <div className="rounded-md border bg-white">
         {error && (
@@ -909,7 +910,7 @@ export default function TerminationPage() {
               ))
             ) : (
               <TableRow className="h-12">
-                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">No requests found. Try adjusting your search criteria.</TableCell>
+                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
               </TableRow>
             )}
           </TableBody>

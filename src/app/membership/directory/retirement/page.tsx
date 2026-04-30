@@ -55,7 +55,7 @@ interface MemberDetails {
 }
 
 const API_BASE_URL = "http://localhost:8080";
-const DEFAULT_MEMBER_ID = "MEM001";
+const DEFAULT_MEMBER_ID = "MEM009";
 
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
