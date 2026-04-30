@@ -450,21 +450,18 @@ export default function Page() {
                       </td>
                         </tr>
                     ) : (
-                      displayed.map((item) => (
+                      displayed.map((item) => {
+                        const requestKey = item.requestId || String(item.id);
+
+                        return (
                         <tr key={item.id} className="border-t text-sm text-gray-600">
                             <td className="py-4 px-4">
-                              {(() => {
-                                const requestKey = item.requestId || String(item.id);
-
-                                return (
                               <Link
                                 href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
                                 className="text-[#953002] hover:underline font-medium"
                               >
                                 {requestKey}
                               </Link>
-                                );
-                              })()}
                             </td>
                             <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
                             <td className="py-4 px-4 text-gray-600">{item.nic}</td>
@@ -477,15 +474,16 @@ export default function Page() {
                             <td className="py-4 px-4">
                                 {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
                                   <Link
-                                    href={`/scholarships/university/${item.id}?mode=edit`}
+                                    href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
                                     className="text-[#953002] hover:text-[#c44515] transition-colors"
                                   >
                                     <Pencil size={18} />
                                   </Link>
                                 )}
                             </td>
-                        </tr>
-                        ))
+                              </tr>
+                              );
+                              })
                     )}
                     </tbody>
                 </table>

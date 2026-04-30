@@ -703,7 +703,7 @@ export default function StudentExamSection() {
       formData.append("documentType", file.documentType);
 
       const response = await fetch(
-        `http://localhost:8080/api/documents/upload`,
+        `http://localhost:8080/api/uploaded-documents/upload`,
         {
           method: "POST",
           body: formData,
@@ -965,7 +965,7 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted}
+              disabled={!requestId || !isSaved || isSubmitted || isViewMode} 
             >
               Incomplete
             </Button>
