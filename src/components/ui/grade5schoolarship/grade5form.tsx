@@ -12,9 +12,51 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
 
-/**
- * Form validation schema
- */
+interface Grade5FormProps {
+  memberId: string;
+  initialData?: Grade5InitialData | null;
+  readOnly?: boolean;
+}
+
+export type Grade5InitialData = {
+  requestedDate?: string;
+  studentName?: string;
+  birthCertificateNumber?: string;
+  school?: string;
+  district?: string;
+  examYear?: number;
+  districtCutOffMark?: number | string | null;
+  marksObtained?: number;
+  examinationNumber?: string;
+};
+
+export type Grade5SavedRequest = Grade5InitialData & {
+  id?: number;
+  requestNo?: string;
+  status?: string;
+  incompleteReason?: string;
+};
+
+type EligibilityValidationResponse = {
+  eligible?: boolean;
+  isEligible?: boolean;
+  valid?: boolean;
+  canCreate?: boolean;
+  message?: string;
+  reason?: string;
+  error?: string;
+  errors?: string[];
+  memberActiveDuringExam?: boolean;
+  activeDuringExam?: boolean;
+  membershipPeriodValid?: boolean;
+  membershipAgeValid?: boolean;
+  scholarshipRemittedPreviousMonth?: boolean;
+  previousMonthRemitted?: boolean;
+  continuousScholarshipRemittanceValid?: boolean;
+  continuousRemittanceValid?: boolean;
+};
+
+// For Validate Form
 const grade5Schema = z.object({
   requestedDate: z
     .string()
@@ -30,7 +72,8 @@ const grade5Schema = z.object({
 
   birthCertificateNo: z
     .string()
-    .min(1, "Birth certificate number is required"),
+    .min(1, "Birth certificate number is required")
+    .min(8, "Birth Certificate number must be at least 8 characters"),
 
   school: z.string().min(1, "School is required"),
 
@@ -46,81 +89,66 @@ const grade5Schema = z.object({
   })
   .optional(),
 
-marksObtained: z
-  .number({
-    message: "Marks obtained is required",
-  })
-  .min(0, "Marks must be at least 0")
-  .max(200, "Marks cannot exceed 200"),
+  marksObtained: z
+    .number({
+      message: "Marks obtained is required",
+    })
+    .min(0, "Marks must be at least 0")
+    .max(200, "Marks cannot exceed 200"),
 
   examinationNumber: z
     .string()
-    .min(1, "Examination number is required"),
+    .min(1, "Examination number is required")
+    .min(8, "Examination number must be at least 8 characters"),
 
   districtCutOff: z.string().optional(),
-}).superRefine((data, ctx) => {
-  const cutoffMark = data.districtCutOff
-    ? Number(data.districtCutOff)
-    : undefined;
+  }).superRefine((data, ctx) => {
+    const cutoffMark = data.districtCutOff
+      ? Number(data.districtCutOff)
+      : undefined;
 
-  if (
-    cutoffMark !== undefined &&
-    !Number.isNaN(cutoffMark) &&
-    data.marksObtained < cutoffMark
-  ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["marksObtained"],
-      message:
-        "The Grade 5 Scholarship Request cannot be saved. The exam marks obtained by the student is less than the district cut-off mark.",
-    });
-  }
+    if (
+      cutoffMark !== undefined &&
+      !Number.isNaN(cutoffMark) &&
+      data.marksObtained < cutoffMark
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["marksObtained"],
+        message:
+          "The Grade 5 Scholarship Request cannot be saved. The exam marks obtained by the student is less than the district cut-off mark.",
+      });
+    }
 });
 
 export type Grade5FormValues = z.infer<typeof grade5Schema>;
 
 export interface Grade5FormRef {
-  submitForm: () => void;
+  submitForm: () => Promise<Grade5SavedRequest | undefined>;
+  getBirthCertificateNo: () => string;
 }
 
-// Helper function for API calls with error handling
-const fetchAPI = async (url: string, options?: RequestInit) => {
-  try {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response;
-  } catch (error: any) {
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new Error(`Network error: Unable to reach server at ${new URL(url).host}. Please ensure the backend service is running.`);
-    }
-    throw error;
-  }
-};
-
-const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
-  /**
-   * React Hook Form setup
-   */
+const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
+  ({ memberId, initialData, readOnly = false  }, ref) => {
+  
   const {
-  register,
-  handleSubmit,
-  setValue,
-  watch,
-  setError,
-  clearErrors,
-  getValues,
-  formState: { errors },
-} = useForm<Grade5FormValues>({
-  resolver: zodResolver(grade5Schema),
-  mode: "onChange",
-  reValidateMode: "onChange",
-  defaultValues: {
-    examYear: undefined,
-    districtCutOff: "",
-  },
-});
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    setError,
+    clearErrors,
+    getValues,
+    formState: { errors },
+  } = useForm<Grade5FormValues>({
+    resolver: zodResolver(grade5Schema),
+    mode: "onChange",
+    reValidateMode: "onChange",
+    defaultValues: {
+      examYear: undefined,
+      districtCutOff: "",
+    },
+  });
 
   /**
    * Watched values
@@ -134,23 +162,34 @@ const Grade5Form = forwardRef<Grade5FormRef>((_, ref) => {
     clearErrors("examinationNumber");
   }, [examinationNumber, clearErrors]);
 
-/**
- * Local UI state
- */
+  useEffect(() => {
+  if (initialData) {
+    setValue("requestedDate", initialData.requestedDate || "");
+    setValue("studentName", initialData.studentName || "");
+    setValue("birthCertificateNo", initialData.birthCertificateNumber || "");
+    setValue("school", initialData.school || "");
+    setValue(
+        "schoolDistrict",
+        initialData.district || initialData.district || ""
+    );
+    setValue("examYear", initialData.examYear || undefined);
+    setValue(
+      "districtCutOff",
+      initialData.districtCutOffMark != null
+        ? String(initialData.districtCutOffMark)
+        : ""
+    );
+    setValue("marksObtained", initialData.marksObtained ?? 0);
+    setValue("examinationNumber", initialData.examinationNumber || "");
+  }
+}, [initialData, setValue]);
+
+
 const [checkingExamNo, setCheckingExamNo] = useState(false);
 
 const [examValidated, setExamValidated] = useState(false);
+const [eligibilityError, setEligibilityError] = useState("");
 
-
-/**
- * If district changes AFTER cutoff has already loaded,
- * clear Exam Year and District Cut-Off
- */
-
-  /**
-   * Fetch district cutoff from backend
-   * Runs only when both district and exam year are available
-   */
 useEffect(() => {
   if (!selectedDistrict || !selectedYear) {
     setValue("districtCutOff", "");
@@ -246,18 +285,100 @@ useEffect(() => {
     }
   };
 
-  /**
-   * Called when form is valid and user saves/submits
-   * Also re-checks duplicate exam number before saving
-   */
+  const buildEligibilityMessage = (data: EligibilityValidationResponse) => {
+    if (data.message) return data.message;
+    if (data.reason) return data.reason;
+    if (data.error) return data.error;
+    if (data.errors?.length) return data.errors.join(" ");
+
+    if (
+      data.memberActiveDuringExam === false ||
+      data.activeDuringExam === false
+    ) {
+      return "The Grade 5 Scholarship Request cannot be saved. The Member is not Active during the selected Exam";
+    }
+
+    if (
+      data.membershipPeriodValid === false ||
+      data.membershipAgeValid === false
+    ) {
+      return "The required continues Membership period does not comply (36 months)";
+    }
+
+    if (
+      data.continuousScholarshipRemittanceValid === false ||
+      data.continuousRemittanceValid === false
+    ) {
+      return "Scholarship deduction was not continuously remitted from Member for the specific period (6 months)";
+    }
+
+    if (
+      data.scholarshipRemittedPreviousMonth === false ||
+      data.previousMonthRemitted === false
+    ) {
+      return "The Scholarship Account should be remitted on the previous month.";
+    }
+
+    return "The Grade 5 Scholarship Request cannot be saved. Member is not eligible to apply for a Grade 5 Scholarship.";
+  };
+
+  const validateMemberEligibility = async (data: Grade5FormValues) => {
+    setEligibilityError("");
+
+    if (!data.examYear) {
+      setEligibilityError("Exam year is required to validate member eligibility.");
+      return false;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        memberId,
+        examYear: String(data.examYear),
+      });
+
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/eligibility/validate?${params.toString()}`
+      );
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        setEligibilityError(
+          errorText ||
+            "Unable to validate member eligibility for Grade 5 Scholarship."
+        );
+        return false;
+      }
+
+      const result = (await res.json()) as EligibilityValidationResponse;
+      const eligible =
+        result.eligible ?? result.isEligible ?? result.valid ?? result.canCreate;
+
+      if (eligible === false) {
+        setEligibilityError(buildEligibilityMessage(result));
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Eligibility validation error:", error);
+      setEligibilityError(
+        "Unable to validate member eligibility for Grade 5 Scholarship."
+      );
+      return false;
+    }
+  };
+
+  
   const onValid = async (data: Grade5FormValues) => {
+    const eligibilityOk = await validateMemberEligibility(data);
+    if (!eligibilityOk) return;
+
     const examOk = await validateExamNumber();
     if (!examOk) return;
 
-    /**
-     * Map frontend field names to backend DTO field names
-     */
+    
     const payload = {
+      requestedDate: data.requestedDate,
       studentName: data.studentName,
       birthCertificateNumber: data.birthCertificateNo,
       studentSchool: data.school,
@@ -273,7 +394,9 @@ useEffect(() => {
     try {
      
 
-      const res = await fetch("http://localhost:8080/api/grade5/save", {
+      const res = await fetch(
+        `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberId)}`,
+        {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -302,6 +425,8 @@ useEffect(() => {
       const savedData = await res.json();
       console.log("Saved successfully:", savedData);
       alert("Form saved successfully");
+
+      return savedData;
     } catch (error) {
       console.error("Save error:", error);
       alert("Failed to save form");
@@ -320,14 +445,32 @@ useEffect(() => {
    * Parent page calls formRef.current?.submitForm()
    */
   useImperativeHandle(ref, () => ({
-    submitForm: () => {
-      handleSubmit(onValid, onInvalid)();
+    submitForm: async () => {
+      let savedRequest: Grade5SavedRequest | undefined;
+
+      await handleSubmit(
+        async (data) => {
+          savedRequest = await onValid(data);
+        },
+        onInvalid
+      )();
+
+      return savedRequest;
+    },
+    getBirthCertificateNo: () => {
+      return getValues("birthCertificateNo");
     },
   }));
 
   return (
     <form className="space-y-6">
       <p className="text-[#953002] text-xl font-bold">Request Details</p>
+
+      {eligibilityError && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {eligibilityError}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Requested Date */}
@@ -337,6 +480,7 @@ useEffect(() => {
             type="date"
             {...register("requestedDate")}
             max={new Date().toISOString().split("T")[0]}
+            disabled={readOnly}
           />
           {errors.requestedDate && (
             <p className="text-red-500 text-sm">
@@ -348,7 +492,7 @@ useEffect(() => {
         {/* Student Name */}
         <div>
           <label className="block font-medium mb-1">Student Name</label>
-          <Input {...register("studentName")} />
+          <Input {...register("studentName")} disabled={readOnly} />
           {errors.studentName && (
             <p className="text-red-500 text-sm">
               {errors.studentName.message}
@@ -361,7 +505,7 @@ useEffect(() => {
           <label className="block font-medium mb-1">
             Birth Certificate No
           </label>
-          <Input {...register("birthCertificateNo")} />
+          <Input {...register("birthCertificateNo")} disabled={readOnly} />
           {errors.birthCertificateNo && (
             <p className="text-red-500 text-sm">
               {errors.birthCertificateNo.message}
@@ -372,7 +516,7 @@ useEffect(() => {
         {/* School */}
         <div>
           <label className="block font-medium mb-1">School</label>
-          <Input {...register("school")} />
+          <Input {...register("school")} disabled={readOnly} />
           {errors.school && (
             <p className="text-red-500 text-sm">{errors.school.message}</p>
           )}
@@ -390,6 +534,7 @@ useEffect(() => {
                 clearErrors(["examYear", "districtCutOff"]);
               },
             })}
+            disabled={readOnly}
           >
             <option value="">Select District</option>
             <option>Colombo</option>
@@ -432,7 +577,7 @@ useEffect(() => {
             type="number"
             min={2000}
             max={new Date().getFullYear()}
-            disabled={!selectedDistrict}
+            disabled={readOnly || !selectedDistrict}
             {...register("examYear", {
               setValueAs: (value) =>
                 value === "" ? undefined : Number(value),
@@ -448,7 +593,8 @@ useEffect(() => {
           <label className="block font-medium mb-1">District Cut-Off</label>
           <Input
             {...register("districtCutOff")}
-            disabled={!selectedDistrict || !selectedYear}
+            disabled={readOnly || !selectedDistrict || !selectedYear}
+            
           />
         </div>
 
@@ -461,6 +607,7 @@ useEffect(() => {
               setValueAs: (value) =>
                 value === "" ? undefined : Number(value),
             })}
+            disabled={readOnly}
           />
           {errors.marksObtained && (
             <p className="text-red-500 text-sm">
@@ -477,7 +624,7 @@ useEffect(() => {
 
           <div className="flex gap-6 items-start">
             <div className="w-1/2">
-              <Input {...register("examinationNumber")} />
+              <Input {...register("examinationNumber")} disabled={readOnly} />
 
               {errors.examinationNumber && (
                 <p className="text-red-500 text-sm mt-1">
