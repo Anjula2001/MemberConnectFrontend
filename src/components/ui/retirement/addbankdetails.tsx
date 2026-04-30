@@ -1,107 +1,353 @@
 "use client";
 
-import { forwardRef, useImperativeHandle } from "react";
-import { useForm } from "react-hook-form";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Input } from "../input";
-import { Button } from "../button";
-
-const bankSchema = z.object({
-  bank: z.string().min(1, "Bank is required"),
-  branch: z.string().min(1, "Branch is required"),
-  accountNumber: z
-    .string()
-    .min(1, "Account Number is required")
-    .regex(/^\d+$/, "Account Number must be numeric"),
-});
-
-export type BankFormValues = z.infer<typeof bankSchema>;
+import { Input } from "../../ui/input";
+import { Button } from "../../ui/button";
 
 export interface AddBankDetailsRef {
   submitBankForm: () => void;
 }
 
-interface Props {
-  onSave: (data: BankFormValues) => void;
-  onClose: () => void;   // ✅ ADD THIS
+interface Bank {
+  bankId: string;
+  name: string;
 }
 
-const AddBankDetails = forwardRef<AddBankDetailsRef, Props>(({ onSave,onClose }, ref) => {
-  const { register, handleSubmit, formState: { errors } } = useForm<BankFormValues>({
-    resolver: zodResolver(bankSchema),
-  });
+interface Branch {
+  branchId: string;
+  name: string;
+}
 
-  const onValid = (data: BankFormValues) => {
-    onSave(data);
-  };
+interface SavedBankAccount {
+  id: number;
+  memberId: string;
+  bankId: string;
+  bankName: string;
+  branchId: string;
+  branchName: string;
+  accountNumber: string;
+}
 
-  const onInvalid = (errors: any) => {
-    console.log("Bank Form Errors:", errors);
-  };
+interface AddBankDetailsProps {
+  memberId: string;
+  initialData?: SavedBankAccount | null;
+  onSave: (savedAccount: SavedBankAccount) => void;
+  onClose: () => void;
+}
 
+const API_BASE_URL = "http://localhost:8080";
 
-  // Expose submit function to parent
-  useImperativeHandle(ref, () => ({
-    submitBankForm: handleSubmit(onValid, onInvalid),
-  }));
+const bankDetailsSchema = z.object({
+  accountNumber: z
+    .string()
+    .trim()
+    .min(1, "Account number is required")
+    .regex(/^[0-9]{6,15}$/, "Account number must contain 6 to 15 digits"),
+});
+
+const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
+  ({ memberId, initialData, onSave, onClose }, ref) => {
+    const [banks, setBanks] = useState<Bank[]>([]);
+    const [branches, setBranches] = useState<Branch[]>([]);
+
+    const [selectedBank, setSelectedBank] = useState("");
+    const [selectedBranch, setSelectedBranch] = useState("");
+    const [accountNumber, setAccountNumber] = useState("");
+
+    const [loadingBanks, setLoadingBanks] = useState(false);
+    const [loadingBranches, setLoadingBranches] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    const [bankError, setBankError] = useState("");
+    const [branchError, setBranchError] = useState("");
+    const [accountNumberError, setAccountNumberError] = useState("");
+    const [generalError, setGeneralError] = useState("");
+
+    /**
+     * Loads all available banks when the component opens.
+     * This keeps the bank dropdown updated from the backend.
+     */
+    useEffect(() => {
+      const fetchBanks = async () => {
+        try {
+          setLoadingBanks(true);
+          setGeneralError("");
+
+          const response = await fetch(`${API_BASE_URL}/api/banks`);
+
+          if (!response.ok) {
+            throw new Error("Failed to load banks");
+          }
+
+          const bankList: Bank[] = await response.json();
+          setBanks(bankList);
+        } catch (error) {
+          console.error("Error fetching banks:", error);
+          setGeneralError("Unable to load banks");
+        } finally {
+          setLoadingBanks(false);
+        }
+      };
+
+      fetchBanks();
+    }, []);
+
+    useEffect(() => {
+      if (initialData) {
+        setSelectedBank(initialData.bankId);
+        setSelectedBranch(initialData.branchId);
+        setAccountNumber("");
+      }
+    }, [initialData]);
+
+    /**
+     * Loads branches only after a bank is selected.
+     * This avoids unnecessary API calls and ensures branch options match the bank.
+     */
+    useEffect(() => {
+      if (!selectedBank) {
+        setBranches([]);
+        setSelectedBranch("");
+        return;
+      }
+
+      const fetchBranches = async () => {
+        try {
+          setLoadingBranches(true);
+          setGeneralError("");
+
+          const response = await fetch(
+            `${API_BASE_URL}/api/banks/${selectedBank}/branches`
+          );
+
+          if (!response.ok) {
+            throw new Error("Failed to load branches");
+          }
+
+          const branchList: Branch[] = await response.json();
+          setBranches(branchList);
+        } catch (error) {
+          console.error("Error fetching branches:", error);
+          setBranches([]);
+          setGeneralError("Unable to load branches");
+        } finally {
+          setLoadingBranches(false);
+        }
+      };
+
+      fetchBranches();
+    }, [selectedBank]);
+
+    /**
+     * Validates all required fields before saving.
+     * Keeping validation separate makes the code easier to maintain and test.
+     */
+    const validateForm = () => {
+      let isValid = true;
+
+      setBankError("");
+      setBranchError("");
+      setAccountNumberError("");
+      setGeneralError("");
+
+      if (!selectedBank) {
+        setBankError("Bank is required");
+        isValid = false;
+      }
+
+      if (!selectedBranch) {
+        setBranchError("Branch is required");
+        isValid = false;
+      }
+
+      const accountValidationResult = bankDetailsSchema.safeParse({
+        accountNumber,
+      });
+
+      if (!accountValidationResult.success) {
+        setAccountNumberError(
+          accountValidationResult.error.flatten().fieldErrors.accountNumber?.[0] ||
+            ""
+        );
+        isValid = false;
+      }
+
+      return isValid;
+    };
+
+    /**
+     * Saves the selected bank details to the backend.
+     * The function first validates inputs, then sends only clean data.
+     */
+    const submitBankForm = async () => {
+      const isValid = validateForm();
+
+      if (!isValid) return;
+
+      try {
+        setSaving(true);
+        setGeneralError("");
+
+        const isEdit = !!initialData?.id;
+
+        const response = await fetch(
+          isEdit
+            ? `${API_BASE_URL}/api/members/${memberId}/bank-accounts/${initialData.id}`
+            : `${API_BASE_URL}/api/members/${memberId}/bank-accounts`,
+          {
+            method: isEdit ? "PUT" : "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              bankId: selectedBank,
+              branchId: selectedBranch,
+              accountNumber: accountNumber.trim(),
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Failed to save bank account");
+        }
+
+        const savedAccount: SavedBankAccount = await response.json();
+        onSave(savedAccount);
+      } catch (error) {
+        console.error("Save error:", error);
+        setGeneralError("Failed to save bank account");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    /**
+     * Allows the parent component to trigger this form's submit function.
+     * This is useful when the save button is controlled from outside the form.
+     */
+    useImperativeHandle(ref, () => ({
+      submitBankForm,
+    }));
 
     return (
-      <>
-    <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-     <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
-        <button
-      type="button"
-      onClick={onClose}
-      className="absolute top-3 right-3 text-gray-500 hover:text-black text-xl"
-    >
-      ✕
-    </button>
-        <form className="space-y-4">
-      {/* Bank */}
-      <div>
-        <label className="block font-medium mb-1">Bank</label>
-        <select  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive" {...register("bank")} >
-        <option value="">Select bank</option>
-            <option>BOC</option>
-            <option>Peoples</option>
-            <option>HNB</option>
-            <option>Commercial</option>
-        </select>
-        {errors.bank && <p className="text-red-500 text-sm">{errors.bank.message}</p>}
-      </div>
+      <form className="space-y-6">
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <label className="block font-medium mb-1">Bank</label>
 
-      {/* Branch */}
-      <div>
-        <label className="block font-medium mb-1">Branch</label>
-        <select  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive" {...register("branch")} >
-        <option value="">Select Branch</option>
-            <option>New Town</option>
-            <option>Super Grade</option>   
-        </select>
-        {errors.branch && <p className="text-red-500 text-sm">{errors.branch.message}</p>}
-      </div>
+            <select
+              value={selectedBank}
+              onChange={(e) => {
+                setSelectedBank(e.target.value);
+                setSelectedBranch("");
+                setBankError("");
+                setBranchError("");
+              }}
+              className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive"
+              disabled={loadingBanks}
+            >
+              <option value="">
+                {loadingBanks ? "Loading banks..." : "Select bank"}
+              </option>
 
-      {/* Account Number */}
-      <div>
-        <label className="block font-medium mb-1">Account Number</label>
-        <Input type="text" placeholder="Enter Account Number" {...register("accountNumber")} />
-        {errors.accountNumber && <p className="text-red-500 text-sm">{errors.accountNumber.message}</p>}
-      </div>
-      <div className="flex justify-center mt-4">
-      <Button
-        type="button"
-        onClick={handleSubmit(onValid, onInvalid)}
-        className="bg-[#953002] text-white hover:bg-[#672102]"
-      >
-        Save Bank Account
-      </Button>
-      </div>
-    </form>
+              {banks.map((bank) => (
+                <option key={bank.bankId} value={bank.bankId}>
+                  {bank.name}
+                </option>
+              ))}
+            </select>
+
+            {bankError && (
+              <p className="text-red-500 text-sm mt-1">{bankError}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Branch</label>
+
+            <select
+              value={selectedBranch}
+              onChange={(e) => {
+                setSelectedBranch(e.target.value);
+                setBranchError("");
+              }}
+              className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive"
+              disabled={!selectedBank || loadingBranches}
+            >
+              <option value="">
+                {!selectedBank
+                  ? "Select bank first"
+                  : loadingBranches
+                    ? "Loading branches..."
+                    : "Select branch"}
+              </option>
+
+              {branches.map((branch) => (
+                <option key={branch.branchId} value={branch.branchId}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+
+            {branchError && (
+              <p className="text-red-500 text-sm mt-1">{branchError}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Account Number</label>
+
+            <Input
+              value={accountNumber}
+              onChange={(e) => {
+                setAccountNumber(e.target.value);
+                setAccountNumberError("");
+              }}
+              placeholder="Enter account number"
+            />
+
+            {accountNumberError && (
+              <p className="text-red-500 text-sm mt-1">
+                {accountNumberError}
+              </p>
+            )}
+          </div>
+
+          {generalError && (
+            <p className="text-red-500 text-sm">{generalError}</p>
+          )}
+
+          <div className="flex justify-center gap-8 pt-4">
+            <Button
+              type="button"
+              onClick={submitBankForm}
+              className="bg-[#953002] text-white hover:bg-[#672102] min-w-[120px]"
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save"}
+            </Button>
+
+            <Button
+              type="button"
+              onClick={onClose}
+              className="bg-gray-200 text-black hover:bg-gray-300 min-w-[120px]"
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
-        </div>
-    </>
-  );
-});
+      </form>
+    );
+  }
+);
+
+AddBankDetails.displayName = "AddBankDetails";
 
 export default AddBankDetails;
