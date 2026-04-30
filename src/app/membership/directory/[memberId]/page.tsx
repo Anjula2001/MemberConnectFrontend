@@ -1,7 +1,7 @@
 "use client";
 
-import { use } from "react";
-import { ChevronDown, User } from "lucide-react";
+import { use, useState, useEffect } from "react";
+import { ChevronDown, User, AlertCircle, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { notFound } from "next/navigation";
 
@@ -136,12 +136,58 @@ export default function MemberProfilePage({
 }) {
 	const router = useRouter();
 	const { memberId } = use(params);
-	const profile = memberProfiles[decodeURIComponent(memberId)];
+	const [profile, setProfile] = useState<MemberProfile | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);	useEffect(() => {
+		const loadMemberProfile = () => {
+			try {
+				setLoading(true);
+				const decodedMemberId = decodeURIComponent(memberId);
+				
+				// Use hardcoded memberProfiles data
+				if (memberProfiles[decodedMemberId]) {
+					setProfile(memberProfiles[decodedMemberId]);
+					setError(null);
+				} else {
+					setError(`Member with ID ${decodedMemberId} not found`);
+					setProfile(null);
+				}
+			} catch (err) {
+				console.error("Error loading member profile:", err);
+				setError("Failed to load member profile");
+				setProfile(null);
+			} finally {
+				setLoading(false);
+			}
+		};
 
-	if (!profile) {
-		notFound();
+		loadMemberProfile();
+	}, [memberId]);
+
+	if (loading) {
+		return (
+			<div className="flex flex-1 flex-col items-center justify-center gap-4 p-4 pt-0 md:p-6 md:pt-0">
+				<Loader2 className="h-8 w-8 animate-spin text-[#9d3602]" />
+				<p className="text-sm text-neutral-600">Loading member profile...</p>
+			</div>
+		);
 	}
 
+	if (error || !profile) {
+		return (
+			<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
+				<div className="rounded-xl border border-red-200 bg-red-50 p-4">
+					<div className="flex items-center gap-3">
+						<AlertCircle className="h-6 w-6 text-red-600" />
+						<div>
+							<h3 className="font-semibold text-red-900">Error Loading Profile</h3>
+							<p className="text-sm text-red-700">{error || "Member profile not found."}</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
 	const handleActionClick = (action: string) => {
 		const routeMap: Record<string, string> = {
 			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
@@ -158,7 +204,13 @@ export default function MemberProfilePage({
 
 		const route = routeMap[action];
 		if (route) {
-			router.push(route);
+			// Pass memberId as a query parameter for secondary actions
+			const secondaryActions = ["Death Donation Request", "Add Documents", "Record Member Death"];
+			if (secondaryActions.includes(action)) {
+				router.push(`${route}?memberId=${memberId}`);
+			} else {
+				router.push(route);
+			}
 		}
 	};
 
