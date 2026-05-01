@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  forwardRef,
-  useImperativeHandle,
-  useEffect,
-  useState,
-} from "react";
+import {forwardRef,useImperativeHandle,useEffect,useState,} from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,15 +10,19 @@ import { Button } from "../../ui/button";
 interface Grade5FormProps {
   memberId: string;
   initialData?: Grade5InitialData | null;
+  requestNo?: string;
   readOnly?: boolean;
 }
 
 export type Grade5InitialData = {
   requestedDate?: string;
   studentName?: string;
+  birthCertificateNo?: string;
   birthCertificateNumber?: string;
   school?: string;
+  studentSchool?: string;
   district?: string;
+  schoolDistrict?: string;
   examYear?: number;
   districtCutOffMark?: number | string | null;
   marksObtained?: number;
@@ -123,8 +122,24 @@ const grade5Schema = z.object({
 
 export type Grade5FormValues = z.infer<typeof grade5Schema>;
 
+type Grade5RequestPayload = {
+  requestedDate: string;
+  studentName: string;
+  birthCertificateNumber: string;
+  studentSchool: string;
+  schoolDistrict: string;
+  examYear?: number;
+  examinationNumber: string;
+  districtCutOffMark: number | null;
+  marksObtained: number;
+};
+
 export interface Grade5FormRef {
-  submitForm: () => Promise<Grade5SavedRequest | undefined>;
+  submitForm: (
+    extraData?: Record<string, unknown>,
+    requestNo?: string
+  ) => Promise<Grade5SavedRequest | undefined>;
+  validateAndGetData: () => Promise<Grade5RequestPayload | undefined>;
   getBirthCertificateNo: () => string;
 }
 
@@ -166,11 +181,14 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
   if (initialData) {
     setValue("requestedDate", initialData.requestedDate || "");
     setValue("studentName", initialData.studentName || "");
-    setValue("birthCertificateNo", initialData.birthCertificateNumber || "");
-    setValue("school", initialData.school || "");
+    setValue(
+      "birthCertificateNo",
+      initialData.birthCertificateNumber || initialData.birthCertificateNo || ""
+    );
+    setValue("school", initialData.school || initialData.studentSchool || "");
     setValue(
         "schoolDistrict",
-        initialData.district || initialData.district || ""
+        initialData.district || initialData.schoolDistrict || ""
     );
     setValue("examYear", initialData.examYear || undefined);
     setValue(
@@ -368,69 +386,60 @@ useEffect(() => {
     }
   };
 
+  const buildPayload = (data: Grade5FormValues): Grade5RequestPayload => ({
+    requestedDate: data.requestedDate,
+    studentName: data.studentName,
+    birthCertificateNumber: data.birthCertificateNo,
+    studentSchool: data.school,
+    schoolDistrict: data.schoolDistrict,
+    examYear: data.examYear,
+    examinationNumber: data.examinationNumber,
+    districtCutOffMark: data.districtCutOff
+      ? Number(data.districtCutOff)
+      : null,
+    marksObtained: data.marksObtained,
+  });
+
   
-  const onValid = async (data: Grade5FormValues) => {
-    const eligibilityOk = await validateMemberEligibility(data);
-    if (!eligibilityOk) return;
-
-    const examOk = await validateExamNumber();
-    if (!examOk) return;
-
-    
+  const onValid = async (
+    data: Grade5FormValues,
+    extraData: Record<string, unknown> = {},
+    requestNo?: string
+  ) => {
     const payload = {
-      requestedDate: data.requestedDate,
-      studentName: data.studentName,
-      birthCertificateNumber: data.birthCertificateNo,
-      studentSchool: data.school,
-      schoolDistrict: data.schoolDistrict,
-      examYear: data.examYear,
-      examinationNumber: data.examinationNumber,
-      districtCutOffMark: data.districtCutOff
-        ? Number(data.districtCutOff)
-        : null,
-      marksObtained: data.marksObtained,
+      ...buildPayload(data),
+      ...extraData,
     };
 
-    try {
-     
+    const isUpdate = !!requestNo;
 
+    try {
       const res = await fetch(
-        `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberId)}`,
+        isUpdate
+          ? `http://localhost:8080/api/grade5/${requestNo}/update`
+          : `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberId)}`,
         {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+          method: isUpdate ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
 
       if (!res.ok) {
         const errorText = await res.text();
-
-        if (
-          errorText.includes("Examination number already exists")
-        ) {
-          setError("examinationNumber", {
-            type: "manual",
-            message:
-              "Entered Examination Number is duplicating with another Scholarship Request",
-          });
-          setExamValidated(false);
-          return;
-        }
-
         throw new Error(errorText || "Failed to save form");
       }
 
       const savedData = await res.json();
-      console.log("Saved successfully:", savedData);
-      alert("Form saved successfully");
+      alert(isUpdate ? "Form updated successfully" : "Form saved successfully");
 
       return savedData;
     } catch (error) {
       console.error("Save error:", error);
       alert("Failed to save form");
-    } 
+    }
   };
 
   /**
@@ -445,17 +454,37 @@ useEffect(() => {
    * Parent page calls formRef.current?.submitForm()
    */
   useImperativeHandle(ref, () => ({
-    submitForm: async () => {
+   submitForm: async (extraData = {}, requestNo?: string) => {
       let savedRequest: Grade5SavedRequest | undefined;
 
       await handleSubmit(
         async (data) => {
-          savedRequest = await onValid(data);
+          savedRequest = await onValid(data, extraData, requestNo);
         },
         onInvalid
       )();
 
       return savedRequest;
+    },
+    validateAndGetData: async () => {
+      let payload: Grade5RequestPayload | undefined;
+
+      await handleSubmit(
+        async (data) => {
+          const eligibilityOk = await validateMemberEligibility(data);
+          if (!eligibilityOk) return;
+
+          const examOk =
+            initialData?.examinationNumber === data.examinationNumber ||
+            (await validateExamNumber());
+          if (!examOk) return;
+
+          payload = buildPayload(data);
+        },
+        onInvalid
+      )();
+
+      return payload;
     },
     getBirthCertificateNo: () => {
       return getValues("birthCertificateNo");
@@ -643,7 +672,7 @@ useEffect(() => {
               type="button"
               onClick={validateExamNumber}
               className="bg-[#953002] text-white hover:bg-[#672102]"
-              disabled={checkingExamNo}
+              disabled={readOnly || checkingExamNo}
             >
               {checkingExamNo ? "Checking..." : "Validate"}
             </Button>

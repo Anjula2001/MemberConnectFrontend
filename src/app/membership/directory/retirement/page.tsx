@@ -72,6 +72,7 @@ export default function RetirementPage() {
   const pageMode = searchParams.get("mode") || "";
   const [isEditing, setIsEditing] = useState(pageMode === "edit");
 
+
   const [openModal, setOpenModal] = useState(false);
   const [openBankModal, setOpenBankModal] = useState(false);
 
@@ -96,8 +97,7 @@ export default function RetirementPage() {
     nic: "",
   });
 
-  const [retirementRequest, setRetirementRequest] =
-    useState<RetirementRequest | null>(null);
+  const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
 
   const [validation, setValidation] =

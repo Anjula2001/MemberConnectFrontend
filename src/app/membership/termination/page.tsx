@@ -3,31 +3,12 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/src/components/ui/select";
+import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/src/components/ui/table";
+import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import {
-  AlertTriangle,
-  CircleDollarSign,
-  Pencil,
-  ChevronDown,
-} from "lucide-react";
+import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
 
 interface TerminationRequest {
   id: string;
@@ -837,13 +818,13 @@ export default function TerminationPage() {
                   />
                 </TableHead>
               )}
-              <TableHead className="font-semibold">Request ID</TableHead>
-              <TableHead className="font-semibold">Date</TableHead>
-              <TableHead className="font-semibold">Member ID</TableHead>
-              <TableHead className="font-semibold">Member Name</TableHead>
-              <TableHead className="font-semibold">Indicators</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="font-semibold text-center">Action</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Request ID</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Date</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Member ID</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Member Name</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Indicators</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Status</TableHead>
+              <TableHead className="font-semibold text-center px-6 py-3">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -864,7 +845,7 @@ export default function TerminationPage() {
                       />
                     </TableCell>
                   )}
-                  <TableCell>
+                  <TableCell className="px-6">
                     <button
                       type="button"
                       onClick={() => handleOpenRequest(request)}
@@ -873,11 +854,11 @@ export default function TerminationPage() {
                       {request.requestId}
                     </button>
                   </TableCell>
-                  <TableCell>{request.date}</TableCell>
-                  <TableCell>{request.memberNumber}</TableCell>
-                  <TableCell>{request.member}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
+                  <TableCell className="px-6">{request.date}</TableCell>
+                  <TableCell className="px-6">{request.memberNumber}</TableCell>
+                  <TableCell className="px-6">{request.member}</TableCell>
+                  <TableCell className="px-6">
+                    <div className="flex px-6 items-center gap-2">
                       {request.hasLoanBalance && (
                         <CircleDollarSign
                           className="h-4 w-4 text-amber-600"
@@ -897,7 +878,7 @@ export default function TerminationPage() {
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
                       {!NON_EDITABLE_STATUSES.includes(request.status) && (
                         <Button variant="ghost" size="sm" onClick={() => handleEditRequest(request)} className="h-8 w-8 p-0">

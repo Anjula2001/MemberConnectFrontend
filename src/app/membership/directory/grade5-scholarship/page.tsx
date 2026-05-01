@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/button";
-import Grade5Form, {
-  type Grade5FormRef,
-  type Grade5InitialData,
-} from "../../../../components/ui/grade5schoolarship/grade5form";
+import Grade5Form, {type Grade5FormRef,type Grade5InitialData,} from "../../../../components/ui/grade5schoolarship/grade5form";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Grade5Request = Grade5InitialData & {
   id?: number;
   requestNo?: string;
   status?: string;
   incompleteReason?: string;
+  minorAccountExists?: boolean;
+  minorAccountNumber?: string;
+  eligibleMonths?: number;
+  disbursementOption?: string;
+  memberAmount?: number;
+  minorAmount?: number;
+  isDoubleAmount?: boolean;
 };
 
 const SUBMITTED_FOR_NORMAL_APPROVAL = "SUBMITTED_FOR_NORMAL_APPROVAL";
@@ -32,7 +37,7 @@ export default function Grade5ScholarshipPage() {
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const memberId = "MEM002";
+  const DEFAULT_MEMBER_ID = "MEM009";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
@@ -42,6 +47,18 @@ export default function Grade5ScholarshipPage() {
   const MEMBER_ONLY = "MEMBER_ONLY";
   const MEMBER_AND_MINOR = "MEMBER_AND_MINOR";
   const MINOR_ONLY = "MINOR_ONLY";
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const requestId = searchParams.get("requestId");
+  const selectedMemberId = searchParams.get("memberId") || DEFAULT_MEMBER_ID;
+  const pageMode = searchParams.get("mode") || "";
+  const [isEditing, setIsEditing] = useState(pageMode === "edit");
+  
+
+  const isViewRequestMode = pageMode === "view" && !!requestId;
+
 
   const currencyFormatter = new Intl.NumberFormat("en-LK", {
     style: "currency",
@@ -59,6 +76,13 @@ export default function Grade5ScholarshipPage() {
   const [grade5Request, setGrade5Request] = useState<Grade5Request | null>(
     null
   );
+
+  const isRequestLocked = grade5Request?.status
+    ? LOCKED_STATUSES.includes(grade5Request.status)
+    : false;
+
+  const isEditMode = isEditing && !isRequestLocked;
+  const fundReadOnly = !!grade5Request?.id && !isEditMode;
 
   const [openModal, setOpenModal] = useState(false);
   const [fundRefreshed, setFundRefreshed] = useState(false);
@@ -81,15 +105,17 @@ export default function Grade5ScholarshipPage() {
     : false;
 
   useEffect(() => {
-    if (memberId) {
+    setIsEditing(pageMode === "edit");
+
+    if (selectedMemberId) {
       fetchMember();
       fetchGrade5Requests();
     }
-  }, [memberId]);
+  }, [pageMode, selectedMemberId, requestId]);
 
   const fetchMember = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/members/${memberId}`);
+      const res = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
 
       if (!res.ok) {
         throw new Error("Failed to fetch member");
@@ -109,16 +135,17 @@ export default function Grade5ScholarshipPage() {
   };
 
   const fetchGrade5Requests = async () => {
-    if (!memberId) return;
-
     try {
-      const res = await fetch(
-        `http://localhost:8080/api/grade5/${memberId}/request`
-      );
+      const url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
+
+      console.log("Fetching:", url);
+
+      const res = await fetch(url);
+
+      console.log("Response status:", res.status);
 
       if (!res.ok) {
-        console.error("API error:", res.status);
-        return;
+        throw new Error("API error " + res.status);
       }
 
       const text = await res.text();
@@ -128,9 +155,31 @@ export default function Grade5ScholarshipPage() {
         setGrade5Request(data);
       }
     } catch (error) {
-      console.error("Fetch error:", error);
+      console.error("Fetch Grade 5 request error:", error);
     }
   };
+
+  useEffect(() => {
+    if (!grade5Request) return;
+
+    const hasSavedDisbursement =
+      grade5Request.minorAccountExists !== undefined ||
+      grade5Request.minorAccountNumber ||
+      grade5Request.disbursementOption ||
+      grade5Request.memberAmount !== undefined ||
+      grade5Request.minorAmount !== undefined;
+
+    if (!hasSavedDisbursement) return;
+
+    setFundRefreshed(true);
+    setMinorAccountExists(!!grade5Request.minorAccountExists);
+    setMinorAccountNumber(grade5Request.minorAccountNumber || "");
+    setEligibleMonths(grade5Request.eligibleMonths || 0);
+    setDisbursementOption(grade5Request.disbursementOption || MEMBER_ONLY);
+    setMemberAmount(grade5Request.memberAmount || 0);
+    setMinorAmount(grade5Request.minorAmount || 0);
+    setIsDoubleAmount(!!grade5Request.isDoubleAmount);
+  }, [grade5Request]);
 
   const handleConfirm = async (reason: string) => {
     if (!reason.trim()) {
@@ -146,7 +195,7 @@ export default function Grade5ScholarshipPage() {
 
     try {
       const res = await fetch(
-        `${API_BASE_URL}/api/grade5/${grade5Request.id}/mark-incomplete`,
+        `${API_BASE_URL}/api/grade5/${grade5Request.requestNo}/mark-incomplete`,
         {
           method: "PUT",
           headers: {
@@ -216,8 +265,8 @@ export default function Grade5ScholarshipPage() {
   };
 
   const handleSave = async () => {
-    if (grade5Request?.id) {
-      setFundError("This Grade 5 request has already been saved.");
+    if (isRequestLocked) {
+      setFundError("Submitted or finalized Grade 5 request cannot be edited.");
       return;
     }
 
@@ -226,11 +275,22 @@ export default function Grade5ScholarshipPage() {
     }
 
     try {
-      const savedRequest = await formRef.current?.submitForm();
+      const savedRequest = await formRef.current?.submitForm(
+        {
+          minorAccountExists,
+          minorAccountNumber,
+          eligibleMonths,
+          disbursementOption,
+          memberAmount,
+          minorAmount,
+          isDoubleAmount,
+        },
+        grade5Request?.requestNo
+      );
 
       if (savedRequest) {
         setGrade5Request(savedRequest);
-        await fetchMember();
+        setIsEditing(false);
         setFundError("");
       }
     } catch (error) {
@@ -282,7 +342,7 @@ export default function Grade5ScholarshipPage() {
       setSubmitError("");
 
       const res = await fetch(
-        `${API_BASE_URL}/api/grade5/${grade5Request.id}/submit`,
+        `${API_BASE_URL}/api/grade5/${grade5Request.requestNo}/submit`,
         {
           method: "PUT",
           headers: {
@@ -446,29 +506,73 @@ export default function Grade5ScholarshipPage() {
             </div>
 
             <div className="flex gap-2">
-              <Button
-                onClick={handleSave}
-                disabled={!!grade5Request?.id}
-                className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-              >
-                Save
-              </Button>
+              {isViewRequestMode &&
+                grade5Request?.id &&
+                !isRequestLocked &&
+                !isEditMode && (
+                  <Button
+                    onClick={() => {
+                      setIsEditing(true);
 
-              <Button
-                onClick={() => setOpenModal(true)}
-                disabled={isRequestSubmitted}
-                className="bg-[#D4183D] text-white hover:bg-[#b31533] disabled:bg-gray-300 disabled:text-gray-500"
-              >
-                Mark Incomplete
-              </Button>
+                      router.replace(
+                        `/membership/directory/grade5-scholarship?requestId=${encodeURIComponent(
+                          String(requestId)
+                        )}&memberId=${encodeURIComponent(selectedMemberId)}&mode=edit`
+                      );
+                    }}
+                    className="bg-white text-black hover:bg-gray-100"
+                  >
+                    Edit
+                  </Button>
+                )}
 
-              <Button
-                onClick={handleSubmitForm}
-                disabled={isRequestSubmitted}
-                className="bg-[#953002] text-white hover:bg-[#672102] disabled:bg-gray-300 disabled:text-gray-500"
-              >
-                Submit
-              </Button>
+              {isViewRequestMode && grade5Request?.id && !isEditMode && (
+                <>
+                  <Button
+                    type="button"
+                    disabled
+                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    Mark Incomplete
+                  </Button>
+
+                  <Button
+                    type="button"
+                    disabled
+                    className="bg-[#953002] text-white disabled:bg-[#953002] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    Submit
+                  </Button>
+                </>
+              )}
+
+              {(!isViewRequestMode || isEditMode) && (
+                <>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isRequestLocked}
+                    className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    Save
+                  </Button>
+
+                  <Button
+                    onClick={() => setOpenModal(true)}
+                    disabled={!grade5Request?.id || isRequestLocked}
+                    className="bg-[#D4183D] text-white disabled:cursor-not-allowed"
+                  >
+                    Mark Incomplete
+                  </Button>
+
+                  <Button
+                    onClick={handleSubmitForm}
+                    disabled={!grade5Request?.id || isRequestLocked}
+                    className="bg-[#953002] text-white disabled:cursor-not-allowed"
+                  >
+                    Submit
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -519,9 +623,9 @@ export default function Grade5ScholarshipPage() {
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <Grade5Form
                   ref={formRef}
-                  memberId={memberId}
+                  memberId={selectedMemberId}
                   initialData={grade5Request}
-                  readOnly={!!grade5Request?.id}
+                  readOnly={!!grade5Request?.id && !isEditMode}
                 />
               </div>
 
@@ -534,7 +638,8 @@ export default function Grade5ScholarshipPage() {
 
                   <Button
                     onClick={handleRefreshFund}
-                    className="bg-gray-50 text-black hover:bg-gray-100"
+                    disabled={fundReadOnly}
+                    className="bg-gray-50 text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
                     Refresh
                   </Button>
@@ -557,9 +662,8 @@ export default function Grade5ScholarshipPage() {
                         </label>
                         <select
                           value={minorAccountExists ? "YES" : "NO"}
-                          onChange={(e) =>
-                            handleMinorAccountExistsChange(e.target.value)
-                          }
+                          onChange={(e) =>handleMinorAccountExistsChange(e.target.value)}
+                          disabled={fundReadOnly}
                           className="border rounded-md px-3 py-2 w-full"
                         >
                           <option value="YES">Yes</option>
@@ -578,7 +682,7 @@ export default function Grade5ScholarshipPage() {
                             if (value.length > 20) return;
                             setMinorAccountNumber(value);
                           }}
-                          disabled={!minorAccountExists}
+                          disabled={!minorAccountExists || fundReadOnly}
                           className="border rounded-md px-3 py-2 w-full disabled:bg-gray-100"
                         />
                       </div>
@@ -591,6 +695,7 @@ export default function Grade5ScholarshipPage() {
                         <input
                           type="number"
                           value={eligibleMonths}
+                          disabled={fundReadOnly}
                           onChange={(e) => {
                             const months = Number(e.target.value);
 
@@ -629,6 +734,7 @@ export default function Grade5ScholarshipPage() {
                             <span className="flex items-center gap-2 font-medium text-black">
                               <input
                                 type="radio"
+                                disabled={fundReadOnly}
                                 checked={disbursementOption === MEMBER_ONLY}
                                 readOnly
                               />
@@ -655,6 +761,7 @@ export default function Grade5ScholarshipPage() {
                                 <input
                                   type="radio"
                                   name="fundDisbursementOption"
+                                  disabled={fundReadOnly}
                                   value={MEMBER_AND_MINOR}
                                   checked={
                                     disbursementOption === MEMBER_AND_MINOR
@@ -762,9 +869,10 @@ export default function Grade5ScholarshipPage() {
                 </p>
                 <DocumentUpload
                   requestId={grade5Request?.id || null}
-                  memberId={memberId}
+                  memberId={selectedMemberId}
                   requestStatus={grade5Request?.status || "NEW"}
                   requestType="grade5-requests"
+                  readOnly={isViewRequestMode && !!grade5Request?.id && !isEditMode}
                 />
               </div>
             </div>

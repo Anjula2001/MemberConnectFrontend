@@ -204,10 +204,6 @@ const locationOptions = [
   { value: "VAVUNIYA", label: "Vavuniya" },
 ];
 
-const yearOptions = ["2026", "2025", "2024", "2023", "2022"].map((year) => ({
-  value: year,
-  label: year,
-}));
 
 const statusOptions = [
   { value: "NEW", label: "New" },
@@ -249,10 +245,36 @@ export default function Grade5ScholarshipRequestsListPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const [yearOptions, setYearOptions] = useState<MultiSelectOption[]>([]);
+
   const today = new Date().toISOString().split("T")[0];
 
   const userHasMultipleLocations = true;
   const loggedUserCanEdit = true;
+
+  useEffect(() => {
+    const fetchExamYears = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/grade5/exam-years`);
+        const data = await res.json();
+
+        const yearsArray = Array.isArray(data)
+          ? data
+          : data.data || data.years || [];
+
+        setYearOptions(
+          yearsArray.map((year: number) => ({
+            value: String(year),
+            label: String(year),
+          }))
+        );
+      } catch (error) {
+        console.error("Failed to load exam years", error);
+      }
+    };
+
+    fetchExamYears();
+  }, []);
 
   const fetchRequests = async () => {
     try {
@@ -300,6 +322,10 @@ export default function Grade5ScholarshipRequestsListPage() {
     }
   };
 
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
   const handleRetrieve = () => {
     const result = filterSchema.safeParse({
       receivedOn,
@@ -322,13 +348,17 @@ export default function Grade5ScholarshipRequestsListPage() {
     setFieldErrors({});
     fetchRequests();
   };
-
+//////////////////////////////////
   const handleView = (memberId: string, requestId: number) => {
-    window.location.href = `/membership/scholarships/grade-5?memberId=${memberId}&requestId=${requestId}&mode=view`;
+    window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
+      memberId
+    )}&requestId=${encodeURIComponent(String(requestId))}&mode=view`;
   };
 
   const handleEdit = (memberId: string, requestId: number) => {
-    window.location.href = `/membership/scholarships/grade-5?memberId=${memberId}&requestId=${requestId}&mode=edit`;
+    window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
+      memberId
+    )}&requestId=${encodeURIComponent(String(requestId))}&mode=edit`;
   };
 
   const isSubmitted = (status: string) =>
@@ -520,7 +550,7 @@ export default function Grade5ScholarshipRequestsListPage() {
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-gray-100 text-gray-700">
               <tr>
                 <th className="px-4 py-3 text-left">Request ID</th>
@@ -532,7 +562,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                 <th className="px-4 py-3 text-left">Exam No</th>
                 <th className="px-4 py-3 text-left">Indicators</th>
                 <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Action</th>
+                <th className="px-6 py-3 text-left">Action</th>
               </tr>
             </thead>
 
@@ -562,21 +592,19 @@ export default function Grade5ScholarshipRequestsListPage() {
                   return (
                     <tr key={row.id} className="border-t">
                       <td className="px-4 py-3 font-medium">
-                        {row.requestNo || `G5-${row.id}`}
+                        <button
+                          onClick={() => handleView(row.memberId, row.id)}
+                          className="text-blue-600 hover:underline font-medium"
+                        >
+                          {row.requestNo}
+                        </button>
                       </td>
 
                       <td className="px-4 py-3">
                         {row.requestedDate || "-"}
                       </td>
 
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleView(row.memberId, row.id)}
-                          className="text-blue-600 hover:underline font-medium"
-                        >
-                          {row.memberId}
-                        </button>
-                      </td>
+                      <td className="px-4 py-3">{row.memberId}</td>
 
                       <td className="px-4 py-3">
                         {row.memberFullName || row.nameWithInitials || "-"}
@@ -593,22 +621,14 @@ export default function Grade5ScholarshipRequestsListPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          {row.hasDeviation && (
-                            <span
-                              title="Saved with deviation criteria"
-                              className="text-red-500"
-                            >
-                              ●
-                            </span>
-                          )}
+                        <div className="flex gap-2 px-6">
 
                           {row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" && (
                             <span
                               title="Submitted for normal approval"
-                              className="text-blue-600"
+                              className="text-Blue-500"
                             >
-                              ●
+                              N
                             </span>
                           )}
 
@@ -616,9 +636,9 @@ export default function Grade5ScholarshipRequestsListPage() {
                             "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
                             <span
                               title="Submitted for deviation approval"
-                              className="text-orange-500"
+                              className="text-red-500"
                             >
-                              ●
+                              D
                             </span>
                           )}
                         </div>
@@ -631,14 +651,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleView(row.memberId, row.id)}
-                            className="text-gray-600 hover:text-[#953002]"
-                            title="View"
-                          >
-                            👁
-                          </button>
+                        <div className="flex gap-2 px-6">
 
                           {!submitted && loggedUserCanEdit && (
                             <button

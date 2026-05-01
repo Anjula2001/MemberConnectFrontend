@@ -148,7 +148,7 @@ export default function MemberProfilePage({
 			"Change Name": "/membership/directory/change-name",
 			"Change Remittance": "/membership/directory/change-remittance",
 			"Change Nominee": "/membership/directory/change-nominee",
-			"Grade 5 Scholarship": "/membership/directory/grade-5-scholarship",
+			"Grade 5 Scholarship": "/membership/directory/grade5-scholarship",
 			"University Scholarship": "/membership/directory/university-scholarship",
 			"Request Termination": "/membership/directory/request-termination",
 			"Death Donation Request": "/membership/directory/death-donation-request",
@@ -157,7 +157,11 @@ export default function MemberProfilePage({
 
 		const route = routeMap[action];
 		if (route) {
-			router.push(route);
+			router.push(
+				action === "Grade 5 Scholarship"
+					? `${route}?memberId=${encodeURIComponent(profile.memberId)}`
+					: route
+			);
 		}
 	};
 
