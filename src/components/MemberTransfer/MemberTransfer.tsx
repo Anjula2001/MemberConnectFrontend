@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Trash2, UploadCloud } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
@@ -11,10 +12,20 @@ import {
   memberTransferSchema,
   type MemberTransferFormData,
 } from "@/lib/validators/membertransfer.schema";
-import Document, {
-  DocumentFileItem,
-  RequiredDocType,
-} from "../UniSholarships/Document";
+
+type DocumentFileItem = {
+  file: File;
+  documentType: string;
+  uploadedAt?: string;
+  id?: number;
+};
+
+type RequiredDocType = {
+  id: number;
+  documentType: string;
+  displayName: string;
+  mandatory: boolean;
+};
 
 type MemberTransferOldValues = {
   fullName: string;
@@ -102,10 +113,9 @@ export default function ChangeMemberTransferForm() {
     | "REJECTED"
   >("NEW");
 
-  const [isSaved, setIsSaved] = useState(false);
-
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const [selectedDocumentType, setSelectedDocumentType] = useState("");
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<
     RequiredDocType[]
   >([]);
@@ -116,6 +126,7 @@ export default function ChangeMemberTransferForm() {
   const [workingLocations, setWorkingLocations] = useState<any[]>([]);
   const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
   const [isZoneEnabled, setIsZoneEnabled] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
@@ -129,7 +140,6 @@ export default function ChangeMemberTransferForm() {
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
-  const cannotEdit = !isEditMode && isSaved;
 
   const {
     register,
@@ -283,7 +293,6 @@ export default function ChangeMemberTransferForm() {
     );
     setMemberTransferRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
-    setIsSaved(true);
   }, [loadedRecord, reset]);
 
   useEffect(() => {
@@ -526,114 +535,52 @@ export default function ChangeMemberTransferForm() {
     setDocumentFiles(uploadedItems);
   };
 
-  const handleSave = async () => {
-    const currentData = watch();
+  const onSubmit = async (data: MemberTransferFormData) => {
+    const confirmSubmit = window.confirm(
+      "After submitting, this request cannot be edited. Do you want to continue?"
+    );
+    if (!confirmSubmit) return;
 
-    const saveData = {
-      ...currentData,
-      memberId: HARDCODED_MEMBER_ID,
-    };
-
+    setIsSubmitting(true);
     try {
-      let savedRequest: any = null;
+      const payload = {
+        ...data,
+        memberId: HARDCODED_MEMBER_ID,
+      };
 
-      if (requestId && isEditMode) {
-        const res = await fetch(
-          `http://localhost:8080/api/member-transfers/${requestId}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(saveData),
-          }
-        );
+      const res = await fetch("http://localhost:8080/api/member-transfers/submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-        if (!res.ok) {
-          setPopupMessage("Failed to update request");
-          setShowPopup(true);
-          return null;
-        }
-
-        savedRequest = await res.json();
-      } else {
-        const res = await fetch("http://localhost:8080/api/member-transfers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(saveData),
-        });
-
-        if (!res.ok) {
-          setPopupMessage("Failed to save request");
-          setShowPopup(true);
-          return null;
-        }
-
-        savedRequest = await res.json();
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Submit failed (${res.status}): ${text}`);
       }
 
-      const savedId =
-        savedRequest.memberTransferRequestID ||
-        savedRequest.requestId ||
-        savedRequest.id;
+      const saved = await res.json();
+      const savedId = saved.memberTransferRequestID || saved.requestId || saved.id;
 
-      setRequestId(savedId);
-      setMemberTransferRequestNo(
-        savedRequest.memberTransferRequestID || savedRequest.requestId || ""
-      );
-      setStatus(savedRequest.status || "NEW");
-      setIsSaved(true);
-
+      // Upload documents if any
       if (documentFiles.length > 0 && savedId) {
         await uploadDocuments(savedId);
       }
 
-      setPopupMessage("Request is saved successfully");
+      setRequestId(savedId);
+      setMemberTransferRequestNo(saved.requestId || saved.memberTransferRequestID || "");
+      setStatus(saved.status || "SUBMITTED_FOR_COMMITTEE_APPROVAL");
+
+      setPopupMessage("Request submitted successfully!");
       setShowPopup(true);
-
-      return savedRequest;
-    } catch (error) {
-      console.error("Save failed:", error);
-      setPopupMessage("Failed to save request");
-      setShowPopup(true);
-      return null;
-    }
-  };
-
-  const onSubmit = async () => {
-    if (!requestId) {
-      setPopupMessage("Please save the request before submitting");
-      setShowPopup(true);
-      return;
-    }
-
-    const confirmSubmit = window.confirm(
-      "After submitting, this request cannot be edited. Do you want to continue?"
-    );
-
-    if (!confirmSubmit) return;
-
-    try {
-      const res = await fetch(
-        `http://localhost:8080/api/member-transfers/submit/${requestId}`,
-        {
-          method: "POST",
-        }
-      );
-
-      if (!res.ok) {
-        setPopupMessage("Failed to submit request");
-        setShowPopup(true);
-        return;
-      }
-
-      const submittedRequest = await res.json();
-
-      setStatus(submittedRequest.status);
-      setPopupMessage("Request submitted for committee approval");
-      setShowPopup(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Submit failed:", error);
-      setPopupMessage("Failed to submit request");
+      setPopupMessage(error.message || "Failed to submit request");
       setShowPopup(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -779,7 +726,7 @@ export default function ChangeMemberTransferForm() {
                 Member: {member?.fullName} ({member?.memberId})
               </span>
 
-              {(isSaved || isExistingRequest) && (
+              {(isExistingRequest) && (
                 <span className="font-semibold text-blue-600">
                   Status: <span>{status}</span>
                   {statusReason && (
@@ -799,22 +746,15 @@ export default function ChangeMemberTransferForm() {
               </Button>
             )}
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || isSaved}
-            >
-              Save
-            </Button>
-
-            <Button
-              type="submit"
-              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted}
-              className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
-            >
-              Submit
-            </Button>
+            {!isViewMode && !isSubmitted && (
+              <Button
+                type="submit"
+                disabled={!isValid || !hasAllMandatoryDocuments || isSubmitting}
+                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+              >
+                {isSubmitting ? "Submitting..." : "Submit"}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -867,7 +807,7 @@ export default function ChangeMemberTransferForm() {
                 register={register("designationNew")}
                 error={errors.designationNew?.message}
                 options={["Teacher", "Principal", "Lecturer", "Administrator"]}
-                disabled={isInputsDisabled || cannotEdit}
+                disabled={isInputsDisabled}
               />
 
               <EditableSelect
@@ -876,7 +816,7 @@ export default function ChangeMemberTransferForm() {
                 register={register("natureOfOccupationNew")}
                 error={errors.natureOfOccupationNew?.message}
                 options={["Permanent", "Probation", "Temporary", "Casual"]}
-                disabled={isInputsDisabled || cannotEdit}
+                disabled={isInputsDisabled}
               />
 
               <EditableSelect
@@ -887,7 +827,7 @@ export default function ChangeMemberTransferForm() {
                 options={workingLocationTypes.map(
                   (type: any) => type.name || type.label || type.id
                 )}
-                disabled={isInputsDisabled || cannotEdit}
+                disabled={isInputsDisabled}
               />
 
               <EditableSelect
@@ -899,8 +839,7 @@ export default function ChangeMemberTransferForm() {
                   (district: any) => district.name || district.label || district.id
                 )}
                 disabled={
-                  !selectedWorkingLocationType || isInputsDisabled || cannotEdit
-                }
+                  !selectedWorkingLocationType || isInputsDisabled}
               />
 
               <EditableSelect
@@ -916,8 +855,7 @@ export default function ChangeMemberTransferForm() {
                 disabled={
                   !isZoneEnabled ||
                   !selectedDistrict ||
-                  isInputsDisabled ||
-                  cannotEdit
+                  isInputsDisabled
                 }
               />
 
@@ -934,8 +872,7 @@ export default function ChangeMemberTransferForm() {
                   !selectedWorkingLocationType ||
                   !selectedDistrict ||
                   (isZoneEnabled && !selectedZone) ||
-                  isInputsDisabled ||
-                  cannotEdit
+                  isInputsDisabled
                 }
               />
 
@@ -953,7 +890,7 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.computerNoName}
                 register={register("computerNoNameNew")}
                 error={errors.computerNoNameNew?.message}
-                disabled={isInputsDisabled || cannotEdit}
+                disabled={isInputsDisabled}
               />
 
               <EditableSelect
@@ -971,7 +908,7 @@ export default function ChangeMemberTransferForm() {
                     ]
                 }
                 disabled={
-                  !selectedWorkingLocation || isInputsDisabled || cannotEdit
+                  !selectedWorkingLocation || isInputsDisabled
                 }
               />
             </div>
@@ -982,16 +919,118 @@ export default function ChangeMemberTransferForm() {
               Supporting Documents
             </h3>
 
-            <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
-              <Document
-                requestId={requestId}
-                disabled={isInputsDisabled}
-                isSaved={isSaved}
-                isSubmitted={isSubmitted}
-                files={documentFiles}
-                setFiles={setDocumentFiles}
-                documentTypes={requiredDocumentTypes}
-              />
+            <div className="space-y-4">
+              {!isInputsDisabled && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                      Document Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedDocumentType}
+                      onChange={(e) => setSelectedDocumentType(e.target.value)}
+                      className="h-10 w-full rounded-md border px-3 text-sm"
+                    >
+                      <option value="">Select Document Type</option>
+                      {requiredDocumentTypes.map((type) => (
+                        <option key={type.id} value={type.documentType}>
+                          {type.displayName} {type.mandatory ? "(Mandatory)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label
+                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
+                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                      : "cursor-not-allowed bg-gray-50 text-gray-400"
+                      }`}
+                  >
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={!selectedDocumentType}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !selectedDocumentType) return;
+                        setDocumentFiles((prev) => [
+                          ...prev,
+                          {
+                            file,
+                            documentType: selectedDocumentType,
+                            uploadedAt: new Date().toISOString(),
+                          },
+                        ]);
+                        e.target.value = "";
+                      }}
+                    />
+                    <UploadCloud className="mb-2 h-8 w-8 text-[#953002]" />
+                    <p>
+                      {selectedDocumentType
+                        ? "Click to upload selected document"
+                        : "Select a document type first"}
+                    </p>
+                  </label>
+                </>
+              )}
+
+              {isInputsDisabled && (
+                <div className="rounded-lg border border-dashed bg-gray-50 p-6 text-center text-sm text-gray-500">
+                  {isSubmitted
+                    ? "Document upload is disabled after submission."
+                    : "Cannot upload files in view mode."}
+                </div>
+              )}
+
+              {documentFiles.length > 0 && (
+                <div className="overflow-x-auto rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-left">
+                      <tr>
+                        <th className="px-3 py-2">Document Type</th>
+                        <th className="px-3 py-2">File Name</th>
+                        <th className="px-3 py-2">Uploaded Time</th>
+                        {!isInputsDisabled && <th className="px-3 py-2">Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {documentFiles.map((item, index) => (
+                        <tr key={`${item.file.name}-${index}`} className="border-t">
+                          <td className="px-3 py-2">
+                            {requiredDocumentTypes.find(
+                              (t) => t.documentType === item.documentType
+                            )?.displayName || item.documentType}
+                          </td>
+                          <td className="px-3 py-2 font-medium text-gray-700">
+                            {item.file.name}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">
+                            {item.uploadedAt
+                              ? new Date(item.uploadedAt).toLocaleString()
+                              : "—"}
+                          </td>
+                          {!isInputsDisabled && (
+                            <td className="px-3 py-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() =>
+                                  setDocumentFiles((prev) =>
+                                    prev.filter((_, i) => i !== index)
+                                  )
+                                }
+                                className="text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </section>
 
