@@ -1304,9 +1304,9 @@ function EditableInput({
         </label>
 
         {typeof value !== "undefined" ? (
-          <Input value={value || ""} disabled={disabled} readOnly />
+          <Input value={formatDisplayValue(oldValue)} disabled={disabled} readOnly />
         ) : (
-          <Input {...register} disabled={disabled} />
+          <Input {...register} disabled={disabled} value={formatDisplayValue(oldValue)} />
         )}
 
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
@@ -1348,7 +1348,7 @@ function EditableSelect({
           disabled={disabled}
           className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
         >
-          <option value="">Select</option>
+          <option value="">{formatDisplayValue(oldValue)}</option>
 
           {options.map((option: string) => (
             <option key={formatDisplayValue(option)} value={formatDisplayValue(option)}>
