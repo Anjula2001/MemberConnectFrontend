@@ -91,7 +91,7 @@ export default function ChangeMemberTransferForm() {
   const [loadedRecord, setLoadedRecord] =
     useState<MemberTransferRecord | null>(null);
 
-  
+
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
   const [status, setStatus] = useState<
@@ -317,22 +317,18 @@ export default function ChangeMemberTransferForm() {
   }, [requestId]);
 
   useEffect(() => {
-    if (!selectedWorkingLocationType){
+    if (!selectedWorkingLocationType) {
       setIsZoneEnabled(true);
       return;
-    } 
+    }
 
+    // Dropdown stores type.name as the form value — match by name
     const foundType = workingLocationTypes.find(
-      (type: any) =>
-        String(type.code || type.id || type.name) ===
-        String(selectedWorkingLocationType)
+      (type: any) => String(type.name) === String(selectedWorkingLocationType)
     );
 
-    const usesZone = foundType
-  ? Boolean(
-      foundType.uses_zone 
-    )
-  : true;
+    // API returns camelCase 'usesZone', not snake_case 'uses_zone'
+    const usesZone = foundType ? Boolean(foundType.usesZone) : true;
 
     setIsZoneEnabled(usesZone);
 
@@ -405,9 +401,14 @@ export default function ChangeMemberTransferForm() {
 
     const fetchWorkingLocations = async () => {
       try {
-        const params = new URLSearchParams();
+        // Resolve the numeric type ID from the selected name
+        const foundType = workingLocationTypes.find(
+          (t: any) => String(t.name) === String(selectedWorkingLocationType)
+        );
+        const typeId = foundType ? String(foundType.id) : selectedWorkingLocationType;
 
-        params.append("type", selectedWorkingLocationType);
+        const params = new URLSearchParams();
+        params.append("type", typeId);
         params.append("district", selectedDistrict);
 
         if (isZoneEnabled && selectedZone) {
@@ -655,11 +656,11 @@ export default function ChangeMemberTransferForm() {
     setLoadedRecord((prev) =>
       prev
         ? {
-            ...prev,
-            status: nextStatus,
-            decisionReason:
-              nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
-          }
+          ...prev,
+          status: nextStatus,
+          decisionReason:
+            nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+        }
         : prev
     );
   };
@@ -964,10 +965,10 @@ export default function ChangeMemberTransferForm() {
                   salaryOptions.length > 0
                     ? salaryOptions
                     : [
-                        "Zonal Education Office",
-                        "Provincial Education Office",
-                        "Ministry of Education",
-                      ]
+                      "Zonal Education Office",
+                      "Provincial Education Office",
+                      "Ministry of Education",
+                    ]
                 }
                 disabled={
                   !selectedWorkingLocation || isInputsDisabled || cannotEdit
