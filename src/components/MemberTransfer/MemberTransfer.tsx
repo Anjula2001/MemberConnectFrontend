@@ -33,7 +33,7 @@ type MemberTransferOldValues = {
   nicNumber: string;
   gender: string;
   preferredLanguage: string;
-  permanentAddress: string;
+  permanentPrivateAddress: string;
   privateTelephone: string;
   mobileNumber: string;
   emailAddress: string;
@@ -70,7 +70,7 @@ const emptyOldValues: MemberTransferOldValues = {
   nicNumber: "",
   gender: "",
   preferredLanguage: "",
-  permanentAddress: "",
+  permanentPrivateAddress: "",
   privateTelephone: "",
   mobileNumber: "",
   emailAddress: "",
@@ -296,7 +296,7 @@ export default function ChangeMemberTransferForm() {
           preferredLanguage: formatDisplayValue(
             data.preferredLanguage || data.language
           ),
-          permanentAddress: formatDisplayValue(
+          permanentPrivateAddress: formatDisplayValue(
             data.permanentPrivateAddress || data.address
           ),
           privateTelephone: formatDisplayValue(
@@ -310,7 +310,7 @@ export default function ChangeMemberTransferForm() {
           workingLocation: formatDisplayValue(data.workingLocation),
           educationalZone: formatDisplayValue(data.educationalZone),
           educationalDistrict: formatDisplayValue(data.educationalDistrict),
-          computerNoName: formatDisplayValue(data.computerNoName || data.computerNo),
+          computerNoName: formatDisplayValue(data.computerNoInPayslip || data.computerNo),
           salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
         });
       } catch (error) {
@@ -626,7 +626,7 @@ export default function ChangeMemberTransferForm() {
     if (!confirmSubmit) return;
 
     setIsSubmitting(true);
-    try {
+    try {                                              
       const payload = {
         ...data,
         memberId: HARDCODED_MEMBER_ID,
@@ -962,7 +962,7 @@ export default function ChangeMemberTransferForm() {
 
               <EditableInput
                 label="Working Location Address"
-                oldValue={oldValues.permanentAddress}
+                oldValue={oldValues.permanentPrivateAddress}
                 register={register("workingLocationAddressNew")}
                 error={errors.workingLocationAddressNew?.message}
                 value={watch("workingLocationAddressNew")}
@@ -1304,9 +1304,9 @@ function EditableInput({
         </label>
 
         {typeof value !== "undefined" ? (
-          <Input value={formatDisplayValue(oldValue)} disabled={disabled} readOnly />
+          <Input value={value || ""} disabled={disabled}  readOnly />
         ) : (
-          <Input {...register} disabled={disabled} value={formatDisplayValue(oldValue)} />
+          <Input {...register} disabled={disabled} />
         )}
 
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
