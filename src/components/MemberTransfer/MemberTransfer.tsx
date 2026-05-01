@@ -84,6 +84,52 @@ const emptyOldValues: MemberTransferOldValues = {
   salaryPayingOffice: "",
 };
 
+const defaultDesignationOptions = [
+  "Teacher",
+  "Principal",
+  "Lecturer",
+  "Administrator",
+];
+
+const defaultNatureOfOccupationOptions = [
+  "Permanent",
+  "Probation",
+  "Temporary",
+  "Casual",
+];
+
+const formatDisplayValue = (value: any): string => {
+  if (value === null || typeof value === "undefined") {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(formatDisplayValue).filter(Boolean).join(", ");
+  }
+
+  if (typeof value === "object") {
+    return (
+      value.name ||
+      value.label ||
+      value.value ||
+      value.designation ||
+      value.occupation ||
+      value.address ||
+      value.locationAddress ||
+      value.fullName ||
+      value.displayName ||
+      value.id ||
+      ""
+    );
+  }
+
+  return String(value);
+};
+
 export default function ChangeMemberTransferForm() {
   const HARDCODED_MEMBER_ID = 8;
 
@@ -120,6 +166,12 @@ export default function ChangeMemberTransferForm() {
     RequiredDocType[]
   >([]);
 
+  const [designationOptions, setDesignationOptions] = useState<string[]>(
+    defaultDesignationOptions
+  );
+  const [natureOfOccupationOptions, setNatureOfOccupationOptions] = useState<
+    string[]
+  >(defaultNatureOfOccupationOptions);
   const [workingLocationTypes, setWorkingLocationTypes] = useState<any[]>([]);
   const [districts, setDistricts] = useState<any[]>([]);
   const [zones, setZones] = useState<any[]>([]);
@@ -161,6 +213,14 @@ export default function ChangeMemberTransferForm() {
   const whiteInputClass =
     "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
 
+  const normalizeOptions = (items: any[], fallback: string[]) => {
+    const options = items
+      .map((item) => String(formatDisplayValue(item)).trim())
+      .filter(Boolean);
+
+    return options.length > 0 ? options : fallback;
+  };
+
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
@@ -183,15 +243,33 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     const fetchMasters = async () => {
       try {
-        const [typesRes, districtsRes] = await Promise.all([
+        const [typesRes, districtsRes, designationsRes, occupationsRes] = await Promise.all([
           fetch("http://localhost:8080/api/masters/working-location-types"),
           fetch("http://localhost:8080/api/masters/districts"),
+          fetch("http://localhost:8080/api/masters/designations"),
+          fetch("http://localhost:8080/api/masters/nature-of-occupations"),
         ]);
 
-        if (typesRes.ok) setWorkingLocationTypes(await typesRes.json());
-        if (districtsRes.ok) setDistricts(await districtsRes.json());
+        const [typesData, districtsData, designationsData, occupationsData] =
+          await Promise.all([
+            typesRes.ok ? typesRes.json() : Promise.resolve([]),
+            districtsRes.ok ? districtsRes.json() : Promise.resolve([]),
+            designationsRes.ok ? designationsRes.json() : Promise.resolve([]),
+            occupationsRes.ok ? occupationsRes.json() : Promise.resolve([]),
+          ]);
+
+        setWorkingLocationTypes(typesData);
+        setDistricts(districtsData);
+        setDesignationOptions(
+          normalizeOptions(designationsData, defaultDesignationOptions)
+        );
+        setNatureOfOccupationOptions(
+          normalizeOptions(occupationsData, defaultNatureOfOccupationOptions)
+        );
       } catch (error) {
         console.error("Failed to load master data:", error);
+        setDesignationOptions(defaultDesignationOptions);
+        setNatureOfOccupationOptions(defaultNatureOfOccupationOptions);
       }
     };
 
@@ -211,23 +289,29 @@ export default function ChangeMemberTransferForm() {
         setMember(data);
 
         setOldValues({
-          fullName: data.fullName || data.name || "",
-          dateOfBirth: data.dateOfBirth || data.dob || "",
-          nicNumber: data.nicNumber || data.nic || "",
-          gender: data.gender || "",
-          preferredLanguage: data.preferredLanguage || data.language || "",
-          permanentAddress: data.permanentAddress || data.address || "",
-          privateTelephone: data.privateTelephone || data.telephone || "",
-          mobileNumber: data.mobileNumber || data.mobile || "",
-          emailAddress: data.emailAddress || data.email || "",
-          designation: data.designation || "",
-          natureOfOccupation: data.natureOfOccupation || "",
-          workingLocationType: data.workingLocationType || "",
-          workingLocation: data.workingLocation || "",
-          educationalZone: data.educationalZone || "",
-          educationalDistrict: data.educationalDistrict || "",
-          computerNoName: data.computerNoName || data.computerNo || "",
-          salaryPayingOffice: data.salaryPayingOffice || "",
+          fullName: formatDisplayValue(data.fullName || data.name),
+          dateOfBirth: formatDisplayValue(data.dateOfBirth || data.dob),
+          nicNumber: formatDisplayValue(data.nicNumber || data.nic),
+          gender: formatDisplayValue(data.gender),
+          preferredLanguage: formatDisplayValue(
+            data.preferredLanguage || data.language
+          ),
+          permanentAddress: formatDisplayValue(
+            data.permanentPrivateAddress || data.address
+          ),
+          privateTelephone: formatDisplayValue(
+            data.privateTelephone || data.telephone
+          ),
+          mobileNumber: formatDisplayValue(data.mobileNumber || data.mobile),
+          emailAddress: formatDisplayValue(data.emailAddress || data.email),
+          designation: formatDisplayValue(data.designation),
+          natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
+          workingLocationType: formatDisplayValue(data.workingLocationType),
+          workingLocation: formatDisplayValue(data.workingLocation),
+          educationalZone: formatDisplayValue(data.educationalZone),
+          educationalDistrict: formatDisplayValue(data.educationalDistrict),
+          computerNoName: formatDisplayValue(data.computerNoName || data.computerNo),
+          salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
         });
       } catch (error) {
         console.error("Failed to load member:", error);
@@ -806,7 +890,7 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.designation}
                 register={register("designationNew")}
                 error={errors.designationNew?.message}
-                options={["Teacher", "Principal", "Lecturer", "Administrator"]}
+                options={designationOptions}
                 disabled={isInputsDisabled}
               />
 
@@ -815,7 +899,7 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.natureOfOccupation}
                 register={register("natureOfOccupationNew")}
                 error={errors.natureOfOccupationNew?.message}
-                options={["Permanent", "Probation", "Temporary", "Casual"]}
+                options={natureOfOccupationOptions}
                 disabled={isInputsDisabled}
               />
 
@@ -1184,14 +1268,14 @@ function FieldPair({
         <label className="mb-1 block text-sm text-gray-600">
           {oldLabel} Current
         </label>
-        <Input value={oldValue} disabled />
+        <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
         <label className="mb-1 block text-sm text-gray-600">
           {newLabel} New
         </label>
-        <Input value={newValue} disabled readOnly />
+        <Input value={formatDisplayValue(newValue)} disabled readOnly />
       </div>
     </>
   );
@@ -1211,7 +1295,7 @@ function EditableInput({
         <label className="mb-1 block text-sm text-gray-600">
           {label} Current
         </label>
-        <Input value={oldValue} disabled />
+        <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
@@ -1236,7 +1320,7 @@ function EditableSelect({
   oldValue,
   register,
   error,
-  options,
+  options = [],
   disabled = false,
 }: any) {
   const selectId = label
@@ -1250,7 +1334,7 @@ function EditableSelect({
         <label className="mb-1 block text-sm text-gray-600">
           {label} Current
         </label>
-        <Input value={oldValue} disabled />
+        <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
@@ -1267,8 +1351,8 @@ function EditableSelect({
           <option value="">Select</option>
 
           {options.map((option: string) => (
-            <option key={option} value={option}>
-              {option}
+            <option key={formatDisplayValue(option)} value={formatDisplayValue(option)}>
+              {formatDisplayValue(option)}
             </option>
           ))}
         </select>
