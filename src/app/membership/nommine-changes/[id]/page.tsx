@@ -1,16 +1,9 @@
-import NomineeChangeRequest from "@/src/components/NommineChangeRequest/page";
+import React from 'react'
 
-export default async function NomineeChangeEditPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  
+function page() {
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <h1 className="text-2xl font-bold">Edit Nominee Change Request</h1>
-      <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 p-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <NomineeChangeRequest editId={id} />
-        </div>
-      </div>
-    </div>
-  );
+    <div>hello</div>
+  )
 }
+
+export default page

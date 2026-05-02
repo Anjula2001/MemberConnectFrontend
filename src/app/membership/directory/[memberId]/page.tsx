@@ -32,7 +32,7 @@ const actionGroups = {
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Death Donation Request", "Add Documents", "Record Member Death"],
+	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death"],
 };
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
@@ -94,12 +94,14 @@ export default function MemberProfilePage({
 			"Change Name": "/membership/directory/change-name",
 			"Change Remittance": "/membership/directory/change-remittance",
 			"Change Nominee": "/membership/directory/change-nominee",
-			"Grade 5 Scholarship": "/membership/directory/grade-5-scholarship",
+			"Grade 5 Scholarship": "/membership/directory/grade5-scholarship",
 			"University Scholarship": "/membership/directory/university-scholarship",
 			"Request Termination": "/membership/directory/request-termination",
+			"Retirement": "/membership/directory/retirement",
 			"Death Donation Request": "/membership/directory/death-donation-request",
 			"Add Documents": "/membership/directory/add-documents",
 			"Record Member Death": "/membership/directory/record-member-death",
+			
 		};
 
 		const route = routeMap[action];
