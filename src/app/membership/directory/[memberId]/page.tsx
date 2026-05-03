@@ -12,7 +12,8 @@ import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
 import { getMemberById, type MemberDTO } from "@/lib/api/member";
-import { getDocumentsByApplication, type UploadDocumentResponseDTO } from "@/lib/api/documents";
+import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
+import { useToast } from "@/lib/toast-context";
 
 const detailTabs = [
 	"Profile Details",
@@ -60,8 +61,63 @@ export default function MemberProfilePage({
 	const [loading, setLoading] = useState(true);
 	const [activeTab, setActiveTab] = useState("Profile Details");
 	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
+	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
+	const { addToast } = useToast();
 
 	const uniqueDocTypes = Array.from(new Set(documents.map(d => d.documentType)));
+	const sortedDocs = [...documents].sort((a, b) => b.id - a.id); // Sort descending by ID
+	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
+	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
+		if (!profile?.applicationId) {
+			addToast("No application ID found for this member", "destructive");
+			return;
+		}
+
+		setUploadingDocType(documentType);
+		try {
+			// Find all existing documents of this type to replace
+			const existingDocs = documents.filter(d => d.documentType === documentType);
+			for (const existingDoc of existingDocs) {
+				await deleteDocument(existingDoc.id).catch(e => console.error(e));
+			}
+
+			const uploaded = await uploadDocumentFile({
+				applicationId: profile.applicationId,
+				documentType,
+				file,
+			});
+
+			setDocuments(prev => [
+				...prev.filter(d => d.documentType !== documentType),
+				uploaded
+			]);
+			addToast(`${documentType.replace(/_/g, " ")} saved successfully!`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Failed to upload document";
+			addToast(message, "destructive");
+		} finally {
+			setUploadingDocType(null);
+		}
+	};
+
+	const handleDocumentDelete = async (documentType: DocumentType) => {
+		const doc = documents.find(d => d.documentType === documentType);
+		if (!doc) return;
+
+		setDeletingDocType(documentType);
+		try {
+			await deleteDocument(doc.id);
+			setDocuments(prev => prev.filter(d => d.id !== doc.id));
+			addToast(`${documentType.replace(/_/g, " ")} removed successfully!`);
+		} catch (error) {
+			addToast("Failed to delete document", "destructive");
+		} finally {
+			setDeletingDocType(null);
+		}
+	};
 
 	useEffect(() => {
 		params.then((p) => setMemberIdParam(p.memberId));
@@ -136,8 +192,10 @@ export default function MemberProfilePage({
 			<div className="rounded-xl border border-neutral-200 bg-white">
 				<div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 p-4">
 					<div className="flex items-center gap-3">
-						<div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 overflow-hidden">
-							{profile.profilePictureUrl ? (
+						<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 overflow-hidden border border-neutral-200">
+							{profilePhotoDoc?.storagePath ? (
+								<img src={`/api/documents/file/${profilePhotoDoc.storagePath}`} alt={profile.fullName} className="h-full w-full object-cover" />
+							) : profile.profilePictureUrl ? (
 								<img src={profile.profilePictureUrl} alt={profile.fullName} className="h-full w-full object-cover" />
 							) : (
 								<User className="h-6 w-6" />
@@ -282,8 +340,24 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="grid gap-4 pt-2 md:grid-cols-2">
-									<ImageDropzoneCard title="Profile Picture" buttonLabel="Add Profile Image" />
-									<ImageDropzoneCard title="Signature" buttonLabel="Add Signature Image" />
+									<ImageDropzoneCard 
+										title="Profile Picture" 
+										buttonLabel="Save Profile Image" 
+										existingUrl={profilePhotoDoc?.storagePath ? `/api/documents/file/${profilePhotoDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "PROFILE_PHOTO"}
+										isDeleting={deletingDocType === "PROFILE_PHOTO"}
+										onFileSelected={(file) => handleDocumentUpload(file, "PROFILE_PHOTO")}
+										onDelete={() => handleDocumentDelete("PROFILE_PHOTO")}
+									/>
+									<ImageDropzoneCard 
+										title="Signature" 
+										buttonLabel="Save Signature Image" 
+										existingUrl={signatureDoc?.storagePath ? `/api/documents/file/${signatureDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "SIGNATURE"}
+										isDeleting={deletingDocType === "SIGNATURE"}
+										onFileSelected={(file) => handleDocumentUpload(file, "SIGNATURE")}
+										onDelete={() => handleDocumentDelete("SIGNATURE")}
+									/>
 								</div>
 							</CardContent>
 						</Card>
