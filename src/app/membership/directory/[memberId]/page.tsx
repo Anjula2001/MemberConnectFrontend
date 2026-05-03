@@ -65,8 +65,13 @@ export default function MemberProfilePage({
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
 	const { addToast } = useToast();
 
-	const uniqueDocTypes = Array.from(new Set(documents.map(d => d.documentType)));
-	const sortedDocs = [...documents].sort((a, b) => b.id - a.id); // Sort descending by ID
+	// Filter out orphaned old local files ("uploads/...") for ALL documents
+	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
+
+	// displayDocuments is used for the "Documents" tab. We want ALL valid documents to show up as folders.
+	const displayDocuments = validDocuments;
+	const uniqueDocTypes = Array.from(new Set(displayDocuments.map(d => d.documentType)));
+	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
 	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
 	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
 
@@ -157,7 +162,7 @@ export default function MemberProfilePage({
 			"Death Donation Request": "/membership/directory/death-donation-request",
 			"Add Documents": "/membership/directory/add-documents",
 			"Record Member Death": "/membership/directory/record-member-death",
-			
+
 		};
 
 		const route = routeMap[action];
@@ -340,18 +345,18 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="grid gap-4 pt-2 md:grid-cols-2">
-									<ImageDropzoneCard 
-										title="Profile Picture" 
-										buttonLabel="Save Profile Image" 
+									<ImageDropzoneCard
+										title="Profile Picture"
+										buttonLabel="Save Profile Image"
 										existingUrl={profilePhotoDoc?.storagePath ? `/api/documents/file/${profilePhotoDoc.storagePath}` : undefined}
 										isUploading={uploadingDocType === "PROFILE_PHOTO"}
 										isDeleting={deletingDocType === "PROFILE_PHOTO"}
 										onFileSelected={(file) => handleDocumentUpload(file, "PROFILE_PHOTO")}
 										onDelete={() => handleDocumentDelete("PROFILE_PHOTO")}
 									/>
-									<ImageDropzoneCard 
-										title="Signature" 
-										buttonLabel="Save Signature Image" 
+									<ImageDropzoneCard
+										title="Signature"
+										buttonLabel="Save Signature Image"
 										existingUrl={signatureDoc?.storagePath ? `/api/documents/file/${signatureDoc.storagePath}` : undefined}
 										isUploading={uploadingDocType === "SIGNATURE"}
 										isDeleting={deletingDocType === "SIGNATURE"}
@@ -373,7 +378,7 @@ export default function MemberProfilePage({
 									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
 								</div>
 
-								{documents.length === 0 ? (
+								{displayDocuments.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
 										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
 										<p>No documents found for this member.</p>
@@ -381,7 +386,7 @@ export default function MemberProfilePage({
 								) : !selectedDocType ? (
 									<div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
 										{uniqueDocTypes.map((type) => {
-											const count = documents.filter((d) => d.documentType === type).length;
+											const count = displayDocuments.filter((d) => d.documentType === type).length;
 											return (
 												<button
 													key={type}
@@ -414,7 +419,7 @@ export default function MemberProfilePage({
 										</button>
 
 										<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-											{documents
+											{displayDocuments
 												.filter((d) => d.documentType === selectedDocType)
 												.map((doc) => (
 													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm">
@@ -441,7 +446,7 @@ export default function MemberProfilePage({
 														</div>
 														{doc.storagePath && (
 															<a
-																href={doc.storagePath}
+																href={`/api/documents/file/${doc.storagePath}`}
 																target="_blank"
 																rel="noreferrer"
 																download={doc.fileName}
