@@ -585,40 +585,6 @@ export default function ChangeMemberTransferForm() {
     fetchLocationDetails();
   }, [selectedWorkingLocation, workingLocations, setValue]);
 
-  const uploadDocuments = async (savedRequestId: string | number) => {
-    const uploadedItems: DocumentFileItem[] = [];
-
-    for (const file of documentFiles) {
-      const formData = new FormData();
-
-      formData.append("file", file.file);
-      formData.append("documentType", file.documentType);
-      formData.append("requestId", String(savedRequestId));
-
-      const response = await fetch(
-        "http://localhost:8080/api/uploaded-documents/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Document upload failed");
-      }
-
-      const savedDoc = await response.json();
-
-      uploadedItems.push({
-        ...file,
-        id: savedDoc.id,
-        uploadedAt: savedDoc.uploadedAt,
-      });
-    }
-
-    setDocumentFiles(uploadedItems);
-  };
-
   const onSubmit = async (data: MemberTransferFormData) => {
     const confirmSubmit = window.confirm(
       "After submitting, this request cannot be edited. Do you want to continue?"
@@ -647,11 +613,6 @@ export default function ChangeMemberTransferForm() {
 
       const saved = await res.json();
       const savedId = saved.memberTransferRequestID || saved.requestId || saved.id;
-
-      // Upload documents if any
-      if (documentFiles.length > 0 && savedId) {
-        await uploadDocuments(savedId);
-      }
 
       setRequestId(savedId);
       setMemberTransferRequestNo(saved.requestId || saved.memberTransferRequestID || "");
@@ -768,16 +729,6 @@ export default function ChangeMemberTransferForm() {
     }
   };
 
-  const mandatoryDocumentTypes = requiredDocumentTypes
-    .filter((doc) => doc.mandatory)
-    .map((doc) => doc.documentType);
-
-  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every(
-    (type) =>
-      documentFiles.some((doc) => doc.documentType === type) ||
-      uploadedDocuments.some((doc) => doc.documentType === type)
-  );
-
   const statusReason =
     status === "INCOMPLETE"
       ? loadedRecord?.incompleteReason || ""
@@ -833,7 +784,7 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || !hasAllMandatoryDocuments || isSubmitting}
+                disabled={!isValid || isSubmitting}
                 className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
