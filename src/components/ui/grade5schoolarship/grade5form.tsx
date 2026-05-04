@@ -171,6 +171,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
   const selectedDistrict = watch("schoolDistrict");
   const selectedYear = watch("examYear");
   const examinationNumber = watch("examinationNumber");
+  const [popupError, setPopupError] = useState("");
 
   useEffect(() => {
     setExamValidated(false);
@@ -303,88 +304,6 @@ useEffect(() => {
     }
   };
 
-  const buildEligibilityMessage = (data: EligibilityValidationResponse) => {
-    if (data.message) return data.message;
-    if (data.reason) return data.reason;
-    if (data.error) return data.error;
-    if (data.errors?.length) return data.errors.join(" ");
-
-    if (
-      data.memberActiveDuringExam === false ||
-      data.activeDuringExam === false
-    ) {
-      return "The Grade 5 Scholarship Request cannot be saved. The Member is not Active during the selected Exam";
-    }
-
-    if (
-      data.membershipPeriodValid === false ||
-      data.membershipAgeValid === false
-    ) {
-      return "The required continues Membership period does not comply (36 months)";
-    }
-
-    if (
-      data.continuousScholarshipRemittanceValid === false ||
-      data.continuousRemittanceValid === false
-    ) {
-      return "Scholarship deduction was not continuously remitted from Member for the specific period (6 months)";
-    }
-
-    if (
-      data.scholarshipRemittedPreviousMonth === false ||
-      data.previousMonthRemitted === false
-    ) {
-      return "The Scholarship Account should be remitted on the previous month.";
-    }
-
-    return "The Grade 5 Scholarship Request cannot be saved. Member is not eligible to apply for a Grade 5 Scholarship.";
-  };
-
-  const validateMemberEligibility = async (data: Grade5FormValues) => {
-    setEligibilityError("");
-
-    if (!data.examYear) {
-      setEligibilityError("Exam year is required to validate member eligibility.");
-      return false;
-    }
-
-    try {
-      const params = new URLSearchParams({
-        memberId,
-        examYear: String(data.examYear),
-      });
-
-      const res = await fetch(
-        `http://localhost:8080/api/grade5/eligibility/validate?${params.toString()}`
-      );
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        setEligibilityError(
-          errorText ||
-            "Unable to validate member eligibility for Grade 5 Scholarship."
-        );
-        return false;
-      }
-
-      const result = (await res.json()) as EligibilityValidationResponse;
-      const eligible =
-        result.eligible ?? result.isEligible ?? result.valid ?? result.canCreate;
-
-      if (eligible === false) {
-        setEligibilityError(buildEligibilityMessage(result));
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error("Eligibility validation error:", error);
-      setEligibilityError(
-        "Unable to validate member eligibility for Grade 5 Scholarship."
-      );
-      return false;
-    }
-  };
 
   const buildPayload = (data: Grade5FormValues): Grade5RequestPayload => ({
     requestedDate: data.requestedDate,
@@ -429,16 +348,22 @@ useEffect(() => {
 
       if (!res.ok) {
         const errorText = await res.text();
-        throw new Error(errorText || "Failed to save form");
+
+        setPopupError(errorText || "Grade 5 Scholarship Request Cannot Be Created.Member Is Not ACTIVE");
+
+        return;
       }
 
       const savedData = await res.json();
       alert(isUpdate ? "Form updated successfully" : "Form saved successfully");
 
       return savedData;
-    } catch (error) {
+      } catch (error: any) {
       console.error("Save error:", error);
-      alert("Failed to save form");
+
+      const message = error?.message ||"Grade 5 Scholarship Request Cannot Be Created.Member Is Not ACTIVE";
+
+      setPopupError(message);
     }
   };
 
@@ -471,8 +396,6 @@ useEffect(() => {
 
       await handleSubmit(
         async (data) => {
-          const eligibilityOk = await validateMemberEligibility(data);
-          if (!eligibilityOk) return;
 
           const examOk =
             initialData?.examinationNumber === data.examinationNumber ||
@@ -493,6 +416,39 @@ useEffect(() => {
 
   return (
     <form className="space-y-6">
+      {popupError && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+            
+            <button
+              type="button"
+              onClick={() => setPopupError("")}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-lg font-semibold text-[#953002]">
+              Cannot Create Request
+            </h2>
+
+            <p className="text-sm text-black-600 mt-4">
+              {popupError}
+            </p>
+
+            <div className="flex justify-end mt-6">
+              <Button
+                type="button"
+                onClick={() => setPopupError("")}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <p className="text-[#953002] text-xl font-bold">Request Details</p>
 
       {eligibilityError && (

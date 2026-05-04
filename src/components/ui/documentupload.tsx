@@ -25,7 +25,7 @@ interface RequiredDocument {
 
 interface UploadedDocument {
   id: number;
-  requestId: number;
+  requestNo: String;
   requiredDocumentId: number;
   fileName: string;
   fileType: string;
@@ -33,7 +33,7 @@ interface UploadedDocument {
 }
 
 interface DocumentUploadProps {
-  requestId: number | null;
+  requestNo: string | null;
   memberId: string;
   requestStatus: string;
   requestType: "retirement-requests" | "grade5-requests";
@@ -57,7 +57,7 @@ const validateSelectedFile = (file: File | null) => {
 };
 
 export default function DocumentUpload({
-  requestId,
+  requestNo,
   memberId,
   requestStatus,
   requestType,
@@ -82,7 +82,7 @@ export default function DocumentUpload({
 
   const isSubmitted = SUBMITTED_STATUSES.includes(requestStatus);
   const isReadOnly = readOnly || isSubmitted;
-  const canUpload = !!requestId && !isReadOnly && !uploading;
+  const canUpload = !!requestNo && !isReadOnly && !uploading;
 
   const isDocumentTypeUploaded = (documentId: number) => {
     return uploadedDocuments.some(
@@ -100,12 +100,12 @@ export default function DocumentUpload({
 
     fetchRequiredDocuments();
 
-    if (requestId) {
+    if (requestNo) {
       fetchUploadedDocuments();
     } else {
       setUploadedDocuments([]);
     }
-  }, [requestId, requestType, memberId]);
+  }, [requestNo, requestType, memberId]);
 
   /**
    * Fetches the list of documents required for this request type.
@@ -113,8 +113,8 @@ export default function DocumentUpload({
    */
   const fetchRequiredDocuments = async () => {
     try {
-      const url = requestId
-        ? `${API_BASE_URL}/api/${requestType}/${requestId}/required-documents?memberId=${memberId}`
+      const url = requestNo
+        ? `${API_BASE_URL}/api/${requestType}/${requestNo}/required-documents?memberId=${memberId}`
         : `${API_BASE_URL}/api/${requestType}/required-documents-preview?memberId=${memberId}`;
 
       const response = await fetch(url);
@@ -142,14 +142,14 @@ export default function DocumentUpload({
    * Fetches already uploaded documents for the current request.
    */
   const fetchUploadedDocuments = async () => {
-    if (!requestId) {
+    if (!requestNo) {
       setUploadedDocuments([]);
       return;
     }
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestId}/uploaded-documents`
+        `${API_BASE_URL}/api/${requestType}/${requestNo}/uploaded-documents`
       );
 
       if (!response.ok) {
@@ -171,7 +171,7 @@ export default function DocumentUpload({
   const handleAddClick = () => {
     setMessage("");
 
-    if (!requestId) {
+    if (!requestNo) {
       setMessage("Please save request before uploading documents.");
       return;
     }
@@ -197,7 +197,7 @@ export default function DocumentUpload({
   const handleUpload = async (file: File | null) => {
     setMessage("");
 
-    if (!requestId) {
+    if (!requestNo) {
       setMessage("Please save request before uploading documents.");
       return;
     }
@@ -226,7 +226,7 @@ export default function DocumentUpload({
       formData.append("file", file as File);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestId}/documents/${selectedDocumentId}/upload`,
+        `${API_BASE_URL}/api/${requestType}/${requestNo}/documents/${selectedDocumentId}/upload`,
         {
           method: "POST",
           body: formData,
@@ -299,7 +299,7 @@ export default function DocumentUpload({
       <div className="border rounded-lg p-4 space-y-4">
         <p className="font-semibold">Upload Document</p>
 
-        {!requestId && (
+        {!requestNo && (
           <p className="text-gray-500 text-sm">
             Save request before uploading documents.
           </p>

@@ -3,14 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
-import RetirementForm, {
-  RetirementFormRef,
-} from "../../../../components/ui/retirement/retirementform";
+import RetirementForm, {RetirementFormRef,} from "../../../../components/ui/retirement/retirementform";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
-import AddBankDetails, {
-  AddBankDetailsRef,
-} from "../../../../components/ui/retirement/addbankdetails";
+import AddBankDetails, {AddBankDetailsRef,} from "../../../../components/ui/retirement/addbankdetails";
 
 interface BankAccountRow {
   id: number;
@@ -55,7 +51,8 @@ interface MemberDetails {
 }
 
 const API_BASE_URL = "http://localhost:8080";
-const DEFAULT_MEMBER_ID = "MEM009";
+
+const DEFAULT_MEMBER_ID = "MEM001";
 
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
@@ -78,15 +75,11 @@ export default function RetirementPage() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccountRow[]>([]);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccountRow | null>(null);
-  const [minorSavingsAccounts, setMinorSavingsAccounts] = useState<
-    MinorSavingsAccount[]
-  >([]);
+  const [minorSavingsAccounts, setMinorSavingsAccounts] = useState<MinorSavingsAccount[]>([]);
 
   const [minorSavingsError, setMinorSavingsError] = useState("");
   const [saveError, setSaveError] = useState("");
-  const [approvalAction, setApprovalAction] = useState<
-    "approve" | "reject" | null
-  >(null);
+  const [approvalAction, setApprovalAction] = useState<"approve" | "reject" | null>(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
 
@@ -100,16 +93,15 @@ export default function RetirementPage() {
   const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
 
-  const [validation, setValidation] =
-    useState<RetirementValidation | null>(null);
+  const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
   const isRequestLocked = retirementRequest?.status
     ? LOCKED_STATUSES.includes(retirementRequest.status)
     : false;
+
   const isEditMode = isEditing && !isRequestLocked;
   const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
-  const showApprovalActions =
-    retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
+  const showApprovalActions = retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
   const hideRequestEditActions = showApprovalActions;
   const isViewRequestMode = pageMode === "view" && !!requestId;
   const showDisabledRequestActions =
@@ -492,15 +484,15 @@ export default function RetirementPage() {
             <div>
               <p className="text-2xl font-bold text-[#953002] ">
                 Retirement Request
-                {retirementRequest?.requestNo &&
-                  `: ${retirementRequest.requestNo}`}
+                {retirementRequest?.requestNo && `: ${retirementRequest.requestNo}`}
               </p>
 
               <div className="flex items-center gap-3 mt-1">
                 <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
                   Member: {member.fullName} ({member.memberId})
                 </div>
-
+                
+                {/*show status and incomplete reason if the request is in incomplete status*/}
                 {retirementRequest?.status && (
                   <p className="text-sm font-semibold text-blue-600">
                     Status: {retirementRequest.status}
@@ -511,13 +503,14 @@ export default function RetirementPage() {
                 )}
 
               </div>
-
               {saveError && (
                 <p className="text-red-500 text-sm mt-2">{saveError}</p>
               )}
             </div>
 
             <div className="flex gap-2">
+              
+              {/*Edit button is only shown when viewing an existing request that is not locked*/}
               {(isViewRequestMode) &&
                 retirementRequest?.id &&
                 !isRequestLocked &&
@@ -530,7 +523,8 @@ export default function RetirementPage() {
                     Edit
                   </Button>
                 )}
-
+              
+              {/*Approval actions are only shown to approvers */}
               {showApprovalActions && (
                 <>
                   <Button
@@ -554,12 +548,13 @@ export default function RetirementPage() {
                 </>
               )}
 
+              {/* */}
               {showDisabledRequestActions && (
                   <>
                     <Button
                       type="button"
                       disabled
-                      className="bg-[#D4183D] text-white disabled:bg-[#D4183D] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       Mark Incomplete
                     </Button>
@@ -574,6 +569,7 @@ export default function RetirementPage() {
                   </>
                 )}
 
+              {/**/}
               {showRequestEditActions && (
                 <>
                   <Button
@@ -590,7 +586,7 @@ export default function RetirementPage() {
                       isRequestLocked ||
                       (isIncompleteStatus && !isEditMode)
                     }
-                    className="bg-[#D4183D] text-white disabled:cursor-not-allowed"
+                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
                   >
                     Mark Incomplete
                   </Button>
@@ -612,6 +608,7 @@ export default function RetirementPage() {
             </div>
           </div>
 
+          {/*for show member loans and inderectobligation if have */}
           {validation && !validation.canSubmit && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-4 px-6 border border-red-200">
               <p className="text-pink-500 font-semibold">
@@ -633,6 +630,7 @@ export default function RetirementPage() {
             </div>
           )}
 
+          {/*show member details*/}
           <div className="bg-white border border-gray-200 rounded-lg px-6 py-5 mt-6">
             <h2 className="text-lg font-bold text-[#953002] mb-4">
               Member Details
@@ -673,6 +671,7 @@ export default function RetirementPage() {
             </div>
           </div>
 
+          {/* Retirement form, minor savings accounts, disbursement bank details and document upload sections */}
           <div className="flex gap-6 mt-6">
             <div className="flex-1 flex flex-col space-y-6">
               <div className="bg-white rounded-lg shadow-sm p-6">
@@ -727,16 +726,16 @@ export default function RetirementPage() {
                         Minor Saving Accounts
                       </p>
 
-                      <table className="w-full border border-gray-200 rounded-lg">
-                        <thead className="bg-gray-100">
+                      <table className="w-3/4 border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-50">
                           <tr>
-                            <th className="text-left px-4 py-2 border-b">
+                            <th className="w-1/4 text-left px-4 py-2 border-b">
                               Minor Account No
                             </th>
-                            <th className="text-left px-4 py-2 border-b">
+                            <th className="w-1/4 text-left px-4 py-2 border-b">
                               Holder Name
                             </th>
-                            <th className="text-left px-4 py-2 border-b">
+                            <th className="w-1/4 text-left px-4 py-2 border-b">
                               Balance
                             </th>
                           </tr>
@@ -771,21 +770,22 @@ export default function RetirementPage() {
                           Disbursement Bank Details
                         </p>
 
-                        <table className="w-full border border-gray-200 rounded-lg">
-                          <thead className="bg-gray-100">
+                        <table className="w-3/4 border border-gray-200 rounded-lg">
+                          <thead className="bg-gray-50">
                             <tr>
-                              <th className="text-left px-4 py-2 border-b">
+                              <th className="w-1/4 text-left px-4 py-2 border-b">
                                 Bank
                               </th>
-                              <th className="text-left px-4 py-2 border-b">
+                              <th className="w-1/4 text-left px-4 py-2 border-b">
                                 Branch
                               </th>
-                              <th className="text-left px-4 py-2 border-b">
+                              <th className="w-1/4 text-left px-4 py-2 border-b">
                                 Account Number
                               </th>
                               
+                              {/** Only show action column when the user can edit the bank details */}
                               {isEditMode && (
-                                <th className="text-left px-4 py-2 border-b">Action</th>
+                                <th className="w-1/4 text-left px-4 py-2 border-b">Action</th>
                               )}
                             </tr>
                           </thead>
@@ -833,7 +833,7 @@ export default function RetirementPage() {
                 </p>
 
                 <DocumentUpload
-                  requestId={retirementRequest?.id || null}
+                  requestNo={retirementRequest?.requestNo|| null}
                   memberId={selectedMemberId}
                   requestStatus={retirementRequest?.status || "NEW"}
                   requestType="retirement-requests"

@@ -21,6 +21,17 @@ type Grade5Request = Grade5InitialData & {
   isDoubleAmount?: boolean;
 };
 
+type RequiredDocument = {
+  id: number;
+  documentName: string;
+  mandatory: boolean;
+  uploaded?: boolean;
+};
+
+type UploadedDocument = {
+  requiredDocumentId: number;
+};
+
 const SUBMITTED_FOR_NORMAL_APPROVAL = "SUBMITTED_FOR_NORMAL_APPROVAL";
 const SUBMITTED_FOR_DEVIATION_APPROVAL = "SUBMITTED_FOR_DEVIATION_APPROVAL";
 const LOCKED_STATUSES = [
@@ -37,7 +48,7 @@ export default function Grade5ScholarshipPage() {
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const DEFAULT_MEMBER_ID = "MEM009";
+  const DEFAULT_MEMBER_ID = "MEM001";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
@@ -100,6 +111,7 @@ export default function Grade5ScholarshipPage() {
   );
   const [submitError, setSubmitError] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [documentError, setDocumentError] = useState("");
   const isRequestSubmitted = grade5Request?.status
     ? LOCKED_STATUSES.includes(grade5Request.status)
     : false;
@@ -264,6 +276,62 @@ export default function Grade5ScholarshipPage() {
     return true;
   };
 
+  const validateMandatoryDocuments = async (savedRequestNo: String) => {
+    setDocumentError("");
+
+    try {
+      const [requiredResponse, uploadedResponse] = await Promise.all([
+        fetch(
+          `${API_BASE_URL}/api/grade5-requests/${savedRequestNo}/required-documents?memberId=${encodeURIComponent(
+            selectedMemberId
+          )}`
+        ),
+        fetch(
+          `${API_BASE_URL}/api/grade5-requests/${savedRequestNo}/uploaded-documents`
+        ),
+      ]);
+
+      if (!requiredResponse.ok) {
+        const errorText = await requiredResponse.text();
+        setDocumentError(errorText || "Failed to load mandatory documents.");
+        return false;
+      }
+
+      if (!uploadedResponse.ok) {
+        const errorText = await uploadedResponse.text();
+        setDocumentError(errorText || "Failed to load uploaded documents.");
+        return false;
+      }
+
+      const requiredDocuments: RequiredDocument[] =
+        await requiredResponse.json();
+      const uploadedDocuments: UploadedDocument[] =
+        await uploadedResponse.json();
+      const uploadedDocumentIds = new Set(
+        uploadedDocuments.map((document) => document.requiredDocumentId)
+      );
+      const missingDocuments = requiredDocuments.filter(
+        (document) =>
+          document.mandatory &&
+          !document.uploaded &&
+          !uploadedDocumentIds.has(document.id)
+      );
+
+      if (missingDocuments.length > 0) {
+        setDocumentError(
+          `Please upload all mandatory documents before submitting`
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error(error);
+      setDocumentError("Failed to validate mandatory documents.");
+      return false;
+    }
+  };
+
   const handleSave = async () => {
     if (isRequestLocked) {
       setFundError("Submitted or finalized Grade 5 request cannot be edited.");
@@ -301,6 +369,7 @@ export default function Grade5ScholarshipPage() {
 
   const handleSubmitForm = async () => {
     setSubmitError("");
+    setDocumentError("");
 
     if (isRequestSubmitted) {
       setFundError("Submitted Grade 5 Scholarship requests cannot be submitted again.");
@@ -311,7 +380,13 @@ export default function Grade5ScholarshipPage() {
       return;
     }
 
-    if (grade5Request?.id) {
+    if (grade5Request?.requestNo) {
+      const documentsOk = await validateMandatoryDocuments(grade5Request.requestNo);
+
+      if (!documentsOk) {
+        return;
+      }
+
       setSubmitModalOpen(true);
       return;
     }
@@ -319,11 +394,17 @@ export default function Grade5ScholarshipPage() {
     try {
       const savedRequest = await formRef.current?.submitForm();
 
-      if (!savedRequest?.id) {
+      if (!savedRequest?.requestNo) {
         return;
       }
 
       setGrade5Request(savedRequest);
+      const documentsOk = await validateMandatoryDocuments(savedRequest.requestNo);
+
+      if (!documentsOk) {
+        return;
+      }
+
       setSubmitModalOpen(true);
     } catch (error) {
       console.error(error);
@@ -531,7 +612,7 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     type="button"
                     disabled
-                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     Mark Incomplete
                   </Button>
@@ -539,7 +620,7 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     type="button"
                     disabled
-                    className="bg-[#953002] text-white disabled:bg-[#953002] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="bg-[#953002] text-white disabled:bg-[#953002] hover:bg-gray-100 disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     Submit
                   </Button>
@@ -559,7 +640,7 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     onClick={() => setOpenModal(true)}
                     disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#D4183D] text-white disabled:cursor-not-allowed"
+                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
                   >
                     Mark Incomplete
                   </Button>
@@ -567,7 +648,7 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     onClick={handleSubmitForm}
                     disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#953002] text-white disabled:cursor-not-allowed"
+                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
                   >
                     Submit
                   </Button>
@@ -575,6 +656,16 @@ export default function Grade5ScholarshipPage() {
               )}
             </div>
           </div>
+
+          {documentError && (
+              <p className="text-red-500 text-sm mb-3">
+                {documentError}
+              </p>
+          )}
+
+          {fundError && (
+              <p className="text-red-500 text-sm mb-3">{fundError}</p>
+          )}
 
           <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
             <h2 className="text-lg font-bold text-[#953002] mb-4">
@@ -616,10 +707,10 @@ export default function Grade5ScholarshipPage() {
             </div>
           </div>
 
-          {/* Main Content */}
+         
           <div className="flex gap-6 mt-6">
             <div className="flex-1 flex flex-col gap-6">
-              {/* Form */}
+              
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <Grade5Form
                   ref={formRef}
@@ -629,7 +720,7 @@ export default function Grade5ScholarshipPage() {
                 />
               </div>
 
-              {/* Fund Disbursement */}
+            
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-xl font-bold text-[#953002]">
@@ -644,10 +735,6 @@ export default function Grade5ScholarshipPage() {
                     Refresh
                   </Button>
                 </div>
-
-                {fundError && (
-                  <p className="text-red-500 text-sm mb-3">{fundError}</p>
-                )}
 
                 {!fundRefreshed ? (
                   <p className="text-gray-500 text-sm">
@@ -862,13 +949,12 @@ export default function Grade5ScholarshipPage() {
                 )}
               </div>
 
-              {/* ✅ Document Upload MOVED BELOW */}
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <p className="text-xl font-bold text-[#953002] mb-4">
                   Supporting Documents
                 </p>
                 <DocumentUpload
-                  requestId={grade5Request?.id || null}
+                  requestNo={grade5Request?.requestNo || null}
                   memberId={selectedMemberId}
                   requestStatus={grade5Request?.status || "NEW"}
                   requestType="grade5-requests"
