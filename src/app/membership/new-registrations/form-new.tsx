@@ -11,6 +11,7 @@ import {
 import {
   createMemberApplication,
   getMemberApplicationById,
+  validateApplicationNic,
   type ApplicationStatus,
   type Gender,
   type Identification,
@@ -180,6 +181,11 @@ export function NewMemberRegistrationForm({
     useState<DocumentSummaryDTO | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [boardDecisionReason, setBoardDecisionReason] = useState("");
+  const [isValidatingNic, setIsValidatingNic] = useState(false);
+  const [nicValidationMessage, setNicValidationMessage] = useState<string | null>(
+    null
+  );
+  const [nicValidationError, setNicValidationError] = useState(false);
   // Map of documentType -> { id, url, fileName } for previewing already-uploaded files
   const [existingDocumentUrls, setExistingDocumentUrls] = useState<
     Record<string, { id: number; url: string; fileName: string }>
@@ -285,6 +291,47 @@ export function NewMemberRegistrationForm({
     if (!value || value.trim() === "") return undefined;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const handleValidateNic = async (nic: string) => {
+    const cleanedNic = nic.trim();
+    if (!cleanedNic) {
+      setNicValidationError(true);
+      setNicValidationMessage("NIC number is required");
+      addToast("NIC number is required", "destructive");
+      return false;
+    }
+
+    setIsValidatingNic(true);
+    setNicValidationMessage(null);
+    setNicValidationError(false);
+    try {
+      const response = await validateApplicationNic(
+        cleanedNic,
+        savedApplicationId ?? applicationId ?? undefined
+      );
+
+      if (response.duplicate) {
+        setNicValidationError(true);
+        setNicValidationMessage(response.message);
+        addToast(response.message, "destructive");
+        return false;
+      }
+
+      setNicValidationError(false);
+      setNicValidationMessage(response.message);
+      addToast(response.message);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to validate NIC";
+      setNicValidationError(true);
+      setNicValidationMessage(message);
+      addToast(message, "destructive");
+      return false;
+    } finally {
+      setIsValidatingNic(false);
+    }
   };
 
   const defaultFormValues = useMemo<MemberRegistration>(
@@ -473,6 +520,11 @@ export function NewMemberRegistrationForm({
   const onSubmit = async (data: MemberRegistration) => {
     setIsSubmitting(true);
     try {
+      const isNicValid = await handleValidateNic(data.nicNumber);
+      if (!isNicValid) {
+        return;
+      }
+
       const primaryIdentificationType = data.identificationTypes[0];
       const primaryIdentificationNumber = primaryIdentificationType
         ? String(data.identificationNumbers?.[primaryIdentificationType] ?? "")
@@ -797,10 +849,31 @@ export function NewMemberRegistrationForm({
                     error={errors.nicNumber?.message}
                     required
                   >
-                    <Input
-                      {...register("nicNumber")}
-                      placeholder="NIC Number"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        {...register("nicNumber")}
+                        placeholder="NIC Number"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleValidateNic(watch("nicNumber"))}
+                        disabled={isValidatingNic || readOnly}
+                        className="border-[#953002] text-[#953002] hover:bg-[#953002] hover:text-white"
+                      >
+                        {isValidatingNic ? "Validating..." : "Validate"}
+                      </Button>
+                    </div>
+                    {nicValidationMessage && (
+                      <span
+                        className={`text-xs ${
+                          nicValidationError ? "text-red-500" : "text-green-600"
+                        }`}
+                      >
+                        {nicValidationMessage}
+                      </span>
+                    )}
                   </FormField>
                   <FormField
                     label="Date of Birth"

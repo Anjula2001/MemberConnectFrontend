@@ -57,6 +57,12 @@ export interface MemberApplicationDTO {
   identification?: Identification;
 }
 
+export interface NicValidationResponseDTO {
+  valid: boolean;
+  duplicate: boolean;
+  message: string;
+}
+
 const BASE_PATH = "/api/applications";
 
 export async function createMemberApplication(payload: MemberApplicationDTO) {
@@ -82,6 +88,22 @@ export async function getMemberApplicationById(id: number) {
 export async function getMemberApplicationByNic(nic: string) {
   const { data } = await apiClient.get<MemberApplicationDTO>(
     `${BASE_PATH}/nic/${encodeURIComponent(nic)}`
+  );
+  return data;
+}
+
+export async function validateApplicationNic(
+  nicNumber: string,
+  excludeApplicationId?: number
+) {
+  const { data } = await apiClient.get<NicValidationResponseDTO>(
+    `${BASE_PATH}/validate-nic`,
+    {
+      params: {
+        nicNumber,
+        ...(excludeApplicationId ? { excludeApplicationId } : {}),
+      },
+    }
   );
   return data;
 }

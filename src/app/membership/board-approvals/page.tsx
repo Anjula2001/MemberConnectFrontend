@@ -37,6 +37,7 @@ import {
 } from "@/lib/api/boardApprovalLists";
 import {
   getMemberApplicationById,
+  updateMemberApplicationPartial,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
 import { createMember, type MemberDTO } from "@/lib/api/member";
@@ -56,6 +57,7 @@ type ApprovalApplication = {
   status: string;
   nic: string;
   hasWarning?: boolean;
+  boardDecisionReason?: string;
 };
 
 type ProcessedListState = {
@@ -94,9 +96,7 @@ export default function BoardApprovalsPage() {
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
   const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
-  const [applicationDecision, setApplicationDecision] =
-    useState<ApplicationDecision>("Approve");
-  const [rejectReason, setRejectReason] = useState("");
+  const [applicationDecisions, setApplicationDecisions] = useState<Record<number, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
   const [showDeleteListModal, setShowDeleteListModal] = useState(false);
@@ -126,6 +126,7 @@ export default function BoardApprovalsPage() {
     status: application.status ?? "NEW",
     nic: application.nicNumber ?? "-",
     hasWarning: application.rejoinFlag ?? false,
+    boardDecisionReason: application.boardDecisionReason ?? "",
   });
 
   // Fetch board meetings from database
@@ -362,10 +363,8 @@ export default function BoardApprovalsPage() {
   }, [createdMeetings]);
 
   const totalCount = selectedListApplications.length;
-  const approvedCount =
-    applicationDecision === "Approve" ? selectedListApplications.length : 0;
-  const rejectedCount =
-    applicationDecision === "Reject" ? selectedListApplications.length : 0;
+  const approvedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Approve").length;
+  const rejectedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Reject").length;
 
   const handleRetrieveApprovalLists = async () => {
     try {
@@ -391,6 +390,16 @@ export default function BoardApprovalsPage() {
       setIsRetrievingApplications(true);
       const applications = await getBoardApprovalListApplications(selectedApprovalListId);
       setSelectedListApplications(applications.map(mapApplicationToRow));
+      
+      const initialDecisions: Record<number, { decision: ApplicationDecision; rejectReason: string }> = {};
+      applications.forEach(app => {
+        initialDecisions[app.id!] = {
+          decision: app.status === "REJECTED" ? "Reject" : "Approve",
+          rejectReason: app.boardDecisionReason || ""
+        };
+      });
+      setApplicationDecisions(initialDecisions);
+      
       setApplicationsRetrieved(true);
     } catch (error) {
       console.error("Error retrieving board approval list applications:", error);
@@ -424,8 +433,7 @@ export default function BoardApprovalsPage() {
       setSelectedApprovalListId("");
       setApplicationsRetrieved(false);
       setSelectedListApplications([]);
-      setApplicationDecision("Approve");
-      setRejectReason("");
+      setApplicationDecisions({});
       setBoardRemarks("");
       setIsEditingProcessedList(false);
       setShowConfirmModal(false);
@@ -449,8 +457,6 @@ export default function BoardApprovalsPage() {
   const handleEditProcessedList = () => {
     if (!selectedProcessedState) return;
 
-    setApplicationDecision(selectedProcessedState.decision);
-    setRejectReason(selectedProcessedState.rejectReason);
     setBoardRemarks(selectedProcessedState.boardRemarks);
     setIsEditingProcessedList(true);
   };
@@ -491,32 +497,35 @@ export default function BoardApprovalsPage() {
     try {
       const now = new Date();
       const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+      const decisionsArray = Object.values(applicationDecisions).map(d => d.decision);
+      const listDecision: ApplicationDecision = decisionsArray.includes("Approve") ? "Approve" : "Reject";
+
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
-        decision: applicationDecision,
-        rejectReason: applicationDecision === "Reject" ? rejectReason : undefined,
+        decision: listDecision,
         boardRemarks,
         processedBy: "Super Admin User",
       };
 
       const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
 
-      // ── If APPROVED: create a Member record for every application in the list ──
       let approveToastMessage: string | null = null;
-      if (applicationDecision === "Approve") {
-        const memberCreationErrors: string[] = [];
+      const memberCreationErrors: string[] = [];
+      let newMembersCount = 0;
 
-        await Promise.allSettled(
-          selectedListApplications.map(async (app) => {
+      await Promise.allSettled(
+        selectedListApplications.map(async (app) => {
+          const appDecisionState = applicationDecisions[app.id];
+          const appDecision = appDecisionState?.decision || "Approve";
+
+          if (appDecision === "Approve") {
             try {
               const appDetails: MemberApplicationDTO = await getMemberApplicationById(app.id);
 
-              // Map application fields → MemberDTO
-              // Key difference: application uses nicNumber, Member entity uses nic
               const memberPayload: MemberDTO = {
-                status: "INACTIVE",                          // new members start INACTIVE
-                applicationId: appDetails.id,               // link to originating application
-                nic: appDetails.nicNumber,                   // nicNumber → nic
+                status: "INACTIVE",
+                applicationId: appDetails.id,
+                nic: appDetails.nicNumber,
                 title: appDetails.title,
                 fullName: appDetails.fullName,
                 nameAsInPayroll: appDetails.nameAsInPayroll,
@@ -548,19 +557,30 @@ export default function BoardApprovalsPage() {
               };
 
               await createMember(memberPayload);
+              await updateMemberApplicationPartial(app.id, { status: "INACTIVE" });
+              newMembersCount++;
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : "Unknown error";
               memberCreationErrors.push(`${app.appId}: ${msg}`);
             }
-          })
-        );
+          } else {
+            try {
+              await updateMemberApplicationPartial(app.id, {
+                status: "REJECTED",
+                boardDecisionReason: appDecisionState?.rejectReason || ""
+              });
+            } catch (err: unknown) {
+              console.error("Failed to reject application", app.id, err);
+            }
+          }
+        })
+      );
 
-        if (memberCreationErrors.length > 0) {
-          console.warn("Some members could not be created:", memberCreationErrors);
-          approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
-        } else {
-          approveToastMessage = `Board approval list processed. ${selectedListApplications.length} member(s) created with INACTIVE status.`;
-        }
+      if (memberCreationErrors.length > 0) {
+        console.warn("Some members could not be created:", memberCreationErrors);
+        approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
+      } else {
+        approveToastMessage = `Board approval list processed. ${newMembersCount} member(s) approved and created with INACTIVE status.`;
       }
 
       setProcessedLists((prev) => ({
@@ -569,8 +589,8 @@ export default function BoardApprovalsPage() {
           processedBy: processedList.processedBy ?? "Head Office User",
           processedAt: formatted,
           actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
-          decision: applicationDecision,
-          rejectReason: processedList.rejectReason ?? rejectReason,
+          decision: listDecision,
+          rejectReason: "",
           boardRemarks: processedList.boardRemarks ?? boardRemarks,
         },
       }));
@@ -785,8 +805,7 @@ export default function BoardApprovalsPage() {
                           setSelectedApprovalListId(item.listId);
                           setApplicationsRetrieved(false);
                           setSelectedListApplications([]);
-                          setApplicationDecision("Approve");
-                          setRejectReason("");
+                          setApplicationDecisions({});
                           setBoardRemarks("");
                           setIsEditingProcessedList(false);
                         }}
@@ -907,20 +926,26 @@ export default function BoardApprovalsPage() {
                                 {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${
-                                      selectedProcessedState.decision === "Approve"
-                                        ? "bg-green-600"
-                                        : "bg-rose-600"
+                                      application.status === "REJECTED"
+                                        ? "bg-rose-600"
+                                        : "bg-green-600"
                                     }`}
                                   >
-                                    {selectedProcessedState.decision === "Approve"
-                                      ? "Approved"
-                                      : "Rejected"}
+                                    {application.status === "REJECTED"
+                                      ? "Rejected"
+                                      : "Approved"}
                                   </span>
                                 ) : (
                                   <Select
-                                    value={applicationDecision}
+                                    value={applicationDecisions[application.id]?.decision || "Approve"}
                                     onValueChange={(value) =>
-                                      setApplicationDecision(value as ApplicationDecision)
+                                      setApplicationDecisions(prev => ({ 
+                                        ...prev, 
+                                        [application.id]: { 
+                                          ...(prev[application.id] || { rejectReason: "" }), 
+                                          decision: value as ApplicationDecision 
+                                        } 
+                                      }))
                                     }
                                   >
                                     <SelectTrigger className="h-8 min-w-[100px]">
@@ -937,23 +962,29 @@ export default function BoardApprovalsPage() {
                                 {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
                                     className={
-                                      selectedProcessedState.decision === "Reject"
+                                      application.status === "REJECTED"
                                         ? "text-rose-600"
                                         : "text-gray-500"
                                     }
                                   >
-                                    {selectedProcessedState.decision === "Reject"
-                                      ? selectedProcessedState.rejectReason || "Reject Reason"
+                                    {application.status === "REJECTED"
+                                      ? application.boardDecisionReason || "Reject Reason"
                                       : "-"}
                                   </span>
                                 ) : (
                                   <Input
-                                    value={rejectReason}
-                                    onChange={(e) => setRejectReason(e.target.value)}
-                                    disabled={applicationDecision !== "Reject"}
+                                    value={applicationDecisions[application.id]?.rejectReason || ""}
+                                    onChange={(e) => setApplicationDecisions(prev => ({ 
+                                      ...prev, 
+                                      [application.id]: { 
+                                        ...(prev[application.id] || { decision: "Approve" }), 
+                                        rejectReason: e.target.value 
+                                      } 
+                                    }))}
+                                    disabled={applicationDecisions[application.id]?.decision !== "Reject"}
                                     placeholder="Reason required..."
                                     className={
-                                      applicationDecision === "Reject" && rejectReason.trim() === ""
+                                      applicationDecisions[application.id]?.decision === "Reject" && !applicationDecisions[application.id]?.rejectReason?.trim()
                                         ? "border-red-400 focus-visible:border-red-400 focus-visible:ring-red-200"
                                         : ""
                                     }
@@ -987,7 +1018,9 @@ export default function BoardApprovalsPage() {
                           type="button"
                           className="min-w-[106px] bg-[#953002] text-white hover:bg-[#7a2700]"
                           disabled={
-                            applicationDecision === "Reject" && rejectReason.trim() === ""
+                            Object.values(applicationDecisions).some(
+                              (d) => d.decision === "Reject" && !d.rejectReason.trim()
+                            )
                           }
                           onClick={handleOpenConfirmModal}
                         >
@@ -1383,12 +1416,12 @@ export default function BoardApprovalsPage() {
                 <div className="flex items-center justify-between">
                   <span
                     className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold text-white ${
-                      (selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                      selectedApplicationForDetails.status !== "REJECTED"
                         ? "bg-green-600"
                         : "bg-rose-600"
                     }`}
                   >
-                    {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                    {selectedApplicationForDetails.status !== "REJECTED"
                       ? "✓ Approved"
                       : "✕ Rejected"}
                   </span>
@@ -1396,13 +1429,13 @@ export default function BoardApprovalsPage() {
               </div>
 
               {/* Additional Information */}
-              {((selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
+              {(selectedApplicationForDetails.status === "REJECTED" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
                 <div className="space-y-3">
-                  {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" && (selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason) && (
+                  {selectedApplicationForDetails.status === "REJECTED" && selectedApplicationForDetails.boardDecisionReason && (
                     <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                       <p className="text-xs font-medium uppercase tracking-wide text-red-700">Reject Reason</p>
                       <p className="mt-1 text-sm font-medium text-red-800">
-                        {selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason}
+                        {selectedApplicationForDetails.boardDecisionReason}
                       </p>
                     </div>
                   )}
