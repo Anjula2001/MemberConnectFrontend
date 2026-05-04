@@ -53,6 +53,7 @@ type MemberTransferRecord = {
   status?: string;
   incompleteReason?: string;
   decisionReason?: string;
+
   designationNew?: string;
   natureOfOccupationNew?: string;
   workingLocationTypeNew?: string;
@@ -62,6 +63,22 @@ type MemberTransferRecord = {
   workingLocationAddressNew?: string;
   computerNoNameNew?: string;
   salaryPayingOfficeNew?: string;
+
+  newDesignationId?: number | string;
+  newNatureOfOccupationId?: number | string;
+  newWorkingLocationTypeId?: number | string;
+  newEducationalDistrictId?: number | string;
+  newEducationalZoneId?: number | string | null;
+  newWorkingLocationId?: number | string;
+  newWorkingLocationAddress?: string;
+  newComputerNoInPayslip?: string;
+  newSalaryPayingOffice?: string;
+};
+
+type OptionItem = {
+  id: string;
+  name: string;
+  raw?: any;
 };
 
 const emptyOldValues: MemberTransferOldValues = {
@@ -84,50 +101,55 @@ const emptyOldValues: MemberTransferOldValues = {
   salaryPayingOffice: "",
 };
 
-const defaultDesignationOptions = [
-  "Teacher",
-  "Principal",
-  "Lecturer",
-  "Administrator",
-];
-
-const defaultNatureOfOccupationOptions = [
-  "Permanent",
-  "Probation",
-  "Temporary",
-  "Casual",
-];
-
 const formatDisplayValue = (value: any): string => {
-  if (value === null || typeof value === "undefined") {
-    return "";
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(formatDisplayValue).filter(Boolean).join(", ");
-  }
-
+  if (value === null || typeof value === "undefined") return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(formatDisplayValue).filter(Boolean).join(", ");
   if (typeof value === "object") {
-    return (
+    return String(
       value.name ||
-      value.label ||
-      value.value ||
-      value.designation ||
-      value.occupation ||
-      value.address ||
-      value.locationAddress ||
-      value.fullName ||
-      value.displayName ||
-      value.id ||
-      ""
+        value.label ||
+        value.value ||
+        value.designation ||
+        value.occupation ||
+        value.address ||
+        value.locationAddress ||
+        value.fullName ||
+        value.displayName ||
+        value.id ||
+        ""
     );
   }
-
   return String(value);
+};
+
+const toOptionItems = (items: any[]): OptionItem[] => {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const id = item?.id ?? item?.value ?? item;
+      const name = item?.name ?? item?.label ?? item?.displayName ?? item?.designation ?? item?.occupation ?? item;
+
+      return {
+        id: String(id ?? ""),
+        name: formatDisplayValue(name),
+        raw: item,
+      };
+    })
+    .filter((item) => item.id !== "" && item.name !== "");
+};
+
+const findOptionIdByName = (options: OptionItem[], name: string) => {
+  const found = options.find((option) => option.name === name || String(option.raw?.name) === name);
+  return found ? found.id : "";
+};
+
+const toNullableNumber = (value: any) => {
+  if (value === "" || value === null || typeof value === "undefined" || value === "NA") {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? null : numberValue;
 };
 
 export default function ChangeMemberTransferForm() {
@@ -141,41 +163,28 @@ export default function ChangeMemberTransferForm() {
   const [requestId, setRequestId] = useState<any>(null);
 
   const [loading, setLoading] = useState(true);
-  const [oldValues, setOldValues] =
-    useState<MemberTransferOldValues | null>(null);
+  const [oldValues, setOldValues] = useState<MemberTransferOldValues | null>(null);
 
   const [member, setMember] = useState<any>(null);
-  const [loadedRecord, setLoadedRecord] =
-    useState<MemberTransferRecord | null>(null);
-
+  const [loadedRecord, setLoadedRecord] = useState<MemberTransferRecord | null>(null);
 
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
   const [status, setStatus] = useState<
-    | "NEW"
-    | "INCOMPLETE"
-    | "SUBMITTED_FOR_COMMITTEE_APPROVAL"
-    | "APPROVED"
-    | "REJECTED"
+    "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL" | "APPROVED" | "REJECTED"
   >("NEW");
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
-  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<
-    RequiredDocType[]
-  >([]);
+  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
 
-  const [designationOptions, setDesignationOptions] = useState<string[]>(
-    defaultDesignationOptions
-  );
-  const [natureOfOccupationOptions, setNatureOfOccupationOptions] = useState<
-    string[]
-  >(defaultNatureOfOccupationOptions);
-  const [workingLocationTypes, setWorkingLocationTypes] = useState<any[]>([]);
-  const [districts, setDistricts] = useState<any[]>([]);
-  const [zones, setZones] = useState<any[]>([]);
-  const [workingLocations, setWorkingLocations] = useState<any[]>([]);
+  const [designationOptions, setDesignationOptions] = useState<OptionItem[]>([]);
+  const [natureOfOccupationOptions, setNatureOfOccupationOptions] = useState<OptionItem[]>([]);
+  const [workingLocationTypes, setWorkingLocationTypes] = useState<OptionItem[]>([]);
+  const [districts, setDistricts] = useState<OptionItem[]>([]);
+  const [zones, setZones] = useState<OptionItem[]>([]);
+  const [workingLocations, setWorkingLocations] = useState<OptionItem[]>([]);
   const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
   const [isZoneEnabled, setIsZoneEnabled] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -203,6 +212,17 @@ export default function ChangeMemberTransferForm() {
   } = useForm<MemberTransferFormData>({
     resolver: zodResolver(memberTransferSchema),
     mode: "onChange",
+    defaultValues: {
+      designationNew: "",
+      natureOfOccupationNew: "",
+      workingLocationTypeNew: "",
+      educationalDistrictNew: "",
+      educationalZoneNew: "",
+      workingLocationNew: "",
+      workingLocationAddressNew: "",
+      computerNoNameNew: "",
+      salaryPayingOfficeNew: "",
+    } as any,
   });
 
   const selectedWorkingLocationType = watch("workingLocationTypeNew");
@@ -210,26 +230,11 @@ export default function ChangeMemberTransferForm() {
   const selectedZone = watch("educationalZoneNew");
   const selectedWorkingLocation = watch("workingLocationNew");
 
-  const whiteInputClass =
-    "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
-
-  const normalizeOptions = (items: any[], fallback: string[]) => {
-    const options = items
-      .map((item) => String(formatDisplayValue(item)).trim())
-      .filter(Boolean);
-
-    return options.length > 0 ? options : fallback;
-  };
-
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
-        const res = await fetch(
-          "http://localhost:8080/api/required-document-types/MEMBER_TRANSFER"
-        );
-
+        const res = await fetch("http://localhost:8080/api/required-document-types/MEMBER_TRANSFER");
         if (!res.ok) throw new Error("Failed to load document types");
-
         const data = await res.json();
         setRequiredDocumentTypes(data);
       } catch (error) {
@@ -250,26 +255,19 @@ export default function ChangeMemberTransferForm() {
           fetch("http://localhost:8080/api/masters/nature-of-occupations"),
         ]);
 
-        const [typesData, districtsData, designationsData, occupationsData] =
-          await Promise.all([
-            typesRes.ok ? typesRes.json() : Promise.resolve([]),
-            districtsRes.ok ? districtsRes.json() : Promise.resolve([]),
-            designationsRes.ok ? designationsRes.json() : Promise.resolve([]),
-            occupationsRes.ok ? occupationsRes.json() : Promise.resolve([]),
-          ]);
+        const [typesData, districtsData, designationsData, occupationsData] = await Promise.all([
+          typesRes.ok ? typesRes.json() : Promise.resolve([]),
+          districtsRes.ok ? districtsRes.json() : Promise.resolve([]),
+          designationsRes.ok ? designationsRes.json() : Promise.resolve([]),
+          occupationsRes.ok ? occupationsRes.json() : Promise.resolve([]),
+        ]);
 
-        setWorkingLocationTypes(typesData);
-        setDistricts(districtsData);
-        setDesignationOptions(
-          normalizeOptions(designationsData, defaultDesignationOptions)
-        );
-        setNatureOfOccupationOptions(
-          normalizeOptions(occupationsData, defaultNatureOfOccupationOptions)
-        );
+        setWorkingLocationTypes(toOptionItems(typesData));
+        setDistricts(toOptionItems(districtsData));
+        setDesignationOptions(toOptionItems(designationsData));
+        setNatureOfOccupationOptions(toOptionItems(occupationsData));
       } catch (error) {
         console.error("Failed to load master data:", error);
-        setDesignationOptions(defaultDesignationOptions);
-        setNatureOfOccupationOptions(defaultNatureOfOccupationOptions);
       }
     };
 
@@ -279,10 +277,7 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     const fetchMember = async () => {
       try {
-        const res = await fetch(
-          `http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`
-        );
-
+        const res = await fetch(`http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`);
         if (!res.ok) throw new Error("Failed to load member");
 
         const data = await res.json();
@@ -293,15 +288,9 @@ export default function ChangeMemberTransferForm() {
           dateOfBirth: formatDisplayValue(data.dateOfBirth || data.dob),
           nicNumber: formatDisplayValue(data.nicNumber || data.nic),
           gender: formatDisplayValue(data.gender),
-          preferredLanguage: formatDisplayValue(
-            data.preferredLanguage || data.language
-          ),
-          permanentPrivateAddress: formatDisplayValue(
-            data.permanentPrivateAddress || data.address
-          ),
-          privateTelephone: formatDisplayValue(
-            data.privateTelephone || data.telephone
-          ),
+          preferredLanguage: formatDisplayValue(data.preferredLanguage || data.language),
+          permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress || data.address),
+          privateTelephone: formatDisplayValue(data.privateTelephone || data.telephone),
           mobileNumber: formatDisplayValue(data.mobileNumber || data.mobile),
           emailAddress: formatDisplayValue(data.emailAddress || data.email),
           designation: formatDisplayValue(data.designation),
@@ -325,6 +314,30 @@ export default function ChangeMemberTransferForm() {
   }, []);
 
   useEffect(() => {
+    if (!oldValues || isExistingRequest) return;
+
+    reset({
+      designationNew: findOptionIdByName(designationOptions, oldValues.designation),
+      natureOfOccupationNew: findOptionIdByName(natureOfOccupationOptions, oldValues.natureOfOccupation),
+      workingLocationTypeNew: findOptionIdByName(workingLocationTypes, oldValues.workingLocationType),
+      educationalDistrictNew: findOptionIdByName(districts, oldValues.educationalDistrict),
+      educationalZoneNew: "",
+      workingLocationNew: "",
+      workingLocationAddressNew: oldValues.permanentPrivateAddress || "",
+      computerNoNameNew: oldValues.computerNoName || "",
+      salaryPayingOfficeNew: oldValues.salaryPayingOffice || "",
+    } as any);
+  }, [
+    oldValues,
+    isExistingRequest,
+    designationOptions,
+    natureOfOccupationOptions,
+    workingLocationTypes,
+    districts,
+    reset,
+  ]);
+
+  useEffect(() => {
     if (!requestKey) {
       setLoadedRecord(null);
       return;
@@ -333,19 +346,12 @@ export default function ChangeMemberTransferForm() {
     const fetchRequest = async () => {
       try {
         const res = await fetch("http://localhost:8080/api/member-transfers");
-
         if (!res.ok) throw new Error("Failed to load member transfer request");
 
         const data: MemberTransferRecord[] = await res.json();
-
-        const found = data.find((item) => {
-          const idMatches = String(item.id) === requestKey;
-          const requestMatches = item.requestId === requestKey;
-          return idMatches || requestMatches;
-        });
+        const found = data.find((item) => String(item.id) === requestKey || item.requestId === requestKey);
 
         if (!found) throw new Error("Member transfer request not found");
-
         setLoadedRecord(found);
       } catch (error) {
         console.error("Failed to load member transfer request:", error);
@@ -360,21 +366,18 @@ export default function ChangeMemberTransferForm() {
     if (!loadedRecord) return;
 
     reset({
-      designationNew: loadedRecord.designationNew || "",
-      natureOfOccupationNew: loadedRecord.natureOfOccupationNew || "",
-      workingLocationTypeNew: loadedRecord.workingLocationTypeNew || "",
-      educationalDistrictNew: loadedRecord.educationalDistrictNew || "",
-      educationalZoneNew: loadedRecord.educationalZoneNew || "",
-      workingLocationNew: loadedRecord.workingLocationNew || "",
-      workingLocationAddressNew:
-        loadedRecord.workingLocationAddressNew || "",
-      computerNoNameNew: loadedRecord.computerNoNameNew || "",
-      salaryPayingOfficeNew: loadedRecord.salaryPayingOfficeNew || "",
-    });
+      designationNew: String(loadedRecord.newDesignationId || loadedRecord.designationNew || ""),
+      natureOfOccupationNew: String(loadedRecord.newNatureOfOccupationId || loadedRecord.natureOfOccupationNew || ""),
+      workingLocationTypeNew: String(loadedRecord.newWorkingLocationTypeId || loadedRecord.workingLocationTypeNew || ""),
+      educationalDistrictNew: String(loadedRecord.newEducationalDistrictId || loadedRecord.educationalDistrictNew || ""),
+      educationalZoneNew: String(loadedRecord.newEducationalZoneId || loadedRecord.educationalZoneNew || ""),
+      workingLocationNew: String(loadedRecord.newWorkingLocationId || loadedRecord.workingLocationNew || ""),
+      workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || loadedRecord.workingLocationAddressNew || "",
+      computerNoNameNew: loadedRecord.newComputerNoInPayslip || loadedRecord.computerNoNameNew || "",
+      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || loadedRecord.salaryPayingOfficeNew || "",
+    } as any);
 
-    setRequestId(
-      loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null)
-    );
+    setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
     setMemberTransferRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
   }, [loadedRecord, reset]);
@@ -388,9 +391,7 @@ export default function ChangeMemberTransferForm() {
     const fetchUploadedDocuments = async () => {
       try {
         const res = await fetch(
-          `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
-            String(requestId)
-          )}`
+          `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(requestId))}`
         );
 
         if (!res.ok) {
@@ -415,21 +416,16 @@ export default function ChangeMemberTransferForm() {
       return;
     }
 
-    // Dropdown stores type.name as the form value — match by name
-    const foundType = workingLocationTypes.find(
-      (type: any) => String(type.name) === String(selectedWorkingLocationType)
-    );
-
-    // API returns camelCase 'usesZone', not snake_case 'uses_zone'
-    const usesZone = foundType ? Boolean(foundType.usesZone) : true;
+    const foundType = workingLocationTypes.find((type) => type.id === String(selectedWorkingLocationType));
+    const usesZone = foundType ? Boolean(foundType.raw?.usesZone) : true;
 
     setIsZoneEnabled(usesZone);
 
-    setValue("educationalDistrictNew", "");
-    setValue("educationalZoneNew", usesZone ? "" : "NA");
-    setValue("workingLocationNew", "");
-    setValue("workingLocationAddressNew", "");
-    setValue("salaryPayingOfficeNew", "");
+    setValue("educationalDistrictNew", "" as any);
+    setValue("educationalZoneNew", (usesZone ? "" : "NA") as any);
+    setValue("workingLocationNew", "" as any);
+    setValue("workingLocationAddressNew", "" as any);
+    setValue("salaryPayingOfficeNew", "" as any);
 
     setZones([]);
     setWorkingLocations([]);
@@ -442,10 +438,10 @@ export default function ChangeMemberTransferForm() {
       return;
     }
 
-    setValue("educationalZoneNew", isZoneEnabled ? "" : "NA");
-    setValue("workingLocationNew", "");
-    setValue("workingLocationAddressNew", "");
-    setValue("salaryPayingOfficeNew", "");
+    setValue("educationalZoneNew", (isZoneEnabled ? "" : "NA") as any);
+    setValue("workingLocationNew", "" as any);
+    setValue("workingLocationAddressNew", "" as any);
+    setValue("salaryPayingOfficeNew", "" as any);
 
     setWorkingLocations([]);
     setSalaryOptions([]);
@@ -455,9 +451,7 @@ export default function ChangeMemberTransferForm() {
     const fetchZones = async () => {
       try {
         const res = await fetch(
-          `http://localhost:8080/api/masters/educational-zones?district=${encodeURIComponent(
-            selectedDistrict
-          )}`
+          `http://localhost:8080/api/masters/educational-zones?district=${encodeURIComponent(String(selectedDistrict))}`
         );
 
         if (!res.ok) {
@@ -466,7 +460,7 @@ export default function ChangeMemberTransferForm() {
         }
 
         const data = await res.json();
-        setZones(data);
+        setZones(toOptionItems(data));
       } catch (error) {
         console.error("Failed to load zones:", error);
         setZones([]);
@@ -477,9 +471,9 @@ export default function ChangeMemberTransferForm() {
   }, [selectedDistrict, isZoneEnabled, setValue]);
 
   useEffect(() => {
-    setValue("workingLocationNew", "");
-    setValue("workingLocationAddressNew", "");
-    setValue("salaryPayingOfficeNew", "");
+    setValue("workingLocationNew", "" as any);
+    setValue("workingLocationAddressNew", "" as any);
+    setValue("salaryPayingOfficeNew", "" as any);
     setSalaryOptions([]);
 
     if (!selectedWorkingLocationType || !selectedDistrict) {
@@ -494,23 +488,15 @@ export default function ChangeMemberTransferForm() {
 
     const fetchWorkingLocations = async () => {
       try {
-        // Resolve the numeric type ID from the selected name
-        const foundType = workingLocationTypes.find(
-          (t: any) => String(t.name) === String(selectedWorkingLocationType)
-        );
-        const typeId = foundType ? String(foundType.id) : selectedWorkingLocationType;
-
         const params = new URLSearchParams();
-        params.append("type", typeId);
-        params.append("district", selectedDistrict);
+        params.append("type", String(selectedWorkingLocationType));
+        params.append("district", String(selectedDistrict));
 
         if (isZoneEnabled && selectedZone) {
-          params.append("zone", selectedZone);
+          params.append("zone", String(selectedZone));
         }
 
-        const res = await fetch(
-          `http://localhost:8080/api/masters/working-locations?${params.toString()}`
-        );
+        const res = await fetch(`http://localhost:8080/api/masters/working-locations?${params.toString()}`);
 
         if (!res.ok) {
           setWorkingLocations([]);
@@ -518,7 +504,7 @@ export default function ChangeMemberTransferForm() {
         }
 
         const data = await res.json();
-        setWorkingLocations(data);
+        setWorkingLocations(toOptionItems(data));
       } catch (error) {
         console.error("Failed to load working locations:", error);
         setWorkingLocations([]);
@@ -526,31 +512,22 @@ export default function ChangeMemberTransferForm() {
     };
 
     fetchWorkingLocations();
-  }, [
-    selectedWorkingLocationType,
-    selectedDistrict,
-    selectedZone,
-    isZoneEnabled,
-    setValue,
-  ]);
+  }, [selectedWorkingLocationType, selectedDistrict, selectedZone, isZoneEnabled, setValue]);
 
   useEffect(() => {
     if (!selectedWorkingLocation) return;
 
-    const found = workingLocations.find(
-      (loc: any) =>
-        String(loc.name || loc.label || loc.id) === String(selectedWorkingLocation)
-    );
+    const found = workingLocations.find((loc) => loc.id === String(selectedWorkingLocation));
 
     if (found) {
-      setValue(
-        "workingLocationAddressNew",
-        found.address || found.locationAddress || ""
-      );
+      const address = found.raw?.address || found.raw?.locationAddress || "";
+      const salaryPayingOffice = found.raw?.salaryPayingOffice || "";
 
-      if (found.salaryPayingOffice) {
-        setValue("salaryPayingOfficeNew", found.salaryPayingOffice);
-        setSalaryOptions([found.salaryPayingOffice]);
+      setValue("workingLocationAddressNew", address as any);
+
+      if (salaryPayingOffice) {
+        setValue("salaryPayingOfficeNew", salaryPayingOffice as any);
+        setSalaryOptions([salaryPayingOffice]);
       }
 
       return;
@@ -558,23 +535,14 @@ export default function ChangeMemberTransferForm() {
 
     const fetchLocationDetails = async () => {
       try {
-        const res = await fetch(
-          `http://localhost:8080/api/working-locations/${encodeURIComponent(
-            selectedWorkingLocation
-          )}`
-        );
-
+        const res = await fetch(`http://localhost:8080/api/working-locations/${encodeURIComponent(String(selectedWorkingLocation))}`);
         if (!res.ok) return;
 
         const data = await res.json();
-
-        setValue(
-          "workingLocationAddressNew",
-          data.address || data.locationAddress || ""
-        );
+        setValue("workingLocationAddressNew", (data.address || data.locationAddress || "") as any);
 
         if (data.salaryPayingOffice) {
-          setValue("salaryPayingOfficeNew", data.salaryPayingOffice);
+          setValue("salaryPayingOfficeNew", data.salaryPayingOffice as any);
           setSalaryOptions([data.salaryPayingOffice]);
         }
       } catch (error) {
@@ -586,17 +554,29 @@ export default function ChangeMemberTransferForm() {
   }, [selectedWorkingLocation, workingLocations, setValue]);
 
   const onSubmit = async (data: MemberTransferFormData) => {
-    const confirmSubmit = window.confirm(
-      "After submitting, this request cannot be edited. Do you want to continue?"
-    );
+    const confirmSubmit = window.confirm("After submitting, this request cannot be edited. Do you want to continue?");
     if (!confirmSubmit) return;
 
     setIsSubmitting(true);
-    try {                                              
+    try {
       const payload = {
-        ...data,
         memberId: HARDCODED_MEMBER_ID,
+        requestedDate: new Date().toISOString().slice(0, 10),
+
+        newWorkingLocationTypeId: toNullableNumber((data as any).workingLocationTypeNew),
+        newEducationalDistrictId: toNullableNumber((data as any).educationalDistrictNew),
+        newEducationalZoneId: toNullableNumber((data as any).educationalZoneNew),
+        newWorkingLocationId: toNullableNumber((data as any).workingLocationNew),
+        newDesignationId: toNullableNumber((data as any).designationNew),
+        newNatureOfOccupationId: toNullableNumber((data as any).natureOfOccupationNew),
+
+        newWorkingLocationAddress: (data as any).workingLocationAddressNew || "",
+        newSalaryPayingOffice: (data as any).salaryPayingOfficeNew || "",
+        newComputerNoInPayslip: (data as any).computerNoNameNew || "",
       };
+
+      console.log("FORM DATA:", data);
+      console.log("DTO PAYLOAD:", payload);
 
       const res = await fetch("http://localhost:8080/api/member-transfers/submit", {
         method: "POST",
@@ -639,38 +619,29 @@ export default function ChangeMemberTransferForm() {
     router.replace(`?${params.toString()}`);
   };
 
-  const updateTransferStatus = (
-    nextStatus: typeof status,
-    reason?: string
-  ) => {
+  const updateTransferStatus = (nextStatus: typeof status, reason?: string) => {
     setStatus(nextStatus);
 
     setLoadedRecord((prev) =>
       prev
         ? {
-          ...prev,
-          status: nextStatus,
-          decisionReason:
-            nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
-        }
+            ...prev,
+            status: nextStatus,
+            decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+          }
         : prev
     );
   };
 
   const handleApproveTransfer = async () => {
     if (!requestId) return;
-
     const confirmApprove = window.confirm("Approve this member transfer?");
-
     if (!confirmApprove) return;
 
     try {
-      const res = await fetch(
-        `http://localhost:8080/api/member-transfers/approve/${requestId}`,
-        {
-          method: "POST",
-        }
-      );
+      const res = await fetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
+        method: "POST",
+      });
 
       if (!res.ok) {
         setPopupMessage("Failed to approve request");
@@ -679,7 +650,6 @@ export default function ChangeMemberTransferForm() {
       }
 
       const updated = await res.json();
-
       updateTransferStatus(updated.status || "APPROVED");
       setPopupMessage("Member transfer approved successfully");
       setShowPopup(true);
@@ -692,7 +662,6 @@ export default function ChangeMemberTransferForm() {
 
   const handleRejectTransfer = () => {
     if (!requestId) return;
-
     setRejectReason("");
     setShowRejectModal(true);
   };
@@ -701,14 +670,11 @@ export default function ChangeMemberTransferForm() {
     if (!requestId || rejectReason.trim() === "") return;
 
     try {
-      const res = await fetch(
-        `http://localhost:8080/api/member-transfers/reject/${requestId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decisionReason: rejectReason.trim() }),
-        }
-      );
+      const res = await fetch(`http://localhost:8080/api/member-transfers/reject/${requestId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisionReason: rejectReason.trim() }),
+      });
 
       if (!res.ok) {
         setPopupMessage("Failed to reject request");
@@ -717,7 +683,6 @@ export default function ChangeMemberTransferForm() {
       }
 
       const updated = await res.json();
-
       updateTransferStatus(updated.status || "REJECTED", rejectReason.trim());
       setShowRejectModal(false);
       setPopupMessage("Member transfer rejected successfully");
@@ -737,8 +702,7 @@ export default function ChangeMemberTransferForm() {
         : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
-  const canReviewSubmission =
-    isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
 
   if (loading) return <div className="p-6">Loading...</div>;
 
@@ -761,14 +725,10 @@ export default function ChangeMemberTransferForm() {
                 Member: {member?.fullName} ({member?.memberId})
               </span>
 
-              {(isExistingRequest) && (
+              {isExistingRequest && (
                 <span className="font-semibold text-blue-600">
                   Status: <span>{status}</span>
-                  {statusReason && (
-                    <span className="ml-2 font-normal text-red-600">
-                      ({statusReason})
-                    </span>
-                  )}
+                  {statusReason && <span className="ml-2 font-normal text-red-600">({statusReason})</span>}
                 </span>
               )}
             </p>
@@ -795,45 +755,18 @@ export default function ChangeMemberTransferForm() {
 
         <div className="space-y-6">
           <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Personal Details
-            </h3>
+            <h3 className="mb-4 text-xl font-bold text-[#953002]">Personal Details</h3>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <FieldPair
-                oldLabel="Full Name"
-                oldValue={oldValues.fullName}
-                newLabel="Full Name"
-                newValue={oldValues.fullName}
-              />
-
-              <FieldPair
-                oldLabel="Date of Birth"
-                oldValue={oldValues.dateOfBirth}
-                newLabel="Date of Birth"
-                newValue={oldValues.dateOfBirth}
-              />
-
-              <FieldPair
-                oldLabel="NIC Number"
-                oldValue={oldValues.nicNumber}
-                newLabel="NIC Number"
-                newValue={oldValues.nicNumber}
-              />
-
-              <FieldPair
-                oldLabel="Gender"
-                oldValue={oldValues.gender}
-                newLabel="Gender"
-                newValue={oldValues.gender}
-              />
+              <FieldPair oldLabel="Full Name" oldValue={oldValues.fullName} newLabel="Full Name" newValue={oldValues.fullName} />
+              <FieldPair oldLabel="Date of Birth" oldValue={oldValues.dateOfBirth} newLabel="Date of Birth" newValue={oldValues.dateOfBirth} />
+              <FieldPair oldLabel="NIC Number" oldValue={oldValues.nicNumber} newLabel="NIC Number" newValue={oldValues.nicNumber} />
+              <FieldPair oldLabel="Gender" oldValue={oldValues.gender} newLabel="Gender" newValue={oldValues.gender} />
             </div>
           </section>
 
           <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Occupation Details
-            </h3>
+            <h3 className="mb-4 text-xl font-bold text-[#953002]">Occupation Details</h3>
 
             <div className="grid gap-4 md:grid-cols-2">
               <EditableSelect
@@ -859,9 +792,7 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.workingLocationType}
                 register={register("workingLocationTypeNew")}
                 error={errors.workingLocationTypeNew?.message}
-                options={workingLocationTypes.map(
-                  (type: any) => type.name || type.label || type.id
-                )}
+                options={workingLocationTypes}
                 disabled={isInputsDisabled}
               />
 
@@ -870,11 +801,8 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.educationalDistrict}
                 register={register("educationalDistrictNew")}
                 error={errors.educationalDistrictNew?.message}
-                options={districts.map(
-                  (district: any) => district.name || district.label || district.id
-                )}
-                disabled={
-                  !selectedWorkingLocationType || isInputsDisabled}
+                options={districts}
+                disabled={!selectedWorkingLocationType || isInputsDisabled}
               />
 
               <EditableSelect
@@ -882,16 +810,8 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.educationalZone}
                 register={register("educationalZoneNew")}
                 error={errors.educationalZoneNew?.message}
-                options={
-                  isZoneEnabled
-                    ? zones.map((zone: any) => zone.name || zone.label || zone.id)
-                    : ["NA"]
-                }
-                disabled={
-                  !isZoneEnabled ||
-                  !selectedDistrict ||
-                  isInputsDisabled
-                }
+                options={isZoneEnabled ? zones : [{ id: "NA", name: "NA" }]}
+                disabled={!isZoneEnabled || !selectedDistrict || isInputsDisabled}
               />
 
               <EditableSelect
@@ -899,16 +819,8 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.workingLocation}
                 register={register("workingLocationNew")}
                 error={errors.workingLocationNew?.message}
-                options={workingLocations.map(
-                  (location: any) =>
-                    location.name || location.label || location.id
-                )}
-                disabled={
-                  !selectedWorkingLocationType ||
-                  !selectedDistrict ||
-                  (isZoneEnabled && !selectedZone) ||
-                  isInputsDisabled
-                }
+                options={workingLocations}
+                disabled={!selectedWorkingLocationType || !selectedDistrict || (isZoneEnabled && !selectedZone) || isInputsDisabled}
               />
 
               <EditableInput
@@ -933,26 +845,18 @@ export default function ChangeMemberTransferForm() {
                 oldValue={oldValues.salaryPayingOffice}
                 register={register("salaryPayingOfficeNew")}
                 error={errors.salaryPayingOfficeNew?.message}
-                options={
-                  salaryOptions.length > 0
-                    ? salaryOptions
-                    : [
-                      "Zonal Education Office",
-                      "Provincial Education Office",
-                      "Ministry of Education",
-                    ]
-                }
-                disabled={
-                  !selectedWorkingLocation || isInputsDisabled
-                }
+                options={(salaryOptions.length > 0 ? salaryOptions : [
+                  "Zonal Education Office",
+                  "Provincial Education Office",
+                  "Ministry of Education",
+                ]).map((item) => ({ id: item, name: item }))}
+                disabled={!selectedWorkingLocation || isInputsDisabled}
               />
             </div>
           </section>
 
           <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Supporting Documents
-            </h3>
+            <h3 className="mb-4 text-xl font-bold text-[#953002]">Supporting Documents</h3>
 
             <div className="space-y-4">
               {!isInputsDisabled && (
@@ -976,10 +880,11 @@ export default function ChangeMemberTransferForm() {
                   </div>
 
                   <label
-                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
-                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
-                      : "cursor-not-allowed bg-gray-50 text-gray-400"
-                      }`}
+                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${
+                      selectedDocumentType
+                        ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                        : "cursor-not-allowed bg-gray-50 text-gray-400"
+                    }`}
                   >
                     <input
                       type="file"
@@ -1000,20 +905,14 @@ export default function ChangeMemberTransferForm() {
                       }}
                     />
                     <UploadCloud className="mb-2 h-8 w-8 text-[#953002]" />
-                    <p>
-                      {selectedDocumentType
-                        ? "Click to upload selected document"
-                        : "Select a document type first"}
-                    </p>
+                    <p>{selectedDocumentType ? "Click to upload selected document" : "Select a document type first"}</p>
                   </label>
                 </>
               )}
 
               {isInputsDisabled && (
                 <div className="rounded-lg border border-dashed bg-gray-50 p-6 text-center text-sm text-gray-500">
-                  {isSubmitted
-                    ? "Document upload is disabled after submission."
-                    : "Cannot upload files in view mode."}
+                  {isSubmitted ? "Document upload is disabled after submission." : "Cannot upload files in view mode."}
                 </div>
               )}
 
@@ -1032,28 +931,18 @@ export default function ChangeMemberTransferForm() {
                       {documentFiles.map((item, index) => (
                         <tr key={`${item.file.name}-${index}`} className="border-t">
                           <td className="px-3 py-2">
-                            {requiredDocumentTypes.find(
-                              (t) => t.documentType === item.documentType
-                            )?.displayName || item.documentType}
+                            {requiredDocumentTypes.find((t) => t.documentType === item.documentType)?.displayName || item.documentType}
                           </td>
-                          <td className="px-3 py-2 font-medium text-gray-700">
-                            {item.file.name}
-                          </td>
+                          <td className="px-3 py-2 font-medium text-gray-700">{item.file.name}</td>
                           <td className="px-3 py-2 text-gray-600">
-                            {item.uploadedAt
-                              ? new Date(item.uploadedAt).toLocaleString()
-                              : "—"}
+                            {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : "—"}
                           </td>
                           {!isInputsDisabled && (
                             <td className="px-3 py-2">
                               <Button
                                 type="button"
                                 variant="ghost"
-                                onClick={() =>
-                                  setDocumentFiles((prev) =>
-                                    prev.filter((_, i) => i !== index)
-                                  )
-                                }
+                                onClick={() => setDocumentFiles((prev) => prev.filter((_, i) => i !== index))}
                                 className="text-red-600"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1071,30 +960,16 @@ export default function ChangeMemberTransferForm() {
 
           {uploadedDocuments.length > 0 && (
             <section className="rounded-lg border bg-white p-4">
-              <h3 className="mb-4 text-xl font-bold text-[#953002]">
-                Uploaded Documents
-              </h3>
+              <h3 className="mb-4 text-xl font-bold text-[#953002]">Uploaded Documents</h3>
 
               <div className="space-y-3">
                 {uploadedDocuments.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3"
-                  >
+                  <div key={doc.id} className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
                     <div className="flex-1">
-                      <p className="font-semibold text-gray-800">
-                        {doc.documentType || "Document"}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-600">
-                        {doc.fileName || "Unnamed file"}
-                      </p>
+                      <p className="font-semibold text-gray-800">{doc.documentType || "Document"}</p>
+                      <p className="mt-1 text-xs text-gray-600">{doc.fileName || "Unnamed file"}</p>
 
-                      {doc.uploadedAt && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          Uploaded:{" "}
-                          {new Date(doc.uploadedAt).toLocaleDateString()}
-                        </p>
-                      )}
+                      {doc.uploadedAt && <p className="mt-1 text-xs text-gray-500">Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</p>}
                     </div>
 
                     {doc.fileUrl && (
@@ -1115,19 +990,11 @@ export default function ChangeMemberTransferForm() {
 
           {canReviewSubmission && (
             <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                className="bg-green-100 text-green-600 hover:bg-green-200"
-                onClick={handleApproveTransfer}
-              >
+              <Button type="button" className="bg-green-100 text-green-600 hover:bg-green-200" onClick={handleApproveTransfer}>
                 Approve
               </Button>
 
-              <Button
-                type="button"
-                className="bg-red-100 text-red-600 hover:bg-red-200"
-                onClick={handleRejectTransfer}
-              >
+              <Button type="button" className="bg-red-100 text-red-600 hover:bg-red-200" onClick={handleRejectTransfer}>
                 Reject
               </Button>
             </div>
@@ -1138,18 +1005,10 @@ export default function ChangeMemberTransferForm() {
       {showPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              POPUP MESSAGE
-            </h3>
-
+            <h3 className="mb-3 text-lg font-semibold text-[#953002]">POPUP MESSAGE</h3>
             <p className="mb-5 text-sm text-black">{popupMessage}</p>
-
             <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setShowPopup(false)}
-                className="bg-[#953002] text-white hover:bg-[#7a2500]"
-              >
+              <Button type="button" onClick={() => setShowPopup(false)} className="bg-[#953002] text-white hover:bg-[#7a2500]">
                 OK
               </Button>
             </div>
@@ -1160,13 +1019,8 @@ export default function ChangeMemberTransferForm() {
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="text-lg font-semibold text-[#953002]">
-              Reject Member Transfer
-            </h3>
-
-            <p className="mt-1 text-sm text-gray-600">
-              Enter the reason for rejection.
-            </p>
+            <h3 className="text-lg font-semibold text-[#953002]">Reject Member Transfer</h3>
+            <p className="mt-1 text-sm text-gray-600">Enter the reason for rejection.</p>
 
             <div className="mt-4">
               <textarea
@@ -1178,11 +1032,7 @@ export default function ChangeMemberTransferForm() {
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowRejectModal(false)}
-              >
+              <Button type="button" variant="outline" onClick={() => setShowRejectModal(false)}>
                 Cancel
               </Button>
 
@@ -1216,16 +1066,12 @@ function FieldPair({
   return (
     <>
       <div>
-        <label className="mb-1 block text-sm text-gray-600">
-          {oldLabel} Current
-        </label>
+        <label className="mb-1 block text-sm text-gray-600">{oldLabel} Current</label>
         <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm text-gray-600">
-          {newLabel} New
-        </label>
+        <label className="mb-1 block text-sm text-gray-600">{newLabel} New</label>
         <Input value={formatDisplayValue(newValue)} disabled readOnly />
       </div>
     </>
@@ -1243,23 +1089,17 @@ function EditableInput({
   return (
     <>
       <div>
-        <label className="mb-1 block text-sm text-gray-600">
-          {label} Current
-        </label>
+        <label className="mb-1 block text-sm text-gray-600">{label} (Current)</label>
         <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm text-gray-600">
-          {label} New
-        </label>
-
+        <label className="mb-1 block text-sm text-gray-600">{label} (New)</label>
         {typeof value !== "undefined" ? (
-          <Input value={value || ""} disabled={disabled}  readOnly />
+          <Input {...register} value={value || ""} disabled={disabled} readOnly />
         ) : (
-          <Input {...register} disabled={disabled} />
+          <Input {...register} disabled={disabled}  />
         )}
-
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
       </div>
     </>
@@ -1273,7 +1113,14 @@ function EditableSelect({
   error,
   options = [],
   disabled = false,
-}: any) {
+}: {
+  label: string;
+  oldValue: string;
+  register: any;
+  error?: string;
+  options: OptionItem[];
+  disabled?: boolean;
+}) {
   const selectId = label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -1282,15 +1129,13 @@ function EditableSelect({
   return (
     <>
       <div>
-        <label className="mb-1 block text-sm text-gray-600">
-          {label} Current
-        </label>
+        <label className="mb-1 block text-sm text-gray-600">{label} (Current)</label>
         <Input value={formatDisplayValue(oldValue)} disabled />
       </div>
 
       <div>
         <label htmlFor={selectId} className="mb-1 block text-sm text-gray-600">
-          {label} New
+          {label} (New)
         </label>
 
         <select
@@ -1300,10 +1145,9 @@ function EditableSelect({
           className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
         >
           <option value="">{formatDisplayValue(oldValue)}</option>
-
-          {options.map((option: string) => (
-            <option key={formatDisplayValue(option)} value={formatDisplayValue(option)}>
-              {formatDisplayValue(option)}
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
             </option>
           ))}
         </select>
