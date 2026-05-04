@@ -28,6 +28,10 @@ import {
   type DocumentSummaryDTO,
   type DocumentType,
 } from "@/lib/api/documents";
+import {
+  getEducationalDistricts,
+  getEducationalZonesByDistrict,
+} from "@/lib/api/education";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Checkbox } from "@/src/components/ui/checkbox";
@@ -168,6 +172,7 @@ export function NewMemberRegistrationForm({
   onDone,
 }: NewMemberRegistrationFormProps) {
   const { addToast } = useToast();
+  const addToastRef = useRef(addToast);
   const isEditMode = !!applicationId;
   const [currentTab, setCurrentTab] = useState<"application" | "documents">(
     "application"
@@ -186,6 +191,10 @@ export function NewMemberRegistrationForm({
     null
   );
   const [nicValidationError, setNicValidationError] = useState(false);
+  const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+  const [zoneOptions, setZoneOptions] = useState<string[]>([]);
+  const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
+  const [isLoadingZones, setIsLoadingZones] = useState(false);
   // Map of documentType -> { id, url, fileName } for previewing already-uploaded files
   const [existingDocumentUrls, setExistingDocumentUrls] = useState<
     Record<string, { id: number; url: string; fileName: string }>
@@ -252,9 +261,6 @@ export function NewMemberRegistrationForm({
     if (value === "INACTIVE") return "Inactive";
     return "New";
   };
-
-  const mapIdentificationToForm = (value?: Identification): string =>
-    value ?? "NIC";
 
   const parseIdentificationDetails = (
     value?: string
@@ -344,7 +350,7 @@ export function NewMemberRegistrationForm({
       workingLocationType: "",
       designation: "",
       natureOfOccupation: "Permanent",
-      educationalDistrict: "Colombo",
+      educationalDistrict: "",
       educationalZone: "",
       workingLocationAddress: "",
       nomineeRelationship: "",
@@ -379,6 +385,7 @@ export function NewMemberRegistrationForm({
     register,
     reset,
     setValue,
+    getValues,
     watch,
     handleSubmit,
     formState: { errors },
@@ -389,6 +396,99 @@ export function NewMemberRegistrationForm({
 
   const selectedIdentificationTypes = watch("identificationTypes");
   const selectedIdentificationNumbers = watch("identificationNumbers");
+  const selectedDistrict = watch("educationalDistrict");
+
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadDistricts = async () => {
+      setIsLoadingDistricts(true);
+      try {
+        const districts = await getEducationalDistricts();
+        if (isCancelled) return;
+        setDistrictOptions(districts);
+
+        const currentDistrict = getValues("educationalDistrict");
+        if (!currentDistrict && districts.length > 0) {
+          setValue("educationalDistrict", districts[0], {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load educational districts";
+          addToastRef.current(message, "destructive");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingDistricts(false);
+        }
+      }
+    };
+
+    void loadDistricts();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [addToast, getValues, setValue]);
+
+  useEffect(() => {
+    if (!selectedDistrict) {
+      setZoneOptions([]);
+      setValue("educationalZone", "", {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadZones = async () => {
+      setIsLoadingZones(true);
+      try {
+        const zones = await getEducationalZonesByDistrict(selectedDistrict);
+        if (isCancelled) return;
+
+        setZoneOptions(zones);
+        const currentZone = getValues("educationalZone");
+        if (!currentZone || !zones.includes(currentZone)) {
+          setValue("educationalZone", zones[0] ?? "", {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load educational zones";
+          addToastRef.current(message, "destructive");
+          setZoneOptions([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingZones(false);
+        }
+      }
+    };
+
+    void loadZones();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [addToast, getValues, selectedDistrict, setValue]);
 
   useEffect(() => {
     const targetApplicationId = applicationId ?? null;
@@ -501,7 +601,7 @@ export function NewMemberRegistrationForm({
             error instanceof Error
               ? error.message
               : "Failed to load application details";
-          addToast(message, "destructive");
+          addToastRef.current(message, "destructive");
         }
       } finally {
         if (!isCancelled) {
@@ -652,16 +752,6 @@ export function NewMemberRegistrationForm({
     const updated = await getDocumentSummary(savedApplicationId);
     setDocumentSummary(updated);
   };
-
-  const districtZoneMap: Record<string, string[]> = {
-    Colombo: ["Colombo South", "Colombo North", "Homagama"],
-    Kandy: ["Kandy", "Gampola", "Katugastota"],
-    Galle: ["Galle", "Elpitiya", "Ambalangoda"],
-    Matara: ["Matara", "Akuressa", "Weligama"],
-    Jaffna: ["Jaffna", "Nallur", "Chavakachcheri"],
-    Gampaha: ["Gampaha", "Negombo", "Minuwangoda"],
-  };
-  const selectedDistrict = watch("educationalDistrict");
 
   return (
     <Tabs
@@ -1020,22 +1110,28 @@ export function NewMemberRegistrationForm({
                           value={field.value}
                           onValueChange={(value) => {
                             field.onChange(value);
-                            const zones = districtZoneMap[value] ?? [];
-                            const firstZone =
-                              zones.length > 0 ? zones[0] : "";
-                            setValue("educationalZone", firstZone);
+                            setValue("educationalZone", "", {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
                           }}
+                          disabled={isLoadingDistricts || districtOptions.length === 0}
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select District" />
+                            <SelectValue
+                              placeholder={
+                                isLoadingDistricts
+                                  ? "Loading Districts..."
+                                  : "Select District"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Colombo">Colombo</SelectItem>
-                            <SelectItem value="Kandy">Kandy</SelectItem>
-                            <SelectItem value="Galle">Galle</SelectItem>
-                            <SelectItem value="Matara">Matara</SelectItem>
-                            <SelectItem value="Jaffna">Jaffna</SelectItem>
-                            <SelectItem value="Gampaha">Gampaha</SelectItem>
+                            {districtOptions.map((district) => (
+                              <SelectItem key={district} value={district}>
+                                {district}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       )}
@@ -1049,18 +1145,29 @@ export function NewMemberRegistrationForm({
                       name="educationalZone"
                       control={control}
                       render={({ field }) => {
-                        const zones = districtZoneMap[selectedDistrict] ?? [];
-
                         return (
                           <Select
                             value={field.value}
                             onValueChange={field.onChange}
+                            disabled={
+                              !selectedDistrict ||
+                              isLoadingZones ||
+                              zoneOptions.length === 0
+                            }
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select Zone" />
+                              <SelectValue
+                                placeholder={
+                                  !selectedDistrict
+                                    ? "Select District First"
+                                    : isLoadingZones
+                                      ? "Loading Zones..."
+                                      : "Select Zone"
+                                }
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              {zones.map((zone) => (
+                              {zoneOptions.map((zone) => (
                                 <SelectItem key={zone} value={zone}>
                                   {zone}
                                 </SelectItem>
