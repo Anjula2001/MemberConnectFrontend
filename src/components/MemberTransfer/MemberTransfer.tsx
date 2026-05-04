@@ -703,6 +703,7 @@ export default function ChangeMemberTransferForm() {
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
   const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const showRequestStatus = Boolean(requestId || isExistingRequest);
 
   if (loading) return <div className="p-6">Loading...</div>;
 
@@ -720,12 +721,12 @@ export default function ChangeMemberTransferForm() {
               {memberTransferRequestNo && `: ${memberTransferRequestNo}`}
             </h2>
 
-            <p className="mt-2 flex items-center gap-8 text-sm text-gray-600">
+            <p className="mt-2 flex items-center gap-4 text-sm text-gray-600">
               <span>
                 Member: {member?.fullName} ({member?.memberId})
               </span>
 
-              {isExistingRequest && (
+              {showRequestStatus && (
                 <span className="font-semibold text-blue-600">
                   Status: <span>{status}</span>
                   {statusReason && <span className="ml-2 font-normal text-red-600">({statusReason})</span>}
