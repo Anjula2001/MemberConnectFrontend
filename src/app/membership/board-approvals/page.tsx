@@ -40,12 +40,16 @@ import {
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
 import { createMember, type MemberDTO } from "@/lib/api/member";
+import {
+  getTerminationApprovalLists,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
 
 type BoardMeeting = BoardMeetingDTO & {
   date: string;
 };
 
-type BoardTab = "meetings" | "approval-lists";
+type BoardTab = "meetings" | "approval-lists" | "termination-lists";
 
 type ApplicationDecision = "Approve" | "Reject";
 
@@ -112,6 +116,11 @@ export default function BoardApprovalsPage() {
   );
   const [showProcessToast, setShowProcessToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+
+  // ── Termination Approval Lists state ──────────────────────────────────────
+  const [terminationLists, setTerminationLists] = useState<TerminationApprovalListDTO[]>([]);
+  const [isLoadingTerminationLists, setIsLoadingTerminationLists] = useState(false);
+  const [selectedTerminationList, setSelectedTerminationList] = useState<TerminationApprovalListDTO | null>(null);
   const [showApplicationDetailsModal, setShowApplicationDetailsModal] = useState(false);
   const [selectedApplicationForDetails, setSelectedApplicationForDetails] = useState<ApprovalApplication | null>(null);
   const [selectedApplicationDetails, setSelectedApplicationDetails] = useState<ApprovalApplication | null>(null);
@@ -215,12 +224,12 @@ export default function BoardApprovalsPage() {
       const newMeeting = await createBoardMeeting({
         scheduledDate: selectedDate,
       });
-      
+
       const formattedMeeting = {
         ...newMeeting,
         date: newMeeting.scheduledDate,
       };
-      
+
       setCreatedMeetings((prev) => [formattedMeeting, ...prev]);
       setSelectedDate("");
       setToastMessage("Board meeting created successfully");
@@ -298,10 +307,10 @@ export default function BoardApprovalsPage() {
         prev.map((meeting) =>
           meeting.id === pendingEditMeeting.id
             ? {
-                ...meeting,
-                ...updatedMeeting,
-                date: updatedMeeting.scheduledDate ?? editedMeetingDate,
-              }
+              ...meeting,
+              ...updatedMeeting,
+              date: updatedMeeting.scheduledDate ?? editedMeetingDate,
+            }
             : meeting
         )
       );
@@ -605,23 +614,46 @@ export default function BoardApprovalsPage() {
         <Button
           type="button"
           variant={activeTab === "approval-lists" ? "secondary" : "ghost"}
-          className={`h-8 rounded-sm px-3 text-xs ${
-            activeTab === "approval-lists"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
-          }`}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTab === "approval-lists"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
+            }`}
           onClick={() => setActiveTab("approval-lists")}
         >
           Board Approval Lists
         </Button>
         <Button
           type="button"
+          variant={activeTab === "termination-lists" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTab === "termination-lists"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
+            }`}
+          onClick={async () => {
+            setActiveTab("termination-lists");
+            if (terminationLists.length === 0) {
+              setIsLoadingTerminationLists(true);
+              try {
+                const data = await getTerminationApprovalLists();
+                setTerminationLists(data);
+              } catch {
+                setToastMessage("Failed to load termination approval lists");
+                setShowProcessToast(true);
+              } finally {
+                setIsLoadingTerminationLists(false);
+              }
+            }
+          }}
+        >
+          Termination Approval Lists
+        </Button>
+        <Button
+          type="button"
           variant={activeTab === "meetings" ? "secondary" : "ghost"}
-          className={`h-8 rounded-sm px-3 text-xs ${
-            activeTab === "meetings"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
-          }`}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTab === "meetings"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
+            }`}
           onClick={() => setActiveTab("meetings")}
         >
           Board Meetings
@@ -790,9 +822,8 @@ export default function BoardApprovalsPage() {
                           setBoardRemarks("");
                           setIsEditingProcessedList(false);
                         }}
-                        className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${
-                          selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
-                        }`}
+                        className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
+                          }`}
                       >
                         <div className="leading-tight">
                           <p className="text-sm font-medium text-gray-800">{item.listId ?? "-"}</p>
@@ -906,11 +937,10 @@ export default function BoardApprovalsPage() {
                               <td className="py-3 pr-3">
                                 {selectedProcessedState && !isEditingProcessedList ? (
                                   <span
-                                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${
-                                      selectedProcessedState.decision === "Approve"
-                                        ? "bg-green-600"
-                                        : "bg-rose-600"
-                                    }`}
+                                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${selectedProcessedState.decision === "Approve"
+                                      ? "bg-green-600"
+                                      : "bg-rose-600"
+                                      }`}
                                   >
                                     {selectedProcessedState.decision === "Approve"
                                       ? "Approved"
@@ -994,6 +1024,224 @@ export default function BoardApprovalsPage() {
                           {isEditingProcessedList ? "Update" : "Proceed"}
                           <ArrowRight size={14} />
                         </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {activeTab === "termination-lists" && (
+        <>
+          {/* Search / Refresh bar */}
+          <Card className="rounded-xl py-0 shadow-sm">
+            <CardHeader className="px-5 pt-5 pb-3">
+              <CardTitle className="text-4 font-bold text-[#953002]">
+                Termination Approval Lists
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-5">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={isLoadingTerminationLists}
+                  onClick={async () => {
+                    setIsLoadingTerminationLists(true);
+                    setSelectedTerminationList(null);
+                    try {
+                      const data = await getTerminationApprovalLists();
+                      setTerminationLists(data);
+                    } catch {
+                      setToastMessage("Failed to load termination approval lists");
+                      setShowProcessToast(true);
+                    } finally {
+                      setIsLoadingTerminationLists(false);
+                    }
+                  }}
+                >
+                  <Search size={14} />
+                  {isLoadingTerminationLists ? "Loading..." : "Retrieve"}
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {terminationLists.length > 0 && `${terminationLists.length} list(s) found`}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Two-panel layout */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+            {/* Left — list panel */}
+            <Card className="rounded-xl py-0 shadow-sm">
+              <CardHeader className="px-5 pt-5 pb-3">
+                <CardTitle className="text-4 font-bold text-[#953002]">Lists</CardTitle>
+                <p className="text-sm text-muted-foreground">Select a list to view details</p>
+              </CardHeader>
+              <CardContent className="px-0 pb-4">
+                <div className="border-y text-sm">
+                  <div className="grid grid-cols-[1fr_auto] px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <span>List ID</span>
+                    <span>Status</span>
+                  </div>
+
+                  {isLoadingTerminationLists ? (
+                    <div className="px-5 py-8 text-center text-sm text-muted-foreground">Loading...</div>
+                  ) : terminationLists.length === 0 ? (
+                    <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                      No termination approval lists found. Click Retrieve.
+                    </div>
+                  ) : (
+                    terminationLists.map((item) => (
+                      <button
+                        key={item.id ?? item.listId}
+                        type="button"
+                        onClick={() => setSelectedTerminationList(item)}
+                        className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${selectedTerminationList?.id === item.id ? "bg-[#d9d9d9]" : ""
+                          }`}
+                      >
+                        <div className="leading-tight">
+                          <p className="text-sm font-medium text-gray-800">{item.listId ?? `#${item.id}`}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.boardMeetingDate ?? "-"}
+                          </p>
+                        </div>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${item.status === "CREATED"
+                          ? "border-yellow-300 bg-yellow-100 text-yellow-700"
+                          : item.status === "APPROVED"
+                            ? "border-green-300 bg-green-100 text-green-700"
+                            : item.status === "REJECTED"
+                              ? "border-red-300 bg-red-100 text-red-700"
+                              : "border-gray-300 bg-gray-100 text-gray-600"
+                          }`}>
+                          {item.status ?? "—"}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Right — detail panel */}
+            <Card className="rounded-xl py-0 shadow-sm">
+              <CardHeader className="px-5 pt-5 pb-3">
+                <CardTitle className="text-4 font-bold text-[#953002]">
+                  {selectedTerminationList ? selectedTerminationList.listId ?? `List #${selectedTerminationList.id}` : "Details"}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {selectedTerminationList
+                    ? `Board Meeting: ${selectedTerminationList.boardMeetingDate ?? "—"}`
+                    : "Select a list from the left to view its details"}
+                </p>
+              </CardHeader>
+              <CardContent className="px-5 pb-5">
+                {!selectedTerminationList ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                    <FileText size={36} className="text-gray-300" />
+                    <p>Select a termination approval list to view details</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {/* Meta info grid */}
+                    <div className="grid grid-cols-2 gap-4 rounded-lg border bg-gray-50 p-4 sm:grid-cols-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">List ID</p>
+                        <p className="mt-0.5 text-sm font-medium text-gray-800">{selectedTerminationList.listId ?? `#${selectedTerminationList.id}`}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Status</p>
+                        <span className={`mt-0.5 inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${selectedTerminationList.status === "CREATED"
+                          ? "border-yellow-300 bg-yellow-100 text-yellow-700"
+                          : selectedTerminationList.status === "APPROVED"
+                            ? "border-green-300 bg-green-100 text-green-700"
+                            : selectedTerminationList.status === "REJECTED"
+                              ? "border-red-300 bg-red-100 text-red-700"
+                              : "border-gray-300 bg-gray-100 text-gray-600"
+                          }`}>
+                          {selectedTerminationList.status ?? "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">No. of Requests</p>
+                        <p className="mt-0.5 text-sm font-semibold text-[#953002]">
+                          {selectedTerminationList.terminationIds?.length ?? 0}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Board Meeting Date</p>
+                        <p className="mt-0.5 text-sm text-gray-700">{selectedTerminationList.boardMeetingDate ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Created At</p>
+                        <p className="mt-0.5 text-sm text-gray-700">
+                          {selectedTerminationList.createdAt
+                            ? new Date(selectedTerminationList.createdAt).toLocaleDateString()
+                            : "—"}
+                        </p>
+                      </div>
+                      {selectedTerminationList.decision && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Decision</p>
+                          <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-xs font-semibold text-white ${selectedTerminationList.decision === "Approve" ? "bg-green-600" : "bg-rose-600"
+                            }`}>
+                            {selectedTerminationList.decision}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Board remarks / reject reason */}
+                    {(selectedTerminationList.rejectReason || selectedTerminationList.boardRemarks) && (
+                      <div className="space-y-2 rounded-lg border p-4">
+                        {selectedTerminationList.rejectReason && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Reject Reason</p>
+                            <p className="mt-0.5 text-sm text-rose-600">{selectedTerminationList.rejectReason}</p>
+                          </div>
+                        )}
+                        {selectedTerminationList.boardRemarks && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Board Remarks</p>
+                            <p className="mt-0.5 text-sm text-gray-700">{selectedTerminationList.boardRemarks}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Termination request IDs */}
+                    {selectedTerminationList.terminationIds && selectedTerminationList.terminationIds.length > 0 && (
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                          Included Termination Requests
+                        </p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b text-left text-xs font-semibold text-gray-500">
+                                <th className="pb-2 pr-4">#</th>
+                                <th className="pb-2 pr-4">Termination Record ID</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedTerminationList.terminationIds.map((tid, idx) => (
+                                <tr key={tid} className="border-b last:border-0 hover:bg-gray-50">
+                                  <td className="py-2 pr-4 text-gray-400 text-xs">{idx + 1}</td>
+                                  <td className="py-2 pr-4">
+                                    <span
+                                      className="inline-block rounded-full bg-[#953002]/10 px-2.5 py-0.5 text-xs font-medium text-[#953002] border border-[#953002]/20"
+                                    >
+                                      {tid}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1318,104 +1566,103 @@ export default function BoardApprovalsPage() {
                 </div>
               ) : (
                 <>
-              {/* Applicant Information Section */}
-              <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Applicant Information</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Name</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-800">
-                      {selectedApplicationDetails?.name ?? selectedApplicationForDetails.name}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">NIC Number</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-800">
-                      {selectedApplicationDetails?.nic ?? selectedApplicationForDetails.nic}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Meeting Information Section */}
-              <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Meeting Information</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Scheduled Date</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-800">
-                      {formatDisplayDate(selectedListDetails?.boardMeetingDate ?? selectedApprovalList?.boardMeetingDate ?? "")}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Actual Date</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-800">
-                      {selectedListDetails?.actualMeetingDate ?? selectedProcessedState.actualMeetingDate}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Processing Details Section */}
-              <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Processing Details</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                    <div>
-                      <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed By</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-800">
-                        {selectedListDetails?.processedBy ?? selectedProcessedState.processedBy}
-                      </p>
+                  {/* Applicant Information Section */}
+                  <div>
+                    <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Applicant Information</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Name</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">
+                          {selectedApplicationDetails?.name ?? selectedApplicationForDetails.name}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">NIC Number</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">
+                          {selectedApplicationDetails?.nic ?? selectedApplicationForDetails.nic}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed At</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-800">
-                      {selectedListDetails?.processedAt ?? selectedProcessedState.processedAt}
-                    </p>
+
+                  {/* Meeting Information Section */}
+                  <div>
+                    <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Meeting Information</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Scheduled Date</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">
+                          {formatDisplayDate(selectedListDetails?.boardMeetingDate ?? selectedApprovalList?.boardMeetingDate ?? "")}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Actual Date</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">
+                          {selectedListDetails?.actualMeetingDate ?? selectedProcessedState.actualMeetingDate}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Decision Section */}
-              <div className="rounded-lg border border-[#f0d9cf] bg-gradient-to-r from-[#f7ede8] to-[#faf5f2] p-3.5">
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600">Decision</h3>
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold text-white ${
-                      (selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
-                        ? "bg-green-600"
-                        : "bg-rose-600"
-                    }`}
-                  >
-                    {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
-                      ? "✓ Approved"
-                      : "✕ Rejected"}
-                  </span>
-                </div>
-              </div>
+                  {/* Processing Details Section */}
+                  <div>
+                    <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Processing Details</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed By</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-800">
+                            {selectedListDetails?.processedBy ?? selectedProcessedState.processedBy}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Processed At</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">
+                          {selectedListDetails?.processedAt ?? selectedProcessedState.processedAt}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Additional Information */}
-              {((selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
-                <div className="space-y-3">
-                  {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" && (selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason) && (
-                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-red-700">Reject Reason</p>
-                      <p className="mt-1 text-sm font-medium text-red-800">
-                        {selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason}
-                      </p>
+                  {/* Decision Section */}
+                  <div className="rounded-lg border border-[#f0d9cf] bg-gradient-to-r from-[#f7ede8] to-[#faf5f2] p-3.5">
+                    <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600">Decision</h3>
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold text-white ${(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                          ? "bg-green-600"
+                          : "bg-rose-600"
+                          }`}
+                      >
+                        {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Approve"
+                          ? "✓ Approved"
+                          : "✕ Rejected"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Additional Information */}
+                  {((selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" || selectedListDetails?.boardRemarks || selectedProcessedState.boardRemarks) && (
+                    <div className="space-y-3">
+                      {(selectedListDetails?.decision ?? selectedProcessedState.decision) === "Reject" && (selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason) && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                          <p className="text-xs font-medium uppercase tracking-wide text-red-700">Reject Reason</p>
+                          <p className="mt-1 text-sm font-medium text-red-800">
+                            {selectedListDetails?.rejectReason ?? selectedProcessedState.rejectReason}
+                          </p>
+                        </div>
+                      )}
+                      {(selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks) && (
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                          <p className="text-xs font-medium uppercase tracking-wide text-blue-700">Board Remarks</p>
+                          <p className="mt-1 text-sm font-medium text-blue-800">
+                            {selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {(selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks) && (
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-blue-700">Board Remarks</p>
-                      <p className="mt-1 text-sm font-medium text-blue-800">
-                        {selectedListDetails?.boardRemarks ?? selectedProcessedState.boardRemarks}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
                 </>
               )}
             </div>

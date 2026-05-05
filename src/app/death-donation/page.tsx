@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
 import {
@@ -20,88 +20,76 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
-import { Eye } from "lucide-react";
+import { Eye, Edit, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  getAllDeathDonationRequests,
+  type DeathDonationResponse,
+  type DeathDonationStatus,
+} from "@/lib/api/deathDonation";
 
-interface DeathDonationRequest {
-  id: string;
-  requestId: string;
-  reqDate: string;
-  deceased: string;
-  member: string;
-  status: "SUBMITTED_APPROVAL" | "DISTRICT_COMMITTEE" | "P_AND_D_COMMITTEE";
-}
-
-type StatusFilter = "all" | "SUBMITTED_APPROVAL" | "DISTRICT_COMMITTEE" | "P_AND_D_COMMITTEE";
+type StatusFilter = "all" | DeathDonationStatus;
 
 export default function DeathDonationPage() {
+  const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [requests, setRequests] = useState<DeathDonationResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Sample data - replace with actual data from your API
-  const requests: DeathDonationRequest[] = [
-    {
-      id: "1",
-      requestId: "DD-2026-001",
-      reqDate: "2026-02-01",
-      deceased: "John Doe Sr.",
-      member: "Johnathan Doe",
-      status: "SUBMITTED_APPROVAL",
-    },
-    {
-      id: "2",
-      requestId: "DD-2026-002",
-      reqDate: "2026-02-05",
-      deceased: "Jane Smith (Spouse)",
-      member: "Jane Smith",
-      status: "DISTRICT_COMMITTEE",
-    },
-    {
-      id: "3",
-      requestId: "DD-2026-003",
-      reqDate: "2026-01-15",
-      deceased: "Child Perera",
-      member: "Ranil Perera",
-      status: "P_AND_D_COMMITTEE",
-    },
-  ];
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
+  const loadRequests = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getAllDeathDonationRequests();
+      setRequests(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load requests");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filter requests based on status and search query
   const filteredRequests = requests.filter((request) => {
     const matchesStatus = statusFilter === "all" || request.status === statusFilter;
     const matchesSearch =
       searchQuery === "" ||
-      request.deceased.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.member.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.deceasedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.deathCertificateNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       request.requestId.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
-  const getStatusBadge = (status: DeathDonationRequest["status"]) => {
-    switch (status) {
-      case "SUBMITTED_APPROVAL":
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
-            SUBMITTED_APPROVAL
-          </Badge>
-        );
-      case "DISTRICT_COMMITTEE":
-        return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-            DISTRICT_COMMITTEE
-          </Badge>
-        );
-      case "P_AND_D_COMMITTEE":
-        return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-            P_AND_D_COMMITTEE
-          </Badge>
-        );
-    }
+  const statusColor: Record<string, string> = {
+    NEW: "bg-blue-100 text-blue-800",
+    SUBMITTED_FOR_APPROVAL: "bg-yellow-100 text-yellow-800",
+    DISTRICT_COMMITTEE: "bg-purple-100 text-purple-800",
+    PD_COMMITTEE: "bg-orange-100 text-orange-800",
+    APPROVED: "bg-green-100 text-green-800",
+    REJECTED: "bg-red-100 text-red-800",
+    INCOMPLETE: "bg-gray-200 text-gray-700",
+  };
+
+  const getStatusBadge = (status: DeathDonationStatus) => {
+    const colorClass = statusColor[status] ?? "bg-gray-100 text-gray-800";
+    return (
+      <Badge variant="secondary" className={`${colorClass} hover:${colorClass}`}>
+        {status.replace(/_/g, " ")}
+      </Badge>
+    );
   };
 
   const handleViewRequest = (requestId: string) => {
     console.log("View request:", requestId);
     // Navigate to request detail page or open modal
+    router.push(`/membership/directory/death-donation-request?id=${requestId}`);
   };
 
   return (
@@ -121,9 +109,13 @@ export default function DeathDonationPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="SUBMITTED_APPROVAL">Submitted Approval</SelectItem>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="SUBMITTED_FOR_APPROVAL">Submitted for Approval</SelectItem>
                     <SelectItem value="DISTRICT_COMMITTEE">District Committee</SelectItem>
-                    <SelectItem value="P_AND_D_COMMITTEE">P&D Committee</SelectItem>
+                    <SelectItem value="PD_COMMITTEE">P&D Committee</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                    <SelectItem value="INCOMPLETE">Incomplete</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -148,34 +140,56 @@ export default function DeathDonationPage() {
                   <TableHead className="font-semibold">Req. Date</TableHead>
                   <TableHead className="font-semibold">Deceased</TableHead>
                   <TableHead className="font-semibold">Member</TableHead>
+                  <TableHead className="font-semibold">Cert. No.</TableHead>
                   <TableHead className="font-semibold">Status</TableHead>
                   <TableHead className="font-semibold text-center">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRequests.length > 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <div className="flex justify-center items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Loading requests...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : error ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-red-600 font-medium">
+                      {error}
+                    </TableCell>
+                  </TableRow>
+                ) : filteredRequests.length > 0 ? (
                   filteredRequests.map((request) => (
                     <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.requestId}</TableCell>
-                      <TableCell>{request.reqDate}</TableCell>
-                      <TableCell>{request.deceased}</TableCell>
-                      <TableCell>{request.member}</TableCell>
+                      <TableCell className="font-medium text-[#8B4513]">{request.requestId}</TableCell>
+                      <TableCell>{request.requestedDate}</TableCell>
+                      <TableCell>{request.deceasedName}</TableCell>
+                      <TableCell>{request.memberName}</TableCell>
+                      <TableCell>{request.deathCertificateNumber}</TableCell>
                       <TableCell>{getStatusBadge(request.status)}</TableCell>
                       <TableCell className="text-center">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleViewRequest(request.id)}
-                          className="h-8 w-8 p-0"
+                          onClick={() => handleViewRequest(request.id.toString())}
+                          className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          title={request.status === "NEW" || request.status === "INCOMPLETE" ? "Edit Request" : "View Request"}
                         >
-                          <Eye className="h-4 w-4" />
+                          {request.status === "NEW" || request.status === "INCOMPLETE" ? (
+                            <Edit className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
                         </Button>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No requests found. Try adjusting your search criteria.
                     </TableCell>
                   </TableRow>
@@ -184,7 +198,7 @@ export default function DeathDonationPage() {
             </Table>
           </div>
 
-          {filteredRequests.length > 0 && (
+          {!loading && !error && filteredRequests.length > 0 && (
             <div className="mt-4 text-sm text-muted-foreground">
               Showing {filteredRequests.length} of {requests.length} requests
             </div>

@@ -32,7 +32,7 @@ const actionGroups = {
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Death Donation Request", "Add Documents", "Record Member Death"],
+	secondary: ["Death Donation Request", "Add Documents", "Record Member Death", "Request Termination"],
 };
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
@@ -87,7 +87,6 @@ export default function MemberProfilePage({
 
 		loadMember();
 	}, [memberIdParam]);
-
 	const handleActionClick = (action: string) => {
 		const routeMap: Record<string, string> = {
 			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
@@ -96,10 +95,10 @@ export default function MemberProfilePage({
 			"Change Nominee": "/membership/directory/change-nominee",
 			"Grade 5 Scholarship": "/membership/directory/grade-5-scholarship",
 			"University Scholarship": "/membership/directory/university-scholarship",
-			"Request Termination": "/membership/directory/request-termination",
-			"Death Donation Request": "/membership/directory/death-donation-request",
+			"Request Termination": `/membership/directory/request-termination?memberId=${memberIdParam}`,
+			"Death Donation Request": `/membership/directory/death-donation-request?memberId=${memberIdParam}`,
 			"Add Documents": "/membership/directory/add-documents",
-			"Record Member Death": "/membership/directory/record-member-death",
+			"Record Member Death": `/membership/directory/record-member-death?memberId=${memberIdParam}`,
 		};
 
 		const route = routeMap[action];

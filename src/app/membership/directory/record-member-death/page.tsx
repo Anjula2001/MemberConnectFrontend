@@ -1,25 +1,95 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { ArrowLeft, Upload, X, Loader2 } from "lucide-react";
+import {
+  createMemberDeathRecord,
+  saveMemberDeathRecord,
+  submitMemberDeathRecord,
+  markMemberDeathIncomplete,
+  getMemberDeathRecord,
+} from "@/lib/api/memberDeath";
+import { getMemberById, type MemberDTO } from "@/lib/api/member";
 
-export default function RecordMemberDeathPage() {
+function RecordMemberDeathContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const idParam = searchParams.get("id");
+  const memberIdParam = searchParams.get("memberId");
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (idParam) {
+        try {
+          const data = await getMemberDeathRecord(Number(idParam));
+          setSavedId(data.id);
+          setRecordId(data.recordId);
+          setStatus(data.status);
+          setForm({
+            informedDate: data.informedDate,
+            deceasedDate: data.deceasedDate,
+            causeOfDeath: data.causeOfDeath,
+            comment: data.comment || "",
+            concerns: data.concernsIdentified || "",
+            mobile: data.nomineeMobileNo,
+            email: data.nomineeEmailAddress || "",
+            bank: data.bank,
+            branch: data.bankBranch,
+            accountNo: data.accountNumber,
+          });
+          if (data.minorAccounts) {
+            setMinorAccounts(data.minorAccounts.map(m => ({
+              accountNumber: m.minorAccountNumber,
+              holderName: m.minorAccountHolderName,
+              disbursementBank: m.disbursementBank,
+              branch: m.branch,
+              accountNo: m.disbursementAccountNumber,
+            })));
+          }
+          // Also load the member details for the existing record
+          const memberData = await getMemberById(data.memberId);
+          setMember(memberData);
+        } catch (error) {
+          console.error("Failed to load record:", error);
+          alert("Failed to load record details.");
+        }
+      } else if (memberIdParam) {
+        setMemberLoading(true);
+        setMemberError(null);
+        try {
+          const mId = Number(memberIdParam);
+          if (isNaN(mId)) {
+            throw new Error("Invalid member ID format");
+          }
+          const data = await getMemberById(mId);
+          setMember(data);
+        } catch (error: any) {
+          console.error("Failed to load member:", error);
+          setMemberError(error.message || "Failed to load member");
+        } finally {
+          setMemberLoading(false);
+        }
+      }
+    };
+    loadData();
+  }, [idParam, memberIdParam]);
 
   // Header
+  const [savedId, setSavedId] = useState<number | null>(null);
   const [recordId, setRecordId] = useState("NEW");
   const [status, setStatus] = useState("NEW");
-  // Member (mock - should come from backend)
-  const member = {
-    id: "MEM001245",
-    name: "Perera A.B.",
-    nic: "902345678V",
-  };
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Member state
+  const [member, setMember] = useState<MemberDTO | null>(null);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
 
   // Nominee (mock - should come from backend)
   const nominee = {
@@ -111,22 +181,93 @@ export default function RecordMemberDeathPage() {
     setDocuments(updated);
   };
 
-  const handleSave = () => {
-    setRecordId("MD-0001");
-    setStatus("NEW");
-    alert("Saved successfully");
-  };  const handleSubmit = () => {
+  const buildPayload = () => ({
+    memberId: member?.id || 1, // Use selected member ID
+    informedDate: form.informedDate,
+    deceasedDate: form.deceasedDate,
+    causeOfDeath: form.causeOfDeath,
+    comment: form.comment || undefined,
+    concernsIdentified: form.concerns || undefined,
+    nomineeFullName: nominee.name,
+    nomineeAddress: nominee.address,
+    nomineeRelationship: nominee.relationship,
+    nomineeIdentificationTypeAndNumber: `${nominee.idType} - ${nominee.idNumber}`,
+    nomineeMobileNo: form.mobile,
+    nomineeEmailAddress: form.email || undefined,
+    bank: form.bank,
+    bankBranch: form.branch,
+    accountNumber: form.accountNo,
+    minorAccounts: minorAccounts.filter(m => m.accountNumber).map(m => ({
+      minorAccountNumber: m.accountNumber,
+      minorAccountHolderName: m.holderName,
+      disbursementBank: m.disbursementBank,
+      branch: m.branch,
+      disbursementAccountNumber: m.accountNo,
+    })),
+    documents: documents.map(d => ({
+      documentType: d.type,
+      fileName: d.files[0]?.name || "missing.pdf", // Placeholder
+      mandatory: d.mandatory,
+    })),
+  });
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      let res;
+      if (savedId) {
+        res = await saveMemberDeathRecord(savedId, buildPayload());
+      } else {
+        res = await createMemberDeathRecord(buildPayload());
+      }
+      setSavedId(res.id);
+      setRecordId(res.recordId);
+      setStatus(res.status);
+      alert("Saved successfully!");
+    } catch (e: any) {
+      alert("Save failed: " + (e.response?.data?.message || e.message));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!form.informedDate || !form.deceasedDate || !form.causeOfDeath || !form.mobile || !form.bank) {
       alert("Please fill all mandatory fields");
       return;
     }
 
-    setStatus("SUBMITTED_FOR_APPROVAL");
-    alert("Submitted for approval");
+    try {
+      setIsSubmitting(true);
+      let currentId = savedId;
+      if (!currentId) {
+        const res = await createMemberDeathRecord(buildPayload());
+        currentId = res.id;
+        setSavedId(res.id);
+        setRecordId(res.recordId);
+      }
+      const submitRes = await submitMemberDeathRecord(currentId, buildPayload());
+      setStatus(submitRes.status);
+      alert("Submitted for approval");
+      router.push("/membership/termination");
+    } catch (e: any) {
+      alert("Submit failed: " + (e.response?.data?.message || e.message));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleIncomplete = () => {
-    setStatus("INCOMPLETE");
+  const handleIncomplete = async () => {
+    if (!savedId) return alert("Save first!");
+    const reason = prompt("Enter reason for incomplete:");
+    if (!reason) return;
+    try {
+      const res = await markMemberDeathIncomplete(savedId, reason);
+      setStatus(res.status);
+      alert("Marked as incomplete");
+    } catch (e: any) {
+      alert("Failed to mark incomplete: " + (e.response?.data?.message || e.message));
+    }
   };
   const getStatusBadgeColor = (statusValue: string) => {
     switch (statusValue) {
@@ -213,11 +354,15 @@ export default function RecordMemberDeathPage() {
       </div>      {/* Member Details */}
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
         {/* Section Title */}
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-2 h-6 bg-[#8B4513] rounded-sm"></div>
-          <h2 className="text-lg font-semibold text-gray-800">
-            Member Details
-          </h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-6 bg-[#8B4513] rounded-sm"></div>
+            <h2 className="text-lg font-semibold text-gray-800">
+              Member Details
+            </h2>
+          </div>
+          {memberLoading && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+          {memberError && <span className="text-xs text-red-500">{memberError}</span>}
         </div>
 
         {/* Content */}
@@ -228,7 +373,7 @@ export default function RecordMemberDeathPage() {
               Member ID
             </label>
             <Input
-              value={member?.id || ""}
+              value={member?.memberId || ""}
               disabled
               className="mt-1 bg-gray-50 font-medium"
             />
@@ -240,7 +385,7 @@ export default function RecordMemberDeathPage() {
               Member Name
             </label>
             <Input
-              value={member?.name || ""}
+              value={member?.nameWithInitials || member?.fullName || ""}
               disabled
               className="mt-1 bg-gray-50 font-medium"
             />
@@ -724,9 +869,10 @@ export default function RecordMemberDeathPage() {
   {/* Save */}
   <Button
     onClick={handleSave}
+    disabled={isSaving}
     className="bg-gray-600 hover:bg-gray-700 text-white"
   >
-    Save
+    {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Save
   </Button>
 
   {/* Incomplete */}
@@ -741,12 +887,20 @@ export default function RecordMemberDeathPage() {
   {/* Submit */}
   <Button
     onClick={handleSubmit}
+    disabled={isSubmitting || status === "SUBMITTED_FOR_APPROVAL"}
     className="bg-[#8B4513] hover:opacity-90 text-white"
   >
-    Submit
+    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Submit
   </Button>
-
 </div>
     </div>
+  );
+}
+
+export default function RecordMemberDeathPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /></div>}>
+      <RecordMemberDeathContent />
+    </Suspense>
   );
 }
