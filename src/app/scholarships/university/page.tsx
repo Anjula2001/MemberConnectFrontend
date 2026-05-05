@@ -22,7 +22,7 @@ type RequestRow = {
   mobile?: string;
   address?: string;
   examNumber?: string;
-  applicationReceivedOn?: string;
+  requestDate?: string;
 };
 
 export default function Page() {
@@ -32,10 +32,27 @@ export default function Page() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [dateError, setDateError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("request-id");
   const [sortAsc, setSortAsc] = useState(true);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+
+  // Parse a date string and return a Date at midnight (handles 'YYYY-MM-DD', ISO, or strings containing the pattern)
+  const parseYMD = (input?: string | null) => {
+    if (!input) return null;
+    const s = String(input);
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    const dt = new Date(y, mo, d);
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  };
 
   const locationOptions = [
     { value: "colombo", label: "Colombo" },
@@ -135,16 +152,27 @@ export default function Page() {
     // Filter by application received date
     if (applicationReceivedOn !== "all") {
       const today = new Date();
+      today.setHours(0, 0, 0, 0);
       
       filtered = filtered.filter((r) => {
-        if (!r.applicationReceivedOn) return false;
-        const rDate = new Date(r.applicationReceivedOn);
+        if (!r.requestDate) return false;
+        const rDate = parseYMD(r.requestDate);
+        if (!rDate) return false;
 
         if (applicationReceivedOn === "thisMonth") {
           return rDate.getMonth() === today.getMonth() && rDate.getFullYear() === today.getFullYear();
         } else if (applicationReceivedOn === "thisAndLastMonth") {
           const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          lastMonth.setHours(0, 0, 0, 0);
           return rDate >= lastMonth && rDate <= today;
+        } else if (applicationReceivedOn === "datePeriod") {
+          if (fromDate && toDate) {
+            const start = parseYMD(fromDate);
+            const end = parseYMD(toDate);
+            if (!start || !end) return false;
+            return rDate >= start && rDate <= end;
+          }
+          return true;
         }
         return true;
       });
@@ -181,7 +209,7 @@ export default function Page() {
 
     console.log("Final filtered results:", filtered.length, "records");
     setDisplayed(filtered);
-  }, [requests, selectedLocations, selectedStatuses, applicationReceivedOn, searchQuery, sortBy, sortAsc]);
+  }, [requests, selectedLocations, selectedStatuses, applicationReceivedOn, fromDate, toDate, searchQuery, sortBy, sortAsc]);
 
   // MultiSelect component for location and status filters
   function MultiSelect({
@@ -259,9 +287,62 @@ export default function Page() {
       </div>
     );
   }
+
+  // Validate date inputs
+  const validateDates = () => {
+    setDateError("");
+    
+    if (applicationReceivedOn === "datePeriod") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (!fromDate || !toDate) {
+        setDateError("Both From Date and To Date are required.");
+        return false;
+      }
+
+      const [startYear, startMonth, startDay] = fromDate.split('-').map(Number);
+      const [endYear, endMonth, endDay] = toDate.split('-').map(Number);
+      const start = new Date(startYear, startMonth - 1, startDay);
+      const end = new Date(endYear, endMonth - 1, endDay);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("From Date must be a past date.");
+        return false;
+      }
+
+      if (end > today) {
+        setDateError("To Date must be a past date.");
+        return false;
+      }
+
+      if (start >= end) {
+        setDateError("From Date must be before To Date.");
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Handle date changes and validation
+  const handleFromDateChange = (value: string) => {
+    setFromDate(value);
+    setDateError("");
+  };
+
+  const handleToDateChange = (value: string) => {
+    setToDate(value);
+    setDateError("");
+  };
  
   // Function to retrieve fresh data from backend
   const handleRetrieve = async () => {
+    if (!validateDates()) {
+      return;
+    }
     try {
       setIsLoading(true);
       
@@ -345,8 +426,8 @@ export default function Page() {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Application Received On</label>
-              <Select value={applicationReceivedOn} onValueChange={setApplicationReceivedOn}>
+              <label className="text-xs font-medium text-gray-600">Request Received On</label>
+              <Select value={applicationReceivedOn} onValueChange={(value) => {setApplicationReceivedOn(value); setDateError("");}}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="All Days" />
                 </SelectTrigger>
@@ -354,7 +435,7 @@ export default function Page() {
                   <SelectItem value="all">All Days</SelectItem>
                   <SelectItem value="thisMonth">This Month</SelectItem>
                   <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
-                  <SelectItem value="DatePeriod">Date Period</SelectItem>
+                  <SelectItem value="datePeriod">Date Period</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -369,6 +450,36 @@ export default function Page() {
               />
             </div>
           </div>
+
+          {applicationReceivedOn === "datePeriod" && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">From Date</label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => handleFromDateChange(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">To Date</label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => handleToDateChange(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+            </div>
+          )}
+
+          {dateError && (
+            <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+              {dateError}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="flex flex-col gap-1 md:col-span-2">
