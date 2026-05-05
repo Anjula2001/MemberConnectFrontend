@@ -98,6 +98,7 @@ export default function StudentExamSection() {
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+
   const whiteInputClass =
     "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
 
@@ -108,15 +109,9 @@ export default function StudentExamSection() {
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
-
   const cannotEdit = !isEditMode && isSaved;
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    reset,
+  const {register,handleSubmit,watch,setValue,reset,
     formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
@@ -639,9 +634,7 @@ export default function StudentExamSection() {
     if (!confirmApprove) return;
 
     const deviationFlag = !!loadedRecord && (
-      !!(loadedRecord as any).followsDeviationProcess ||
-      !!(loadedRecord as any).isDeviation ||
-      !!(loadedRecord as any).followDeviation
+      !!(loadedRecord as any).followsDeviationProcess
     );
 
     const nextStatus = deviationFlag
@@ -669,8 +662,8 @@ export default function StudentExamSection() {
       updateScholarshipStatus(serverStatus as any);
       setExamNoPopupMessage(
         deviationFlag
-          ? "Scholarship approved — submitted for deviation board approval"
-          : "Scholarship approved — submitted for normal board approval"
+          ? "Scholarship Approved(Submitted for Deviation Board Approval)"
+          : "Scholarship Approved(Submitted for Normal Board Approval)"
       );
       setShowExamNoPopup(true);
     } catch (error) {
@@ -712,7 +705,7 @@ export default function StudentExamSection() {
         const serverStatus = (updated && updated.status) || "REJECTED";
         updateScholarshipStatus(serverStatus as any, rejectReason.trim());
         setShowRejectModal(false);
-        setExamNoPopupMessage("Scholarship rejected successfully");
+        setExamNoPopupMessage("Scholarship Request Rejected Successfully");
         setShowExamNoPopup(true);
       } catch (error) {
         console.error("Reject failed:", error);

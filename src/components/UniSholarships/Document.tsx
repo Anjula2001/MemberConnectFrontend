@@ -38,7 +38,8 @@ export default function Document({
   documentTypes,
 }: DocumentProps) {
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
-
+  
+  //Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (disabled || !selectedDocumentType) return;
@@ -53,18 +54,21 @@ export default function Document({
     },
     [disabled, selectedDocumentType, setFiles]
   );
-
+  
+  //Initialize react-dropzone
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: false,
     disabled: disabled || !selectedDocumentType,
   });
 
+  //Handle file removal
   const removeFile = (index: number) => {
     if (disabled) return;
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  //Get document label from document type
   const getDocumentLabel = (value: string) => {
     return (
       documentTypes.find((type) => type.documentType === value)?.displayName ||
@@ -72,6 +76,7 @@ export default function Document({
     );
   };
 
+  //Format date time for display
   const formatDateTime = (value?: string) => {
     if (!value) return "Not uploaded yet";
     return new Date(value).toLocaleString();

@@ -40,7 +40,7 @@ export default function Page() {
   const [sortAsc, setSortAsc] = useState(true);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
-  // Parse a date string and return a Date at midnight (handles 'YYYY-MM-DD', ISO, or strings containing the pattern)
+  // Convert a date string in YYYY-MM-DD format to a Date object 
   const parseYMD = (input?: string | null) => {
     if (!input) return null;
     const s = String(input);
@@ -116,7 +116,7 @@ export default function Page() {
   };
 
   useEffect(() => {
-    // Component initialization - no automatic data fetch
+
   }, []);
 
   // Real-time filtering as user changes filters
@@ -352,9 +352,6 @@ export default function Page() {
       console.log("Retrieved fresh data from backend:", data);
       
       if (Array.isArray(data) && data.length > 0) {
-        console.log("========== FIRST RECORD STRUCTURE ==========");
-        console.log(JSON.stringify(data[0], null, 2));
-        console.log("==========================================");
         const fieldNames = Object.keys(data[0]);
         console.log("Available fields in the data:", fieldNames);
         

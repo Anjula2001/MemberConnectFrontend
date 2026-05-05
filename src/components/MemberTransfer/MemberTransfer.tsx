@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -98,6 +98,7 @@ const emptyOldValues: MemberTransferOldValues = {
   salaryPayingOffice: "",
 };
 
+// Utility to format various value types for display
 const formatDisplayValue = (value: any): string => {
   if (value === null || typeof value === "undefined") return "";
   if (typeof value === "string" || typeof value === "number") return String(value);
@@ -120,6 +121,7 @@ const formatDisplayValue = (value: any): string => {
   return String(value);
 };
 
+// Convert array of items to OptionItem format for dropdowns
 const toOptionItems = (items: any[]): OptionItem[] => {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
@@ -135,11 +137,13 @@ const toOptionItems = (items: any[]): OptionItem[] => {
     .filter((item) => item.id !== "" && item.name !== "");
 };
 
+// Find option ID by name from a list of options
 const findOptionIdByName = (options: OptionItem[], name: string) => {
   const found = options.find((option) => option.name === name || String(option.raw?.name) === name);
   return found ? found.id : "";
 };
 
+// Convert value to nullable number for API compatibility
 const toNullableNumber = (value: any) => {
   if (value === "" || value === null || typeof value === "undefined" || value === "NA") {
     return null;
@@ -150,7 +154,7 @@ const toNullableNumber = (value: any) => {
 };
 
 export default function ChangeMemberTransferForm() {
-  const HARDCODED_MEMBER_ID = 8;
+  const HARDCODED_MEMBER_ID = 7;
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -233,6 +237,21 @@ export default function ChangeMemberTransferForm() {
 
     fetchRequiredDocumentTypes();
   }, []);
+
+  // Check if all mandatory documents are uploaded
+  const areMandatoryDocsUploaded = useMemo(() => {
+    if (requiredDocumentTypes.length === 0) return true;
+
+    const mandatoryTypes = requiredDocumentTypes.filter((t) => t.mandatory);
+    if (mandatoryTypes.length === 0) return true;
+
+    const uploadedTypes = new Set([
+      ...uploadedDocuments.map((d) => d.documentType),
+      ...documentFiles.map((d) => d.documentType),
+    ]);
+
+    return mandatoryTypes.every((type) => uploadedTypes.has(type.documentType));
+  }, [requiredDocumentTypes, uploadedDocuments, documentFiles]);
 
   //Get Working location type,distric,designation and nature of occupation in DB
   useEffect(() => {
@@ -748,8 +767,8 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting}
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded}
+                className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
