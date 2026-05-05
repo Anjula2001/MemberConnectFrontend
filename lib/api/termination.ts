@@ -21,8 +21,8 @@ export interface MemberTerminationDTO {
   id?: number;
   memberId: number;
   terminationReason: TerminationReason;
-  terminationDate: string; // ISO date format: YYYY-MM-DD
-  requestedDate: string;   // ISO date format: YYYY-MM-DD
+  terminationDate: string; 
+  requestedDate: string;   
   remarks?: string;
 }
 
@@ -44,9 +44,8 @@ export interface MemberTerminationResponse {
 
 const BASE_PATH = "/api/terminations";
 
-/**
- * Create a new member termination request
- */
+// Create a new member termination request
+
 export async function createMemberTermination(payload: MemberTerminationDTO) {
   try {
     console.log("createMemberTermination request payload:", payload);
@@ -67,9 +66,9 @@ export async function createMemberTermination(payload: MemberTerminationDTO) {
   }
 }
 
-/**
- * Get termination by ID
- */
+
+// Get termination by ID
+
 export async function getTerminationById(id: number) {
   const { data } = await apiClient.get<MemberTerminationResponse>(
     `${BASE_PATH}/getTerminationById/${id}`
@@ -77,9 +76,8 @@ export async function getTerminationById(id: number) {
   return data;
 }
 
-/**
- * Get all terminations for a member
- */
+// Get all terminations for a member
+ 
 export async function getMemberTerminations(memberId: number) {
   const { data } = await apiClient.get<MemberTerminationResponse[]>(
     `${BASE_PATH}/member/${memberId}`
@@ -87,9 +85,7 @@ export async function getMemberTerminations(memberId: number) {
   return data;
 }
 
-/**
- * Get all pending terminations (for admin approval)
- */
+// Get all pending terminations (for admin approval)
 export async function getPendingTerminations() {
   const { data } = await apiClient.get<MemberTerminationResponse[]>(
     `${BASE_PATH}/status/PENDING`
@@ -97,9 +93,7 @@ export async function getPendingTerminations() {
   return data;
 }
 
-/**
- * Approve a termination request
- */
+// Approve a termination request
 export async function approveTermination(id: number) {
   const { data } = await apiClient.post<MemberTerminationResponse>(
     `${BASE_PATH}/${id}/approve`
@@ -107,9 +101,7 @@ export async function approveTermination(id: number) {
   return data;
 }
 
-/**
- * Reject a termination request
- */
+// Reject a termination request
 export async function rejectTermination(id: number, reason?: string) {
   const { data } = await apiClient.post<MemberTerminationResponse>(
     `${BASE_PATH}/${id}/reject`,
@@ -118,9 +110,8 @@ export async function rejectTermination(id: number, reason?: string) {
   return data;
 }
 
-/**
- * Delete a termination record
- */
+// Delete a termination record
+
 export async function deleteTermination(id: number) {
   const { data } = await apiClient.delete<{ message: string }>(
     `${BASE_PATH}/${id}`
@@ -128,9 +119,7 @@ export async function deleteTermination(id: number) {
   return data;
 }
 
-/**
- * Update an existing termination request
- */
+// Update an existing termination request
 export async function updateTermination(id: number, payload: Partial<MemberTerminationDTO>) {
   try {
     const { data } = await apiClient.put<MemberTerminationResponse>(

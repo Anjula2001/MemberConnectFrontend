@@ -1,6 +1,5 @@
 import { apiClient } from "./client";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type DeathDonationStatus =
   | "NEW"
@@ -18,16 +17,15 @@ export interface RelativeDTO {
   isAuto: boolean;
 }
 
-/** Payload sent to POST /api/death-donations (create) and PUT /{id}/save */
 export interface DeathDonationRequestPayload {
   memberId: number;
   relationshipToDeceased: string;
-  requestedDate: string;          // "YYYY-MM-DD"
+  requestedDate: string;          
   isDeceasedMember: boolean;
   deceasedMemberId?: string;
   deceasedName: string;
   maidenName?: string;
-  deceasedDate: string;           // "YYYY-MM-DD"
+  deceasedDate: string;           
   deathCertificateNumber: string;
   placeOfWork?: string;
   concernsIdentified?: string;
@@ -50,7 +48,7 @@ export interface DocumentResponse {
   uploadedAt: string;
 }
 
-/** Response shape returned by the backend */
+// Response return
 export interface DeathDonationResponse {
   id: number;
   requestId: string;
@@ -76,12 +74,9 @@ export interface DeathDonationResponse {
 
 const BASE = "/api/death-donations";
 
-// ─── API functions ────────────────────────────────────────────────────────────
 
-/**
- * Create a brand-new Death Donation Request (status = NEW).
- * Maps to the "Save" button on a blank form.
- */
+// Create new Death Donation Request
+
 export async function createDeathDonationRequest(
   payload: DeathDonationRequestPayload
 ): Promise<DeathDonationResponse> {
@@ -89,10 +84,8 @@ export async function createDeathDonationRequest(
   return data;
 }
 
-/**
- * Update an existing NEW (draft) request without changing its status.
- * Maps to "Save" when re-editing a previously saved draft.
- */
+// Update request
+
 export async function saveDeathDonationRequest(
   id: number,
   payload: DeathDonationRequestPayload
@@ -104,10 +97,8 @@ export async function saveDeathDonationRequest(
   return data;
 }
 
-/**
- * Submit the request for approval (NEW → SUBMITTED_FOR_APPROVAL).
- * Backend re-validates all mandatory fields.
- */
+// Submit the request for approval
+
 export async function submitDeathDonationRequest(
   id: number,
   payload?: Partial<DeathDonationRequestPayload>
@@ -119,9 +110,8 @@ export async function submitDeathDonationRequest(
   return data;
 }
 
-/**
- * Mark the request as INCOMPLETE with a reason.
- */
+// Mark the request as Incomplete 
+ 
 export async function markDeathDonationIncomplete(
   id: number,
   reason: string
@@ -133,9 +123,8 @@ export async function markDeathDonationIncomplete(
   return data;
 }
 
-/**
- * Change the status of the request (e.g., NEW, INACTIVE).
- */
+// Change the status
+
 export async function changeDeathDonationStatus(
   id: number,
   status: DeathDonationStatus
@@ -147,9 +136,9 @@ export async function changeDeathDonationStatus(
   return data;
 }
 
-/**
- * Fetch a single request by its DB id.
- */
+
+ // Fetch request by id.
+ 
 export async function getDeathDonationRequest(
   id: number
 ): Promise<DeathDonationResponse> {
@@ -157,9 +146,9 @@ export async function getDeathDonationRequest(
   return data;
 }
 
-/**
- * Fetch all requests.
- */
+
+ // Fetch all 
+
 export async function getAllDeathDonationRequests(): Promise<DeathDonationResponse[]> {
   const { data } = await apiClient.get<DeathDonationResponse[]>(BASE);
   return data;

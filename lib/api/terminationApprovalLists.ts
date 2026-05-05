@@ -18,9 +18,9 @@ export interface TerminationApprovalListDTO {
 
 const BASE_PATH = "/api/terminationApprovalLists";
 
-/**
- * Create a new termination approval list
- */
+
+// Create a new termination approval list
+
 export async function createTerminationApprovalList(payload: TerminationApprovalListDTO) {
   try {
     const { data } = await apiClient.post<TerminationApprovalListDTO>(
@@ -35,9 +35,7 @@ export async function createTerminationApprovalList(payload: TerminationApproval
   }
 }
 
-/**
- * Get all termination approval lists
- */
+// Get all termination approval lists
 export async function getTerminationApprovalLists() {
   try {
     const { data } = await apiClient.get<TerminationApprovalListDTO[]>(
@@ -51,10 +49,8 @@ export async function getTerminationApprovalLists() {
   }
 }
 
-/**
- * Delete a termination approval list by listId.
- * All attached termination requests are rolled back to their original status.
- */
+// Delete a termination approval list by listId.
+
 export async function deleteTerminationApprovalList(listId: string) {
   try {
     const { data } = await apiClient.delete<{ message: string }>(

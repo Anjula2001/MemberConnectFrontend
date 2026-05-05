@@ -13,7 +13,7 @@ import { getMemberById } from "@/lib/api/member";
 import { createMemberTermination, getMemberTerminations, getTerminationById, updateTermination } from "@/lib/api/termination";
 import type { TerminationReason } from "@/lib/api/termination";
 
-// Termination reasons from backend enum
+// Termination reasons-enum
 const TERMINATION_REASONS = [
   { value: "RETIREMENT", label: "Retirement" },
   { value: "RESIGNATION", label: "Resignation" },
@@ -372,7 +372,7 @@ export default function RequestTerminationPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* HEADER */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
@@ -405,7 +405,7 @@ export default function RequestTerminationPage() {
         </div>
       </div>
 
-      {/* SUCCESS/ERROR MESSAGES */}
+      {/* Success/Error Messages */}
       {error && (
         <div className="p-3 rounded-md bg-red-100 text-red-800 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4" />
@@ -419,7 +419,7 @@ export default function RequestTerminationPage() {
         </div>
       )}
 
-      {/* WARNINGS */}
+      {/* Warnings */}
       {(loanData.hasOutstandingLoan || loanData.hasIndirectLoan) && (
         <div className="space-y-2">
           {loanData.hasOutstandingLoan && (
@@ -440,7 +440,7 @@ export default function RequestTerminationPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          {/* MEMBER DETAILS CARD */}
+          {/* Member details */}
           <Card>
             <CardHeader>
               <CardTitle>Member Details</CardTitle>
@@ -463,7 +463,7 @@ export default function RequestTerminationPage() {
             </CardContent>
           </Card>
 
-          {/* REQUEST DETAILS CARD */}
+          {/* Request Details */}
           <Card>
             <CardHeader>
               <CardTitle>Request Details</CardTitle>
@@ -536,7 +536,7 @@ export default function RequestTerminationPage() {
             </CardContent>
           </Card>
 
-          {/* SAVINGS ACCOUNTS CARD */}
+          {/* Saving Accounts */}
           {accounts.length > 0 && (
             <Card>
               <CardHeader>

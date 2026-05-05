@@ -118,7 +118,7 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
   ],
 };
 
-// Multi-select dropdown component
+// Multi-select dropdown 
 function StatusMultiSelect({
   selectedStatuses,
   onStatusChange,
@@ -376,13 +376,13 @@ export default function TerminationPage() {
     fetchTerminations();
   }, []);
 
-  // Get current status options based on request type
+  // Get current status
   const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
 
-  // Handle request type change - reset selected statuses
+  // Handle request type change
   const handleRequestTypeChange = (newType: RequestType) => {
     setRequestType(newType);
-    setSelectedStatuses([]); // Reset selected statuses when type changes
+    setSelectedStatuses([]); 
   };
   const filteredRequests = useMemo(() => {
     let filtered = requests.filter((request) => {
@@ -395,7 +395,7 @@ export default function TerminationPage() {
         request.requestId.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesType = requestType === "all" || request.type === requestType;
 
-      // Date filtering logic
+      // Date filter
       let matchesDateFilter = true;
       const requestDate = new Date(request.date);
 
@@ -515,7 +515,7 @@ export default function TerminationPage() {
     }
     try {
       setIsSavingApprovalList(true);
-      // We need to pass the original numeric IDs to the backend
+      // pass IDs
       const originalTerminationIds = requests
         .filter(r => selectedRequests.includes(r.id) && r.type === "termination")
         .map(r => r.originalId);
@@ -543,6 +543,8 @@ export default function TerminationPage() {
       setIsSavingApprovalList(false);
     }
   };
+
+  
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
