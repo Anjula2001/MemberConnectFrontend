@@ -4,19 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/src/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/src/components/ui/select";
+import {Card,CardContent,CardHeader,CardTitle,} from "@/src/components/ui/card";
+import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil } from "lucide-react";
 
@@ -40,8 +29,6 @@ export default function Page() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [displayed, setDisplayed] = useState<RequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Search/filter state (copied from New Registrations UI)
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
@@ -117,7 +104,7 @@ export default function Page() {
 
   // Real-time filtering as user changes filters
   useEffect(() => {
-    if (requests.length === 0) return; // Don't filter if no data
+    if (requests.length === 0) return; 
 
     let filtered = [...requests];
 
@@ -125,7 +112,7 @@ export default function Page() {
     console.log("Selected locations:", selectedLocations);
     console.log("Sample request data:", requests[0]);
 
-    // Filter by location (using address field from backend)
+    // Filter by location
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((r) => {
         const requestAddress = (r.address || "").toLowerCase().trim();
@@ -196,6 +183,7 @@ export default function Page() {
     setDisplayed(filtered);
   }, [requests, selectedLocations, selectedStatuses, applicationReceivedOn, searchQuery, sortBy, sortAsc]);
 
+  // MultiSelect component for location and status filters
   function MultiSelect({
     options,
     selected,
@@ -220,6 +208,7 @@ export default function Page() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Toggle selection of an option
     const toggle = (value: string) => {
       onChange(
         selected.includes(value)
@@ -270,25 +259,21 @@ export default function Page() {
       </div>
     );
   }
-
+ 
+  // Function to retrieve fresh data from backend
   const handleRetrieve = async () => {
     try {
       setIsLoading(true);
       
-      // Fetch fresh data from backend (without query parameters)
-      // Filtering will be done client-side by the useEffect hook
       const res = await fetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
       
       console.log("Retrieved fresh data from backend:", data);
       
       if (Array.isArray(data) && data.length > 0) {
-        // Log the complete first record to see all fields
         console.log("========== FIRST RECORD STRUCTURE ==========");
         console.log(JSON.stringify(data[0], null, 2));
         console.log("==========================================");
-        
-        // Log all available field names
         const fieldNames = Object.keys(data[0]);
         console.log("Available fields in the data:", fieldNames);
         
@@ -307,7 +292,6 @@ export default function Page() {
         });
         
         setRequests(data);
-        // useEffect will automatically apply filters
       } else {
         setRequests([]);
         setDisplayed([]);
