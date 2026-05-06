@@ -110,6 +110,7 @@ export default function StudentExamSection() {
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
+  const incomplete= status === "INCOMPLETE";
 
   const {register,handleSubmit,watch,setValue,reset,
     formState: { errors, isValid },
@@ -982,7 +983,7 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode} 
+              disabled={!requestId || !isSaved || isSubmitted || isViewMode||incomplete} 
             >
               Incomplete
             </Button>

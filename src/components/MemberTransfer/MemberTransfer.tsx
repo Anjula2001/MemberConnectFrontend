@@ -171,7 +171,7 @@ export default function ChangeMemberTransferForm() {
 
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
-  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL" | "APPROVED" | "REJECTED">("NEW");
+  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
@@ -195,7 +195,7 @@ export default function ChangeMemberTransferForm() {
   const [rejectReason, setRejectReason] = useState("");
 
   const isExistingRequest = Boolean(requestKey);
-  const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
@@ -724,7 +724,7 @@ export default function ChangeMemberTransferForm() {
         : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
-  const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
   const showRequestStatus = Boolean(requestId || isExistingRequest);
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -767,7 +767,7 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded}
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded }
                 className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
