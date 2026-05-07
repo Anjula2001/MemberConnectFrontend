@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider, SidebarTrigger } from "@/src/components/ui/sidebar";
 import NavigationSideBar from "@/src/components/NavigationItem/NavigationSideBar";
+import { ToastProvider } from "@/lib/toast-context";
+import { ToastContainer } from "@/components/toast-container";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,13 +32,16 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SidebarProvider>
-          <NavigationSideBar />
-          <main className="flex-1">
-            <SidebarTrigger />
-            {children}
-          </main>
-        </SidebarProvider>
+        <ToastProvider>
+          <SidebarProvider>
+            <NavigationSideBar />
+            <main className="flex-1">
+              <SidebarTrigger />
+              {children}
+            </main>
+          </SidebarProvider>
+          <ToastContainer />
+        </ToastProvider>
       </body>
     </html>
   );

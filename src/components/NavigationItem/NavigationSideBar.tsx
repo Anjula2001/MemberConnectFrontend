@@ -105,16 +105,8 @@ export default function NavigationSideBar() {
         { title: "Fund Requests", url: "/scholarships/fund-requests" },
       ],
     },
-    {
-      title: "Death Donation",
-      icon: Heart,
-      url: "/death-donation",
-    },
-    {
-      title: "Reports",
-      icon: BarChart,
-      url: "/reports",
-    },
+    { title: "Death Donation", icon: Heart, url: "/death-donation" },
+    { title: "Reports", icon: BarChart, url: "/reports" },
   ];
 
   const isItemActive = (url?: string) => {
@@ -124,6 +116,7 @@ export default function NavigationSideBar() {
   };
 
   return (
+    
     <Sidebar className="border-r border-neutral-200 bg-[#f4f4f5]">
       <SidebarContent className="gap-0 bg-[#f4f4f5] px-3 py-5">
         <div className="mb-5 flex items-center gap-3 px-2">
@@ -144,7 +137,7 @@ export default function NavigationSideBar() {
                 <Collapsible defaultOpen className="group/collapsible">
                   <SidebarGroup className="p-0">
                     <SidebarGroupLabel asChild>
-                      <CollapsibleTrigger className="flex h-10 w-full items-center rounded-lg px-3 text-[15px] font-medium text-neutral-700 transition-colors hover:bg-neutral-100 hover:text-neutral-900">
+                      <CollapsibleTrigger className="flex h-10 w-full items-center rounded-lg px-3 text-[15px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002]">
                         <item.icon className="h-5 w-5" />
                         <span className="ml-3">{item.title}</span>
                         <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
@@ -165,13 +158,12 @@ export default function NavigationSideBar() {
                                 asChild
                                 isActive={isItemActive(subItem.url)}
                                 className={cn(
-                                  "rounded-lg pr-2.5 text-[14px] font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
+                                  "rounded-lg pr-2.5 text-[14px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
                                   isTwoLineItem
                                     ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:break-words"
                                     : "h-9 leading-4 [&>span:last-child]:truncate [&>span:last-child]:whitespace-nowrap",
                                   subItem.icon ? "pl-8" : "pl-10",
-                                  isItemActive(subItem.url) &&
-                                    "bg-[#f0e8e5] text-[#9e3600]"
+                                  isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"
                                 )}
                               >
                                 <Link href={subItem.url}>
@@ -199,8 +191,8 @@ export default function NavigationSideBar() {
                   asChild
                   isActive={isItemActive(item.url)}
                   className={cn(
-                    "h-10 rounded-lg px-3 text-[15px] font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
-                    isItemActive(item.url) && "bg-[#f0e8e5] text-[#9e3600]"
+                    "h-10 rounded-lg px-3 text-[15px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
+                    isItemActive(item.url) && "bg-[#fdf5f2] text-[#953002]"
                   )}
                 >
                   <Link href={item.url!}>

@@ -1,15 +1,20 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   RotateCcw,
   Plus,
   ArrowUp,
-  Pencil,
-  FileText,
   AlertCircle,
   ChevronDown,
+  ArrowLeft,
+  X,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  SendHorizontal,
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -37,6 +42,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { NewMemberRegistrationForm } from "./form-new";
+import {
+  getMemberApplications,
+  deleteMemberApplication,
+  updateMemberApplicationStatus,
+  type ApplicationStatus,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  createBoardApprovalList,
+  type BoardApprovalListDTO,
+} from "@/lib/api/boardApprovalLists";
 
 // ── Multi-select dropdown ─────────────────────────────────────────────────────
 interface MultiSelectProps {
@@ -77,8 +95,8 @@ function MultiSelect({
     selected.length === 0
       ? placeholder
       : selected.length === options.length
-      ? "All Selected"
-      : `${selected.length} Selected`;
+        ? "All Selected"
+        : `${selected.length} Selected`;
 
   return (
     <div ref={ref} className="relative">
@@ -117,9 +135,10 @@ function MultiSelect({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegistrationStatus = "DRAFT" | "PENDING_BOARD" | "SUBMITTED" | "NEW";
+type RegistrationStatus = ApplicationStatus | "PENDING";
 
 interface Registration {
+  id?: number;
   appId: string;
   fullName: string;
   nic: string;
@@ -131,55 +150,32 @@ interface Registration {
   selectable: boolean;
 }
 
-const mockData: Registration[] = [
-  {
-    appId: "APP-2026-002",
-    fullName: "Second User",
-    nic: "199588877766",
-    appliedDate: null,
-    district: "Kandy",
-    zone: "Kandy",
-    status: "DRAFT",
-    selectable: false,
-  },
-  {
-    appId: "APP-2026-003",
-    fullName: "Rejoining Member",
-    nic: "198844433322",
-    appliedDate: "2026-01-25",
-    district: "Nuwara Eliya",
-    zone: "Nuwara Eliya",
-    status: "PENDING_BOARD",
-    hasWarning: true,
-    selectable: false,
-  },
-  {
-    appId: "APP-2026-001",
-    fullName: "New User One",
-    nic: "200012345678",
-    appliedDate: "2026-02-05",
-    district: "Colombo",
-    zone: "Colombo South",
-    status: "NEW",
-    selectable: true,
-  },
-];
-
 const statusBadgeClass: Record<RegistrationStatus, string> = {
-  DRAFT: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
-  PENDING_BOARD: "bg-amber-500 text-white border-transparent hover:bg-amber-500",
-  SUBMITTED: "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  PENDING: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
   NEW: "bg-green-100 text-green-700 border border-green-300 hover:bg-green-100",
+  SUBMITTED_FOR_APPROVAL:
+    "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  ADDED_TO_BOARD_APPROVAL_LIST:
+    "bg-amber-500 text-white border-transparent hover:bg-amber-500",
+  REJECTED: "bg-red-100 text-red-700 border border-red-300 hover:bg-red-100",
+  INACTIVE: "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100",
 };
 
 const statusFilterMap: Record<string, RegistrationStatus> = {
   new: "NEW",
-  submitted: "SUBMITTED",
-  board: "PENDING_BOARD",
-  draft: "DRAFT",
+  submitted: "SUBMITTED_FOR_APPROVAL",
+  board: "ADDED_TO_BOARD_APPROVAL_LIST",
+  rejected: "REJECTED",
+  inactive: "INACTIVE",
 };
 
 export default function NewRegistrationsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const applicationIdParam = searchParams.get("applicationId");
+  const isReadOnlyView = searchParams.get("mode") === "view";
+  const [currentView, setCurrentView] = useState<"list" | "form">("list");
+  const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -189,6 +185,113 @@ export default function NewRegistrationsPage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [displayData, setDisplayData] = useState<Registration[]>([]);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [isRetrieving, setIsRetrieving] = useState(false);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingBoardApprovalList, setIsSavingBoardApprovalList] = useState(false);
+  const [createdBoardApprovalList, setCreatedBoardApprovalList] = useState<BoardApprovalListDTO | null>(null);
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<Registration | null>(null);
+  const [isDeletingApplication, setIsDeletingApplication] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!applicationIdParam) return;
+
+    const parsedId = Number(applicationIdParam);
+    if (Number.isFinite(parsedId)) {
+      setSelectedApplicationId(parsedId);
+      setCurrentView("form");
+    }
+  }, [applicationIdParam]);
+
+  // Close action menu on outside click or scroll
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    function closeOnScroll() { setOpenMenuId(null); }
+    if (openMenuId) {
+      document.addEventListener("mousedown", close);
+      document.addEventListener("scroll", closeOnScroll, true);
+    }
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("scroll", closeOnScroll, true);
+    };
+  }, [openMenuId]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        if (!isCancelled) {
+          setBoardMeetings(meetings);
+        }
+      } catch (error) {
+        console.error("Failed to load board meetings", error);
+      }
+    };
+
+    void loadBoardMeetings();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const mapToRegistration = (
+    item: MemberApplicationDTO,
+    index: number
+  ): Registration => {
+    const status = item.status ?? "PENDING";
+    const rawAppId = item.applicationID ?? `APP-${item.id ?? index + 1}`;
+    const epochPart = rawAppId.replace("APP-", "");
+    const epoch = Number(epochPart);
+    const appliedDate = Number.isFinite(epoch)
+      ? new Date(epoch).toISOString().slice(0, 10)
+      : null;
+
+    return {
+      id: item.id,
+      appId: rawAppId,
+      fullName: item.fullName ?? "-",
+      nic: item.nicNumber ?? "-",
+      appliedDate,
+      district: item.educationalDistrict ?? "-",
+      zone: "-",
+      status,
+      selectable:
+        status === "SUBMITTED_FOR_APPROVAL" || status === "REJECTED",
+      hasWarning: false,
+    };
+  };
+
+  const selectableNewRowIds = displayData
+    .filter(
+      (row) => row.selectable &&
+        (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED")
+    )
+    .map((row) => row.appId);
+
+  const selectedNewRowsCount = selectableNewRowIds.filter((id) =>
+    selectedRows.includes(id)
+  ).length;
+
+  const isAllNewRowsSelected =
+    selectableNewRowIds.length > 0 &&
+    selectedNewRowsCount === selectableNewRowIds.length;
+
+  const isSomeNewRowsSelected =
+    selectedNewRowsCount > 0 && selectedNewRowsCount < selectableNewRowIds.length;
 
   const locationOptions = [
     { value: "colombo", label: "Colombo" },
@@ -207,6 +310,11 @@ export default function NewRegistrationsPage() {
     { value: "inactive", label: "Inactive" },
   ];
 
+  const boardMeetingOptions = boardMeetings.map((meeting) => ({
+    value: String(meeting.id ?? ""),
+    label: `${meeting.scheduledDate ?? "Unknown date"} (${meeting.boardMeetingId ?? meeting.id ?? ""})`,
+  }));
+
   const toggleRow = (appId: string) => {
     setSelectedRows((prev) =>
       prev.includes(appId)
@@ -215,8 +323,33 @@ export default function NewRegistrationsPage() {
     );
   };
 
-  const handleRetrieve = () => {
-    let filtered = [...mockData];
+  const toggleAllNewRows = (checked: boolean) => {
+    setSelectedRows((prev) => {
+      if (checked) {
+        const merged = new Set([...prev, ...selectableNewRowIds]);
+        return Array.from(merged);
+      }
+
+      return prev.filter((id) => !selectableNewRowIds.includes(id));
+    });
+  };
+
+  const handleRetrieve = async () => {
+    setIsRetrieving(true);
+    let filtered: Registration[] = [];
+
+    try {
+      const applications = await getMemberApplications();
+      filtered = applications.map(mapToRegistration);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to retrieve applications";
+      alert(message);
+      setDisplayData([]);
+      setHasRetrieved(true);
+      setIsRetrieving(false);
+      return;
+    }
 
     // Filter by location/district
     if (selectedLocations.length > 0) {
@@ -283,8 +416,147 @@ export default function NewRegistrationsPage() {
     });
 
     setDisplayData(filtered);
+    setSelectedRows([]);
     setHasRetrieved(true);
+    setIsRetrieving(false);
   };
+
+  const handleOpenBoardMeetingModal = () => {
+    if (selectedNewRowsCount === 0) return;
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveBoardMeeting = async () => {
+    if (!selectedBoardMeeting) return;
+
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting || !meeting.id || !meeting.scheduledDate) {
+      alert("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingBoardApprovalList(true);
+      const createdList = await createBoardApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        applicationIds: selectedRows,
+      });
+
+      setCreatedBoardApprovalList(createdList);
+      setDisplayData((prev) =>
+        prev.map((row) =>
+          selectedRows.includes(row.appId)
+            ? { ...row, status: "ADDED_TO_BOARD_APPROVAL_LIST", selectable: false }
+            : row
+        )
+      );
+
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+    } catch (error) {
+      console.error("Failed to create board approval list", error);
+      alert(error instanceof Error ? error.message : "Failed to create board approval list");
+    } finally {
+      setIsSavingBoardApprovalList(false);
+    }
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    router.push("/membership/board-approvals");
+  };
+
+  const handleOpenApplication = (row: Registration) => {
+    if (!row.id) {
+      alert("Application ID is not available for this record.");
+      return;
+    }
+    setSelectedApplicationId(row.id);
+    setCurrentView("form");
+  };
+
+  const handleDeleteApplication = (row: Registration) => {
+    if (!row.id) return;
+    setPendingDeleteRow(row);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteRow?.id) return;
+    setIsDeletingApplication(true);
+    try {
+      await deleteMemberApplication(pendingDeleteRow.id);
+      setDisplayData((prev) => prev.filter((r) => r.appId !== pendingDeleteRow.appId));
+      setSelectedRows((prev) => prev.filter((id) => id !== pendingDeleteRow.appId));
+      setShowDeleteModal(false);
+      setPendingDeleteRow(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete application");
+    } finally {
+      setIsDeletingApplication(false);
+    }
+  };
+
+  const handleSubmitApplication = async (row: Registration) => {
+    if (!row.id) return;
+    try {
+      await updateMemberApplicationStatus(row.id, "SUBMITTED_FOR_APPROVAL");
+      setDisplayData((prev) =>
+        prev.map((r) =>
+          r.appId === row.appId
+            ? { ...r, status: "SUBMITTED_FOR_APPROVAL", selectable: true }
+            : r
+        )
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to submit application");
+    }
+  };
+
+  if (currentView === "form") {
+    return (
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
+          }}
+          className="w-fit text-[#953002] hover:text-[#7a2700] hover:bg-transparent mb-2"
+        >
+          <ArrowLeft size={16} />
+          Back to List
+        </Button>
+        <NewMemberRegistrationForm
+          applicationId={selectedApplicationId}
+          readOnly={isReadOnlyView}
+          onDone={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
+            void handleRetrieve();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
@@ -293,10 +565,26 @@ export default function NewRegistrationsPage() {
         <h1 className="text-2xl font-bold text-[#953002]">
           New Member Registration Search
         </h1>
-        <Button className="bg-[#7a2700] hover:bg-[#953002] text-white">
-          <Plus />
-          Create New Registration
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+            disabled={selectedNewRowsCount === 0}
+            onClick={handleOpenBoardMeetingModal}
+          >
+            Create Board Approval List
+            {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
+          </Button>
+          <Button
+            className="bg-[#7a2700] hover:bg-[#953002] text-white"
+            onClick={() => {
+              setSelectedApplicationId(null);
+              setCurrentView("form");
+            }}
+          >
+            <Plus />
+            Create New Registration
+          </Button>
+        </div>
       </div>
 
       {/* Search Criteria Card */}
@@ -390,7 +678,6 @@ export default function NewRegistrationsPage() {
                     <SelectItem value="applied-date">Applied Date</SelectItem>
                     <SelectItem value="status">Status</SelectItem>
                     <SelectItem value="district">District</SelectItem>
-                    <SelectItem value="zone">Zone</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
@@ -399,9 +686,10 @@ export default function NewRegistrationsPage() {
                 <Button
                   className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap"
                   onClick={handleRetrieve}
+                  disabled={isRetrieving}
                 >
                   <RotateCcw size={14} />
-                  Retrieve
+                  {isRetrieving ? "Retrieving..." : "Retrieve"}
                 </Button>
               </div>
             </div>
@@ -414,7 +702,21 @@ export default function NewRegistrationsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead className="w-10 px-4" />
+              <TableHead className="w-10 px-4">
+                <Checkbox
+                  checked={
+                    isAllNewRowsSelected
+                      ? true
+                      : isSomeNewRowsSelected
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) => toggleAllNewRows(checked === true)}
+                  aria-label="Select all submitted or rejected status rows"
+                  disabled={selectableNewRowIds.length === 0}
+                  className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                />
+              </TableHead>
               <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 App ID
               </TableHead>
@@ -431,9 +733,6 @@ export default function NewRegistrationsPage() {
                 District
               </TableHead>
               <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Zone
-              </TableHead>
-              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 Status
               </TableHead>
               <TableHead className="px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -445,7 +744,7 @@ export default function NewRegistrationsPage() {
             {hasRetrieved && displayData.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={8}
                   className="px-4 py-8 text-center text-gray-400 text-sm"
                 >
                   No records found. Adjust your filters and click Retrieve.
@@ -470,9 +769,13 @@ export default function NewRegistrationsPage() {
                 {/* App ID */}
                 <TableCell className="px-4">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[#953002] font-medium hover:underline cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenApplication(row)}
+                      className="text-[#953002] font-medium hover:underline cursor-pointer"
+                    >
                       {row.appId}
-                    </span>
+                    </button>
                     {row.hasWarning && (
                       <AlertCircle size={14} className="text-amber-500" />
                     )}
@@ -489,23 +792,32 @@ export default function NewRegistrationsPage() {
                 <TableCell className="px-4 text-gray-700">
                   {row.district}
                 </TableCell>
-                <TableCell className="px-4 text-gray-700">{row.zone}</TableCell>
 
                 {/* Status Badge */}
                 <TableCell className="px-4">
                   <Badge className={statusBadgeClass[row.status]}>
-                    {row.status}
+                    {row.status.replaceAll("_", " ")}
                   </Badge>
                 </TableCell>
 
                 {/* Actions */}
                 <TableCell className="px-4 text-right">
-                  <Button variant="ghost" size="icon-sm" className="text-gray-400 hover:text-gray-600">
-                    {row.status === "DRAFT" ? (
-                      <Pencil size={16} />
-                    ) : (
-                      <FileText size={16} />
-                    )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-gray-400 hover:text-[#953002] hover:bg-[#fff6f2]"
+                    aria-label="Row actions"
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      if (openMenuId === row.appId) {
+                        setOpenMenuId(null);
+                      } else {
+                        setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                        setOpenMenuId(row.appId);
+                      }
+                    }}
+                  >
+                    <MoreHorizontal size={16} />
                   </Button>
                 </TableCell>
               </TableRow>
@@ -513,6 +825,225 @@ export default function NewRegistrationsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Fixed-position action dropdown — renders outside Card overflow */}
+      {openMenuId && menuPos && (() => {
+        const row = displayData.find((r) => r.appId === openMenuId);
+        if (!row) return null;
+        return (
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+            className="w-44 rounded-lg border border-gray-200 bg-white shadow-xl py-1"
+          >
+            {/* Edit */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); handleOpenApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-[#fff6f2] hover:text-[#953002] transition-colors"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+
+            {/* Submit */}
+            {row.status !== "SUBMITTED_FOR_APPROVAL" &&
+              row.status !== "ADDED_TO_BOARD_APPROVAL_LIST" && (
+                <button
+                  type="button"
+                  onClick={() => { setOpenMenuId(null); void handleSubmitApplication(row); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors"
+                >
+                  <SendHorizontal size={14} />
+                  Submit
+                </button>
+              )}
+
+            <div className="my-1 border-t border-gray-100" />
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); void handleDeleteApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        );
+      })()}
+
+
+      {showDeleteModal && pendingDeleteRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Application
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {pendingDeleteRow.appId} &mdash; {pendingDeleteRow.fullName}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                aria-label="Close delete modal"
+                disabled={isDeletingApplication}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this application?
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                  disabled={isDeletingApplication}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isDeletingApplication}
+                  onClick={handleConfirmDelete}
+                >
+                  {isDeletingApplication ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#953002]">
+                  Select Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Select the Board Meeting date for these {selectedNewRowsCount} applications.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-6">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">Meeting Date</label>
+                <Select
+                  value={selectedBoardMeeting}
+                  onValueChange={setSelectedBoardMeeting}
+                >
+                  <SelectTrigger className="h-11 w-full text-base">
+                    <SelectValue placeholder="Select Meeting" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {boardMeetingOptions.length === 0 ? (
+                      <SelectItem value="no-meetings" disabled>
+                        No board meetings available
+                      </SelectItem>
+                    ) : boardMeetingOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={!selectedBoardMeeting || isSavingBoardApprovalList}
+                  onClick={handleSaveBoardMeeting}
+                >
+                  {isSavingBoardApprovalList ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-3xl font-semibold text-[#953002]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                {createdBoardApprovalList?.listId
+                  ? `The Board Approval List ${createdBoardApprovalList.listId} for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`
+                  : `The Board Approval List for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`}
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
