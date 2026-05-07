@@ -36,25 +36,6 @@ export type Grade5SavedRequest = Grade5InitialData & {
   incompleteReason?: string;
 };
 
-type EligibilityValidationResponse = {
-  eligible?: boolean;
-  isEligible?: boolean;
-  valid?: boolean;
-  canCreate?: boolean;
-  message?: string;
-  reason?: string;
-  error?: string;
-  errors?: string[];
-  memberActiveDuringExam?: boolean;
-  activeDuringExam?: boolean;
-  membershipPeriodValid?: boolean;
-  membershipAgeValid?: boolean;
-  scholarshipRemittedPreviousMonth?: boolean;
-  previousMonthRemitted?: boolean;
-  continuousScholarshipRemittanceValid?: boolean;
-  continuousRemittanceValid?: boolean;
-};
-
 // For Validate Form
 const grade5Schema = z.object({
   requestedDate: z
@@ -165,9 +146,6 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
     },
   });
 
-  /**
-   * Watched values
-   */
   const selectedDistrict = watch("schoolDistrict");
   const selectedYear = watch("examYear");
   const examinationNumber = watch("examinationNumber");
@@ -179,18 +157,32 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
   }, [examinationNumber, clearErrors]);
 
   useEffect(() => {
+    const fetchExamYears = async () => {
+      try {
+        const res = await fetch("http://localhost:8080/api/grade5/exam-years");
+
+        if (!res.ok) {
+          throw new Error("Failed to load exam years");
+        }
+
+        const data: number[] = await res.json();
+        setExamYears(data);
+      } catch (error) {
+        console.error(error);
+        setPopupError("Failed to load exam years.");
+      }
+    };
+
+    fetchExamYears();
+  }, []);
+
+  useEffect(() => {
   if (initialData) {
     setValue("requestedDate", initialData.requestedDate || "");
     setValue("studentName", initialData.studentName || "");
-    setValue(
-      "birthCertificateNo",
-      initialData.birthCertificateNumber || initialData.birthCertificateNo || ""
-    );
+    setValue("birthCertificateNo",initialData.birthCertificateNumber || initialData.birthCertificateNo || "");
     setValue("school", initialData.school || initialData.studentSchool || "");
-    setValue(
-        "schoolDistrict",
-        initialData.district || initialData.schoolDistrict || ""
-    );
+    setValue("schoolDistrict",initialData.district || initialData.schoolDistrict || "");
     setValue("examYear", initialData.examYear || undefined);
     setValue(
       "districtCutOff",
@@ -205,9 +197,8 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
 
 const [checkingExamNo, setCheckingExamNo] = useState(false);
-
 const [examValidated, setExamValidated] = useState(false);
-const [eligibilityError, setEligibilityError] = useState("");
+const [examYears, setExamYears] = useState<number[]>([]);
 
 useEffect(() => {
   if (!selectedDistrict || !selectedYear) {
@@ -248,9 +239,8 @@ useEffect(() => {
   return () => clearTimeout(timeout);
 }, [selectedDistrict, selectedYear, setValue]);
 
-  /**
-   * Validate exam number duplication by calling backend
-   */
+  
+  //Validate exam number duplication by calling backend
   const validateExamNumber = async () => {
     const examNo = getValues("examinationNumber");
 
@@ -367,17 +357,11 @@ useEffect(() => {
     }
   };
 
-  /**
-   * Called when frontend validation fails
-   */
+  //Called when frontend validation fails
   const onInvalid = (formErrors: unknown) => {
     console.log("Validation Errors:", formErrors);
   };
 
-  /**
-   * Expose submit function to parent component
-   * Parent page calls formRef.current?.submitForm()
-   */
   useImperativeHandle(ref, () => ({
    submitForm: async (extraData = {}, requestNo?: string) => {
       let savedRequest: Grade5SavedRequest | undefined;
@@ -451,14 +435,7 @@ useEffect(() => {
 
       <p className="text-[#953002] text-xl font-bold">Request Details</p>
 
-      {eligibilityError && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-          {eligibilityError}
-        </p>
-      )}
-
       <div className="grid grid-cols-2 gap-4">
-        {/* Requested Date */}
         <div>
           <label className="block font-medium mb-1">Requested Date</label>
           <Input
@@ -474,7 +451,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Student Name */}
         <div>
           <label className="block font-medium mb-1">Student Name</label>
           <Input {...register("studentName")} disabled={readOnly} />
@@ -485,7 +461,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Birth Certificate Number */}
         <div>
           <label className="block font-medium mb-1">
             Birth Certificate No
@@ -498,7 +473,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* School */}
         <div>
           <label className="block font-medium mb-1">School</label>
           <Input {...register("school")} disabled={readOnly} />
@@ -507,7 +481,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* School District */}
         <div>
           <label className="block font-medium mb-1">School District</label>
           <select
@@ -555,25 +528,33 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Exam Year */}
         <div>
           <label className="block font-medium mb-1">Exam Year</label>
-          <Input
-            type="number"
-            min={2000}
-            max={new Date().getFullYear()}
+
+          <select
             disabled={readOnly || !selectedDistrict}
             {...register("examYear", {
               setValueAs: (value) =>
                 value === "" ? undefined : Number(value),
             })}
-          />
+            className="border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-base shadow-xs disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+          >
+            <option value="">Select Exam Year</option>
+
+            {examYears.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+
           {errors.examYear && (
-            <p className="text-red-500 text-sm">{errors.examYear.message}</p>
+            <p className="text-red-500 text-sm">
+              {errors.examYear.message}
+            </p>
           )}
         </div>
 
-        {/* District Cut-Off */}
         <div>
           <label className="block font-medium mb-1">District Cut-Off</label>
           <Input
@@ -583,7 +564,6 @@ useEffect(() => {
           />
         </div>
 
-        {/* Marks Obtained */}
         <div>
           <label className="block font-medium mb-1">Marks Obtained</label>
           <Input
@@ -601,7 +581,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Examination Number */}
         <div className="col-span-2">
           <label className="block font-medium mb-1">
             Examination Number

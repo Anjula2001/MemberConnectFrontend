@@ -348,7 +348,7 @@ export default function Grade5ScholarshipRequestsListPage() {
     setFieldErrors({});
     fetchRequests();
   };
-//////////////////////////////////
+
   const handleView = (memberId: string, requestId: number) => {
     window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
       memberId
@@ -382,7 +382,6 @@ export default function Grade5ScholarshipRequestsListPage() {
             <Button
               className="bg-[#C49A7C] text-white hover:bg-[#B0896A] px-5"
               onClick={() => {
-                // TODO: handle create approval list
                 console.log("Create Approval List");
               }}
             >

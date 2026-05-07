@@ -52,7 +52,7 @@ interface MemberDetails {
 
 const API_BASE_URL = "http://localhost:8080";
 
-const DEFAULT_MEMBER_ID = "MEM001";
+const DEFAULT_MEMBER_ID = "MEM016";
 
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
@@ -83,12 +83,7 @@ export default function RetirementPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
 
-  const [member, setMember] = useState<MemberDetails>({
-    memberId: "",
-    fullName: "",
-    nameWithInitials: "",
-    nic: "",
-  });
+  const [member, setMember] = useState<MemberDetails>({memberId: "",fullName: "",nameWithInitials: "",nic: "",});
 
   const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
@@ -126,7 +121,7 @@ export default function RetirementPage() {
     fetchRetirementRequests();
   }, [pageMode, selectedMemberId]);
 
-  // Fetches the selected member details for the page header and member panel.
+  //Fetches the selected member details for the page header and member panel.
   const fetchMember = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
@@ -232,16 +227,12 @@ export default function RetirementPage() {
   // Opens the bank detail modal when the member can add disbursement details.
   const handleAddAccountClick = () => {
     if (minorSavingsAccounts.length === 0) {
-      setMinorSavingsError(
-        "No need to add disbursement details because member has no minor saving accounts."
-      );
+      setMinorSavingsError("No need to add disbursement details because member has no minor saving accounts.");
       return;
     }
 
     if (bankAccounts.length > 0) {
-      setMinorSavingsError(
-        "Only one disbursement bank account is allowed."
-      );
+      setMinorSavingsError("Only one disbursement bank account is allowed.");
       return;
     }
 
@@ -267,7 +258,7 @@ export default function RetirementPage() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/mark-incomplete`,
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/mark-incomplete`,
         {
           method: "PUT",
           headers: {
@@ -353,29 +344,23 @@ export default function RetirementPage() {
     }
 
     if (minorSavingsAccounts.length > 0 && bankAccounts.length === 0) {
-      const missingBankDetailsMessage =
-        "Please add disbursement bank details before submitting.";
-
+      const missingBankDetailsMessage ="Please add disbursement bank details before submitting.";
       setSaveError(missingBankDetailsMessage);
       return;
     }
 
     if (validation && !validation.canSubmit) {
-      setSaveError(
-        "Cannot submit. Member has outstanding loans or loan obligations."
-      );
+      setSaveError("Cannot submit. Member has outstanding loans or loan obligations.");
       return;
     }
 
-    const confirmed = window.confirm(
-      "After submitting, this retirement request cannot be edited. Do you want to continue?"
-    );
+    const confirmed = window.confirm( "After submitting, this retirement request cannot be edited. Do you want to continue?");
 
     if (!confirmed) return;
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/submit`,
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/submit`,
         {
           method: "POST",
         }
@@ -426,7 +411,7 @@ export default function RetirementPage() {
       setApprovalAction(action);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.id}/${action}`,
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/${action}`,
         {
           method: "PUT", 
           headers: {
@@ -547,8 +532,8 @@ export default function RetirementPage() {
                   </Button>
                 </>
               )}
-
-              {/* */}
+              
+              {/*  */}
               {showDisabledRequestActions && (
                   <>
                     <Button
@@ -562,14 +547,14 @@ export default function RetirementPage() {
                     <Button
                       type="button"
                       disabled
-                      className="bg-[#953002] text-white disabled:bg-[#953002] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       Submit for Approval
                     </Button>
                   </>
                 )}
 
-              {/**/}
+              {/*  */}
               {showRequestEditActions && (
                 <>
                   <Button
@@ -599,7 +584,7 @@ export default function RetirementPage() {
                       (isIncompleteStatus && !isEditMode) ||
                       (validation ? !validation.canSubmit : true)
                     }
-                    className="bg-[#953002] text-white disabled:cursor-not-allowed"
+                    className="bg-[#953002] text-white  hover:bg-[#7a2702] disabled:cursor-not-allowed"
                   >
                     Submit for Approval
                   </Button>

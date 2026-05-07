@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
@@ -71,23 +71,9 @@ type TerminationRequestApiResponse =
     };
 
 type RequestType = "termination" | "retirement" | "member_deaths" | "all";
-type StatusType = 
-  | "new" 
-  | "submitted_for_approval" 
-  | "added_to_approval_list" 
-  | "approved" 
-  | "rejected" 
-  | "incomplete"
-  | "pending_review"
-  | "approved_by_board"
-  | "disbursement_initiated"
-  | "disbursement_completed"
-  | "awaiting_nominee_confirmation"
-  | "on_hold"
-  | "district-committee"
-  | "pnd-committee"
-  | "inactive"
-  ;
+type StatusType = | "new" | "submitted_for_approval" | "added_to_approval_list" | "approved" | "rejected" | "incomplete"
+                  |"pending_review"| "approved_by_board"| "disbursement_initiated"| "disbursement_completed"
+                  | "awaiting_nominee_confirmation"| "on_hold"| "district-committee"| "pnd-committee"| "inactive";
 
 type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
 type SortBy = "requestedDate" | "status" | "memberId";
@@ -95,16 +81,8 @@ type SortOrder = "asc" | "desc";
 
 const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
-const DEFAULT_RETIREMENT_STATUSES: StatusType[] = [
-  "new",
-  "submitted_for_approval",
-];
-const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = [
-  "SUBMITTED_FOR_APPROVAL",
-  "ADDED_TO_APPROVAL_LIST",
-  "APPROVED",
-  "REJECTED",
-];
+const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
+const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
 
 // Status options by request type
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
@@ -115,7 +93,6 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "inactive", label: "Inactive" },
-
   ],
   retirement: [
     { value: "new", label: "New" },
@@ -134,8 +111,6 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
     { value: "rejected", label: "Rejected" },
     { value: "approved", label: "Approved" },
     { value: "inactive", label: "Inactive" },
-
-
   ],
   all: [
     { value: "new", label: "New" },
@@ -311,38 +286,29 @@ function LocationMultiSelect({
 // Location configuration
 const AVAILABLE_LOCATIONS = [
   { id: "all", name: "All Locations" },
-
   { id: "colombo", name: "Colombo" },
   { id: "gampaha", name: "Gampaha" },
   { id: "kalutara", name: "Kalutara" },
-
   { id: "kandy", name: "Kandy" },
   { id: "matale", name: "Matale" },
   { id: "nuwara_eliya", name: "Nuwara Eliya" },
-
   { id: "galle", name: "Galle" },
   { id: "matara", name: "Matara" },
   { id: "hambantota", name: "Hambantota" },
-
   { id: "jaffna", name: "Jaffna" },
   { id: "kilinochchi", name: "Kilinochchi" },
   { id: "mannar", name: "Mannar" },
   { id: "vavuniya", name: "Vavuniya" },
   { id: "mullaitivu", name: "Mullaitivu" },
-
   { id: "batticaloa", name: "Batticaloa" },
   { id: "ampara", name: "Ampara" },
   { id: "trincomalee", name: "Trincomalee" },
-
   { id: "kurunegala", name: "Kurunegala" },
   { id: "puttalam", name: "Puttalam" },
-
   { id: "anuradhapura", name: "Anuradhapura" },
   { id: "polonnaruwa", name: "Polonnaruwa" },
-
   { id: "badulla", name: "Badulla" },
   { id: "monaragala", name: "Monaragala" },
-
   { id: "ratnapura", name: "Ratnapura" },
   { id: "kegalle", name: "Kegalle" }
 ];
@@ -371,15 +337,14 @@ const getThisAndLastMonthRange = () => {
 
 export default function TerminationPage() {
   const router = useRouter();
+
+  //Fiter state value
   const [requestType, setRequestType] = useState<RequestType>("retirement");
-  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(
-    DEFAULT_RETIREMENT_STATUSES
-  );
+  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(DEFAULT_RETIREMENT_STATUSES);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [dateFilter, setDateFilter] =
-    useState<DateFilterType>("all_days");
+  const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("requestedDate");
@@ -390,8 +355,7 @@ export default function TerminationPage() {
   const showRowSelection = false;
 
   // Get current status options based on request type
-  const currentStatusOptions =
-    requestType === "all"
+  const currentStatusOptions = requestType === "all"
       ? STATUS_OPTIONS_BY_TYPE.retirement
       : STATUS_OPTIONS_BY_TYPE[requestType];
 
@@ -455,56 +419,12 @@ export default function TerminationPage() {
     });
   };
 
-  const matchesCurrentFilters = (request: TerminationRequest) => {
-    const matchesStatus =
-      selectedStatuses.length === 0 ||
-      selectedStatuses.includes(request.status.toLowerCase() as StatusType);
-    const searchKey = searchQuery.toLowerCase();
-    const matchesSearch =
-      searchKey === "" ||
-      request.member.toLowerCase().includes(searchKey) ||
-      request.nameAsInPayroll.toLowerCase().includes(searchKey) ||
-      request.nameWithInitials.toLowerCase().includes(searchKey) ||
-      request.memberNumber.toLowerCase().includes(searchKey) ||
-      request.nicNumber.toLowerCase().includes(searchKey);
-
-    let matchesDateFilter = true;
-    const requestDate = new Date(request.date);
-
-    if (dateFilter === "this_month") {
-      const { from, to } = getCurrentMonthRange();
-      matchesDateFilter = requestDate >= new Date(from) && requestDate <= new Date(to);
-    } else if (dateFilter === "this_and_last_month") {
-      const { from, to } = getThisAndLastMonthRange();
-      matchesDateFilter = requestDate >= new Date(from) && requestDate <= new Date(to);
-    } else if (dateFilter === "date_period" && fromDate && toDate) {
-      matchesDateFilter = requestDate >= new Date(fromDate) && requestDate <= new Date(toDate);
-    }
-
-    return matchesStatus && matchesSearch && matchesDateFilter;
-  };
-
-  const sortRequests = (rows: TerminationRequest[]) => {
-    return [...rows].sort((a, b) => {
-      let compareValue = 0;
-
-      if (sortBy === "requestedDate") {
-        compareValue = new Date(a.date).getTime() - new Date(b.date).getTime();
-      } else if (sortBy === "status") {
-        compareValue = a.status.localeCompare(b.status);
-      } else if (sortBy === "memberId") {
-        compareValue = a.memberNumber.localeCompare(b.memberNumber);
-      }
-
-      return sortOrder === "asc" ? compareValue : -compareValue;
-    });
-  };
-
   const fetchRequests = async () => {
     try {
       setLoading(true);
       setError("");
-
+      
+      //Validate Dates
       if (dateFilter === "date_period") {
         if (fromDate && fromDate > TODAY) {
           setError("From Date cannot be a future date.");
@@ -529,10 +449,6 @@ export default function TerminationPage() {
 
       const params = new URLSearchParams();
 
-      if (requestType === "all" || requestType === "retirement") {
-        params.append("requestType", "retirement");
-      }
-
       selectedStatuses.forEach((status) =>
         params.append("statuses", status.toUpperCase())
       );
@@ -540,10 +456,6 @@ export default function TerminationPage() {
       if (searchQuery.trim()) {
         params.append("searchKey", searchQuery.trim());
       }
-
-      selectedLocations.forEach((location) =>
-        params.append("location", location)
-      );
 
       if (dateFilter === "this_month") {
         const { from, to } = getCurrentMonthRange();
@@ -573,8 +485,8 @@ export default function TerminationPage() {
       }
 
       const data = (await response.json()) as TerminationRequestApiResponse;
-      const retrievedRequests = normalizeApiRows(data).filter(matchesCurrentFilters);
-      setRequests(sortRequests(retrievedRequests));
+      const retrievedRequests = normalizeApiRows(data);
+      setRequests(retrievedRequests);
       setSelectedRequests([]);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
@@ -585,10 +497,6 @@ export default function TerminationPage() {
     }
   };
 
-  const filteredRequests = useMemo(() => {
-    return requests;
-  }, [requests]);
-
   const handleSelectRequest = (requestId: string) => {
     setSelectedRequests((prev) =>
       prev.includes(requestId) ? prev.filter((id) => id !== requestId) : [...prev, requestId]
@@ -596,10 +504,10 @@ export default function TerminationPage() {
   };
 
   const handleSelectAll = () => {
-    if (selectedRequests.length === filteredRequests.length) {
+    if (selectedRequests.length === requests.length) {
       setSelectedRequests([]);
     } else {
-      setSelectedRequests(filteredRequests.map((req) => req.id));
+      setSelectedRequests(requests.map((req) => req.id));
     }
   };
 
@@ -810,11 +718,11 @@ export default function TerminationPage() {
                 <TableHead className="w-12">
                   <Checkbox
                     checked={
-                      selectedRequests.length === filteredRequests.length &&
-                      filteredRequests.length > 0
+                      selectedRequests.length === requests.length &&
+                      requests.length > 0
                     }
                     onCheckedChange={handleSelectAll}
-                    disabled={filteredRequests.length === 0}
+                    disabled={requests.length === 0}
                   />
                 </TableHead>
               )}
@@ -834,8 +742,8 @@ export default function TerminationPage() {
                   Loading requests...
                 </TableCell>
               </TableRow>
-            ) : filteredRequests.length > 0 ? (
-              filteredRequests.map((request) => (
+            ) : requests.length > 0 ? (
+              requests.map((request) => (
                 <TableRow className="h-12" key={request.id}>
                   {showRowSelection && (
                     <TableCell>
@@ -871,17 +779,18 @@ export default function TerminationPage() {
                           aria-label="Request has indirect obligations"
                         />
                       )}
-                      {!request.hasLoanBalance &&
-                        !request.hasIndirectObligations && (
-                          <span className="text-muted-foreground"></span>
-                        )}
+                      {!request.hasLoanBalance &&!request.hasIndirectObligations && (
+                        <span className="text-muted-foreground"></span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
                       {!NON_EDITABLE_STATUSES.includes(request.status) && (
-                        <Button variant="ghost" size="sm" onClick={() => handleEditRequest(request)} className="h-8 w-8 p-0">
+                        <Button variant="ghost" size="sm" 
+                          onClick={() => handleEditRequest(request)} 
+                          className="h-8 w-8 p-0">
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
@@ -898,9 +807,9 @@ export default function TerminationPage() {
         </Table>
       </div>
 
-      {filteredRequests.length > 0 && (
+      {requests.length > 0 && (
         <div className="text-sm text-muted-foreground">
-          Showing {filteredRequests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
+          Showing {requests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
         </div>
       )}
     </div>

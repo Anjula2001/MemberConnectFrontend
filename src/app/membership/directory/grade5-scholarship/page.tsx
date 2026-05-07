@@ -48,7 +48,7 @@ export default function Grade5ScholarshipPage() {
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const DEFAULT_MEMBER_ID = "MEM001";
+  const DEFAULT_MEMBER_ID = "MEM031";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
@@ -71,18 +71,9 @@ export default function Grade5ScholarshipPage() {
   const isViewRequestMode = pageMode === "view" && !!requestId;
 
 
-  const currencyFormatter = new Intl.NumberFormat("en-LK", {
-    style: "currency",
-    currency: "LKR",
-    maximumFractionDigits: 0,
-  });
+  const currencyFormatter = new Intl.NumberFormat("en-LK", {style: "currency",currency: "LKR",maximumFractionDigits: 0,});
 
-  const [member, setMember] = useState({
-    memberId: "",
-    fullName: "",
-    nameWithInitials: "",
-    nic: "",
-  });
+  const [member, setMember] = useState({memberId: "",fullName: "",nameWithInitials: "",nic: "",});
 
   const [grade5Request, setGrade5Request] = useState<Grade5Request | null>(
     null
@@ -106,15 +97,11 @@ export default function Grade5ScholarshipPage() {
   const [eligibleMonths, setEligibleMonths] = useState(0);
   const [isDoubleAmount, setIsDoubleAmount] = useState(false);
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState(
-    SUBMITTED_FOR_NORMAL_APPROVAL
-  );
+  const [submitStatus, setSubmitStatus] = useState(SUBMITTED_FOR_NORMAL_APPROVAL);
   const [submitError, setSubmitError] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
-  const isRequestSubmitted = grade5Request?.status
-    ? LOCKED_STATUSES.includes(grade5Request.status)
-    : false;
+  const isRequestSubmitted = grade5Request?.status? LOCKED_STATUSES.includes(grade5Request.status): false;
 
   useEffect(() => {
     setIsEditing(pageMode === "edit");
@@ -125,6 +112,7 @@ export default function Grade5ScholarshipPage() {
     }
   }, [pageMode, selectedMemberId, requestId]);
 
+  //Fetches the selected member details.
   const fetchMember = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
@@ -146,6 +134,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  //fetch selected member details
   const fetchGrade5Requests = async () => {
     try {
       const url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
@@ -193,6 +182,7 @@ export default function Grade5ScholarshipPage() {
     setIsDoubleAmount(!!grade5Request.isDoubleAmount);
   }, [grade5Request]);
 
+  //handle confirm in mark as incomplete
   const handleConfirm = async (reason: string) => {
     if (!reason.trim()) {
       setFundError("Incomplete reason is required.");
@@ -233,7 +223,8 @@ export default function Grade5ScholarshipPage() {
       setFundError("Failed to mark request as incomplete.");
     }
   };
-
+  
+  //Validates the fund disbursement details before saving or submitting the request.
   const validateFundDisbursement = () => {
     if (!fundRefreshed) {
       setFundError("Please click Refresh in Fund Disbursement before saving.");
@@ -276,6 +267,7 @@ export default function Grade5ScholarshipPage() {
     return true;
   };
 
+  //Validates that all mandatory documents are uploaded before submit a request.
   const validateMandatoryDocuments = async (savedRequestNo: String) => {
     setDocumentError("");
 
@@ -303,13 +295,9 @@ export default function Grade5ScholarshipPage() {
         return false;
       }
 
-      const requiredDocuments: RequiredDocument[] =
-        await requiredResponse.json();
-      const uploadedDocuments: UploadedDocument[] =
-        await uploadedResponse.json();
-      const uploadedDocumentIds = new Set(
-        uploadedDocuments.map((document) => document.requiredDocumentId)
-      );
+      const requiredDocuments: RequiredDocument[] = await requiredResponse.json();
+      const uploadedDocuments: UploadedDocument[] = await uploadedResponse.json();
+      const uploadedDocumentIds = new Set(uploadedDocuments.map((document) => document.requiredDocumentId));
       const missingDocuments = requiredDocuments.filter(
         (document) =>
           document.mandatory &&
@@ -367,6 +355,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  //Handles the submit action, validates the fund disbursement and mandatory documents before allowing to submit the request.
   const handleSubmitForm = async () => {
     setSubmitError("");
     setDocumentError("");
@@ -412,6 +401,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  
   const handleConfirmSubmit = async () => {
     if (!grade5Request?.id) {
       setSubmitError("Please save the Grade 5 request before submitting.");
@@ -459,6 +449,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  //Calculate fund Disbursement
   const calculateDisbursementAmount = (
     option: string,
     months: number,
@@ -558,7 +549,7 @@ export default function Grade5ScholarshipPage() {
     <>
       <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
         <div className="min-h-[100vh] flex-1 rounded-xl px-14 py-10 bg-muted/50 p-6">
-          {/* Header */}
+          
           <div className="flex items-center justify-between ">
             <div>
               <p className="text-2xl font-bold text-[#953002]">
@@ -586,6 +577,7 @@ export default function Grade5ScholarshipPage() {
               </div>
             </div>
 
+            {/*open in view mode*/}
             <div className="flex gap-2">
               {isViewRequestMode &&
                 grade5Request?.id &&
@@ -594,7 +586,8 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     onClick={() => {
                       setIsEditing(true);
-
+                      
+                      {/*Page routing*/}
                       router.replace(
                         `/membership/directory/grade5-scholarship?requestId=${encodeURIComponent(
                           String(requestId)
@@ -656,7 +649,8 @@ export default function Grade5ScholarshipPage() {
               )}
             </div>
           </div>
-
+          
+          {/*show document error if exists*/}
           {documentError && (
               <p className="text-red-500 text-sm mb-3">
                 {documentError}
@@ -736,6 +730,7 @@ export default function Grade5ScholarshipPage() {
                   </Button>
                 </div>
 
+                
                 {!fundRefreshed ? (
                   <p className="text-gray-500 text-sm">
                     Click Refresh to enable fund disbursement.
@@ -883,18 +878,13 @@ export default function Grade5ScholarshipPage() {
                                   value={MINOR_ONLY}
                                   checked={disbursementOption === MINOR_ONLY}
                                   onChange={(e) =>
-                                    calculateDisbursementAmount(
-                                      e.target.value,
-                                      eligibleMonths,
-                                      minorAccountExists
-                                    )
+                                    calculateDisbursementAmount(e.target.value,eligibleMonths,minorAccountExists)
                                   }
                                 />
                                 Minor Account Only
                               </span>
                               <span className="text-gray-600">
-                                Disburse the full scholarship amount to the
-                                minor account.
+                                  Disburse the full scholarship amount to the minor account.
                               </span>
                             </label>
                           </>
@@ -966,7 +956,6 @@ export default function Grade5ScholarshipPage() {
         </div>
       </div>
 
-      {/* Modal */}
       <MarkIncompleteModal
         open={openModal}
         onClose={() => setOpenModal(false)}
@@ -981,8 +970,7 @@ export default function Grade5ScholarshipPage() {
             </p>
 
             <p className="mt-3 text-sm text-gray-700">
-              Once submitted, the Grade 5 Scholarship Request cannot be edited.
-              Select the approval path for this request.
+              Once submitted, the Grade 5 Scholarship Request cannot be edited.Select the approval path for this request.
             </p>
 
             {submitError && (
@@ -991,6 +979,7 @@ export default function Grade5ScholarshipPage() {
               </p>
             )}
 
+            {/*approval options*/}
             <div className="mt-5 space-y-3">
               <label
                 className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
