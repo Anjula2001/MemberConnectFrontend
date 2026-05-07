@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "./button";
 
 const API_BASE_URL = "http://localhost:8080";
+
 const SUBMITTED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
   "SUBMITTED_FOR_NORMAL_APPROVAL",
@@ -25,7 +26,7 @@ interface RequiredDocument {
 
 interface UploadedDocument {
   id: number;
-  requestId: number;
+  requestNo: String;
   requiredDocumentId: number;
   fileName: string;
   fileType: string;
@@ -33,17 +34,14 @@ interface UploadedDocument {
 }
 
 interface DocumentUploadProps {
-  requestId: number | null;
+  requestNo: string | null;
   memberId: string;
   requestStatus: string;
   requestType: "retirement-requests" | "grade5-requests";
   readOnly?: boolean;
 }
 
-/**
- * Validates the selected file before upload.
- * This prevents unsupported file types and large files from being sent.
- */
+//Validates the selected file before upload.
 const validateSelectedFile = (file: File | null) => {
   if (!file) {
     return "Please select a file.";
@@ -57,32 +55,24 @@ const validateSelectedFile = (file: File | null) => {
 };
 
 export default function DocumentUpload({
-  requestId,
+  requestNo,
   memberId,
   requestStatus,
   requestType,
   readOnly = false,
 }: DocumentUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [requiredDocuments, setRequiredDocuments] = useState<
-    RequiredDocument[]
-  >([]);
-  const [uploadedDocuments, setUploadedDocuments] = useState<
-    UploadedDocument[]
-  >([]);
-  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(
-    null
-  );
+  const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>([]);
+  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   const [uploading, setUploading] = useState(false);
-  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
-    null
-  );
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null);
 
   const isSubmitted = SUBMITTED_STATUSES.includes(requestStatus);
   const isReadOnly = readOnly || isSubmitted;
-  const canUpload = !!requestId && !isReadOnly && !uploading;
+  const canUpload = !!requestNo && !isReadOnly && !uploading;
 
   const isDocumentTypeUploaded = (documentId: number) => {
     return uploadedDocuments.some(
@@ -91,30 +81,25 @@ export default function DocumentUpload({
   };
 
 
-  /**
-   * Loads required documents and uploaded documents when request details change.
-   * If the request is not saved yet, uploaded documents are cleared.
-   */
+  // Loads required documents and uploaded documents when request details change.
   useEffect(() => {
     if (!requestType || !memberId) return;
 
     fetchRequiredDocuments();
 
-    if (requestId) {
+    if (requestNo) {
       fetchUploadedDocuments();
     } else {
       setUploadedDocuments([]);
     }
-  }, [requestId, requestType, memberId]);
+  }, [requestNo, requestType, memberId]);
 
-  /**
-   * Fetches the list of documents required for this request type.
-   * It supports both saved requests and preview mode before saving.
-   */
+  
+  // Fetches the list of documents required for this request type.
   const fetchRequiredDocuments = async () => {
     try {
-      const url = requestId
-        ? `${API_BASE_URL}/api/${requestType}/${requestId}/required-documents?memberId=${memberId}`
+      const url = requestNo
+        ? `${API_BASE_URL}/api/${requestType}/${requestNo}/required-documents?memberId=${memberId}`
         : `${API_BASE_URL}/api/${requestType}/required-documents-preview?memberId=${memberId}`;
 
       const response = await fetch(url);
@@ -138,18 +123,17 @@ export default function DocumentUpload({
     }
   };
 
-  /**
-   * Fetches already uploaded documents for the current request.
-   */
+  
+  //Fetches already uploaded documents for the current request.
   const fetchUploadedDocuments = async () => {
-    if (!requestId) {
+    if (!requestNo) {
       setUploadedDocuments([]);
       return;
     }
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestId}/uploaded-documents`
+        `${API_BASE_URL}/api/${requestType}/${requestNo}/uploaded-documents`
       );
 
       if (!response.ok) {
@@ -164,14 +148,11 @@ export default function DocumentUpload({
     }
   };
 
-  /**
-   * Uploads the selected document file after checking request status,
-   * document type selection, and file validation.
-   */
+  //handle add button
   const handleAddClick = () => {
     setMessage("");
 
-    if (!requestId) {
+    if (!requestNo) {
       setMessage("Please save request before uploading documents.");
       return;
     }
@@ -194,10 +175,11 @@ export default function DocumentUpload({
     fileInputRef.current?.click();
   };
 
+  //Handle Document Uploaded part
   const handleUpload = async (file: File | null) => {
     setMessage("");
 
-    if (!requestId) {
+    if (!requestNo) {
       setMessage("Please save request before uploading documents.");
       return;
     }
@@ -226,7 +208,7 @@ export default function DocumentUpload({
       formData.append("file", file as File);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestId}/documents/${selectedDocumentId}/upload`,
+        `${API_BASE_URL}/api/${requestType}/${requestNo}/documents/${selectedDocumentId}/upload`,
         {
           method: "POST",
           body: formData,
@@ -252,10 +234,7 @@ export default function DocumentUpload({
     }
   };
 
-  /**
-   * Deletes a selected uploaded document.
-   * Deleting is blocked after the request is submitted.
-   */
+  //Deletes a selected uploaded document.
   const handleDelete = async (uploadedDocumentId: number) => {
     setMessage("");
 
@@ -299,7 +278,7 @@ export default function DocumentUpload({
       <div className="border rounded-lg p-4 space-y-4">
         <p className="font-semibold">Upload Document</p>
 
-        {!requestId && (
+        {!requestNo && (
           <p className="text-gray-500 text-sm">
             Save request before uploading documents.
           </p>

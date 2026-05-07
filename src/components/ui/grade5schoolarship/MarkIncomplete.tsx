@@ -8,10 +8,7 @@ import { Button } from "../button";
 const MIN_REASON_LENGTH = 1;
 const MAX_REASON_LENGTH = 250;
 
-/**
- * Validation schema for incomplete reason.
- * Zod is used here to keep form validation clear, reusable, and type-safe.
- */
+// Validation schema for incomplete reason.
 const incompleteSchema = z.object({
   reason: z
     .string()
@@ -48,19 +45,13 @@ export function MarkIncompleteModal({
 
   if (!open) return null;
 
-  /**
-   * Submits the validated reason to the parent component.
-   * The reason is trimmed before sending to avoid saving unnecessary spaces.
-   */
+  // Handles form submission
   const onSubmit = (data: IncompleteFormValues) => {
     onConfirm(data.reason.trim());
     reset();
   };
 
-  /**
-   * Resets form values and validation errors when closing the modal.
-   * This prevents old errors from showing when the modal opens again.
-   */
+  // Resets form values and validation errors when closing the modal.
   const handleClose = () => {
     reset();
     onClose();

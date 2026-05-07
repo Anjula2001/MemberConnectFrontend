@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  forwardRef,
-  useImperativeHandle,
-  useState,
-} from "react";
+import {forwardRef,useImperativeHandle,useState,} from "react";
 import type { ChangeEvent } from "react";
 import { z } from "zod";
 
@@ -25,10 +21,7 @@ interface Props {
   readOnly?: boolean;
 }
 
-/**
- * Get today's date in YYYY-MM-DD format.
- * This avoids repeating the same date logic in multiple places.
- */
+// Get today's date in YYYY-MM-DD format.
 const getTodayDate = () => {
   return new Date().toISOString().split("T")[0];
 };
@@ -70,17 +63,11 @@ type RetirementFormErrors = {
 
 const RetirementForm = forwardRef<RetirementFormRef, Props>(
   ({ initialData, readOnly = false }, ref) => {
-    const [requestedDate, setRequestedDate] = useState(
-      initialData?.requestedDate || ""
-    );
-    const [effectiveDate, setEffectiveDate] = useState(
-      initialData?.effectiveDate || ""
-    );
+    const [requestedDate, setRequestedDate] = useState(initialData?.requestedDate || "");
+    const [effectiveDate, setEffectiveDate] = useState(initialData?.effectiveDate || "");
     const [comment, setComment] = useState(initialData?.comment || "");
     const [error, setError] = useState("");
-    const [fieldErrors, setFieldErrors] = useState<RetirementFormErrors>({
-      effectiveDate: getEffectiveDateError(initialData?.effectiveDate || ""),
-    });
+    const [fieldErrors, setFieldErrors] = useState<RetirementFormErrors>({effectiveDate: getEffectiveDateError(initialData?.effectiveDate || ""),});
 
     const handleRequestedDateChange = (e: ChangeEvent<HTMLInputElement>) => {
       const selectedDate = e.target.value;
@@ -102,10 +89,6 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
       }));
     };
 
-    /**
-     * Expose validation to the parent component.
-     * The parent page can call this before saving the retirement request.
-     */
     useImperativeHandle(ref, () => ({
       validateAndGetData: () => {
         setError("");

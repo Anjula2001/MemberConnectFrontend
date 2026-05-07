@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useState,
-} from "react";
+import {forwardRef,useEffect,useImperativeHandle,useState,} from "react";
 import { z } from "zod";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
@@ -43,6 +38,7 @@ interface AddBankDetailsProps {
 
 const API_BASE_URL = "http://localhost:8080";
 
+// Validation schema for bank details form.
 const bankDetailsSchema = z.object({
   accountNumber: z
     .string()
@@ -69,10 +65,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
     const [accountNumberError, setAccountNumberError] = useState("");
     const [generalError, setGeneralError] = useState("");
 
-    /**
-     * Loads all available banks when the component opens.
-     * This keeps the bank dropdown updated from the backend.
-     */
+    
+    //Loads all available banks when the component opens.
     useEffect(() => {
       const fetchBanks = async () => {
         try {
@@ -106,10 +100,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
       }
     }, [initialData]);
 
-    /**
-     * Loads branches only after a bank is selected.
-     * This avoids unnecessary API calls and ensures branch options match the bank.
-     */
+    // Loads branches only after a bank is selected.
     useEffect(() => {
       if (!selectedBank) {
         setBranches([]);
@@ -144,10 +135,8 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
       fetchBranches();
     }, [selectedBank]);
 
-    /**
-     * Validates all required fields before saving.
-     * Keeping validation separate makes the code easier to maintain and test.
-     */
+    
+    //Validates all required fields before saving.
     const validateForm = () => {
       let isValid = true;
 
@@ -181,10 +170,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
       return isValid;
     };
 
-    /**
-     * Saves the selected bank details to the backend.
-     * The function first validates inputs, then sends only clean data.
-     */
+    // Saves the selected bank details to the backend.
     const submitBankForm = async () => {
       const isValid = validateForm();
 
@@ -228,10 +214,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
       }
     };
 
-    /**
-     * Allows the parent component to trigger this form's submit function.
-     * This is useful when the save button is controlled from outside the form.
-     */
+    // Exposes the submitBankForm function to parent components via ref.
     useImperativeHandle(ref, () => ({
       submitBankForm,
     }));
