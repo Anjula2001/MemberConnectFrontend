@@ -87,22 +87,25 @@ export async function POST(request: Request) {
 
     const processed = await processBuffer(file, inputBuffer);
 
-    const uploadsRoot = path.join(process.cwd(), "uploads", String(applicationId));
-    await fs.mkdir(uploadsRoot, { recursive: true });
-
-    const finalFileName = `${Date.now()}-${processed.processedFileName}`;
-    const absolutePath = path.join(uploadsRoot, finalFileName);
-    await fs.writeFile(absolutePath, processed.buffer);
-
-    const relativeStoragePath = path
-      .relative(process.cwd(), absolutePath)
-      .split(path.sep)
-      .join("/");
-
     const backendBaseUrl =
       process.env.BACKEND_API_BASE_URL ||
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       "http://localhost:8080";
+
+    const uploadFormData = new FormData();
+    const blob = new Blob([new Uint8Array(processed.buffer)], { type: processed.processedFileType });
+    uploadFormData.append("file", blob, processed.processedFileName);
+
+    const uploadResponse = await fetch(`${backendBaseUrl}/api/file/upload`, {
+      method: "POST",
+      body: uploadFormData,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Failed to upload file to S3: ${uploadResponse.statusText}`);
+    }
+
+    const s3FileName = await uploadResponse.text();
 
     const metadataResponse = await fetch(`${backendBaseUrl}/api/documents/upload`, {
       method: "POST",
@@ -112,9 +115,9 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         applicationId,
         documentType,
-        fileName: finalFileName,
+        fileName: processed.processedFileName,
         fileType: processed.processedFileType,
-        storagePath: relativeStoragePath,
+        storagePath: s3FileName,
         fileSize: processed.buffer.byteLength,
       }),
     });
@@ -133,7 +136,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...metadata,
-      storagePath: relativeStoragePath,
+      storagePath: s3FileName,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed";

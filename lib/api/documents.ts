@@ -5,7 +5,8 @@ export type DocumentType =
   | "APPOINTMENT_LETTER"
   | "PAYSLIP_COPY"
   | "BIRTH_CERTIFICATE"
-  | "PROFILE_PHOTO";
+  | "PROFILE_PHOTO"
+  | "SIGNATURE";
 
 export interface UploadDocumentRequestDTO {
   applicationId: number;
