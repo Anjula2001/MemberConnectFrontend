@@ -253,7 +253,7 @@ export default function RequestTerminationPage() {
         return;
       }
 
-      // Payload must match MemberTerminationDTO in Spring Boot.
+      // payload
       const payload = {
         memberId: backendMemberId,
         terminationReason: reason,
@@ -637,27 +637,7 @@ export default function RequestTerminationPage() {
           )}
         </div>
 
-        {/* SIDE PANEL - DOCUMENTS */}
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Documents</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="border-dashed border-2 rounded-md p-4 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Upload required documents
-                </p>
-                <Button size="sm" variant="outline" className="mt-2" disabled={mode === "view"}>
-                  Upload File
-                </Button>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                No files uploaded
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+
       </div>
 
       {/* ACTION BUTTONS */}

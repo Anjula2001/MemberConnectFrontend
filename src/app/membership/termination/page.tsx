@@ -690,7 +690,7 @@ export default function TerminationPage() {
 
 
 
-            <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+            <Button onClick={handleRetrieve} className="bg-[red] hover:bg-[#A0522D] text-white">Retrieve</Button>
           </div>
         </CardContent>
       </Card>
