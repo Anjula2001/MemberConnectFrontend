@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,10 +8,7 @@ import { Trash2, UploadCloud } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
-import {
-  memberTransferSchema,
-  type MemberTransferFormData,
-} from "@/lib/validators/membertransfer.schema";
+import {memberTransferSchema,type MemberTransferFormData,} from "@/lib/validators/membertransfer.schema";
 
 type DocumentFileItem = {
   file: File;
@@ -101,6 +98,7 @@ const emptyOldValues: MemberTransferOldValues = {
   salaryPayingOffice: "",
 };
 
+// Utility to format various value types for display
 const formatDisplayValue = (value: any): string => {
   if (value === null || typeof value === "undefined") return "";
   if (typeof value === "string" || typeof value === "number") return String(value);
@@ -123,6 +121,7 @@ const formatDisplayValue = (value: any): string => {
   return String(value);
 };
 
+// Convert array of items to OptionItem format for dropdowns
 const toOptionItems = (items: any[]): OptionItem[] => {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
@@ -138,11 +137,13 @@ const toOptionItems = (items: any[]): OptionItem[] => {
     .filter((item) => item.id !== "" && item.name !== "");
 };
 
+// Find option ID by name from a list of options
 const findOptionIdByName = (options: OptionItem[], name: string) => {
   const found = options.find((option) => option.name === name || String(option.raw?.name) === name);
   return found ? found.id : "";
 };
 
+// Convert value to nullable number for API compatibility
 const toNullableNumber = (value: any) => {
   if (value === "" || value === null || typeof value === "undefined" || value === "NA") {
     return null;
@@ -153,7 +154,7 @@ const toNullableNumber = (value: any) => {
 };
 
 export default function ChangeMemberTransferForm() {
-  const HARDCODED_MEMBER_ID = 8;
+  const HARDCODED_MEMBER_ID = 7;
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -170,9 +171,7 @@ export default function ChangeMemberTransferForm() {
 
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
-  const [status, setStatus] = useState<
-    "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL" | "APPROVED" | "REJECTED"
-  >("NEW");
+  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
@@ -196,20 +195,13 @@ export default function ChangeMemberTransferForm() {
   const [rejectReason, setRejectReason] = useState("");
 
   const isExistingRequest = Boolean(requestKey);
-  const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    watch,
-    formState: { errors, isValid },
-  } = useForm<MemberTransferFormData>({
+  const {register,handleSubmit,reset,setValue,watch,formState: { errors, isValid },} = useForm<MemberTransferFormData>({
     resolver: zodResolver(memberTransferSchema),
     mode: "onChange",
     defaultValues: {
@@ -230,6 +222,7 @@ export default function ChangeMemberTransferForm() {
   const selectedZone = watch("educationalZoneNew");
   const selectedWorkingLocation = watch("workingLocationNew");
 
+  //get mandatory Document in DB
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
@@ -245,6 +238,22 @@ export default function ChangeMemberTransferForm() {
     fetchRequiredDocumentTypes();
   }, []);
 
+  // Check if all mandatory documents are uploaded
+  const areMandatoryDocsUploaded = useMemo(() => {
+    if (requiredDocumentTypes.length === 0) return true;
+
+    const mandatoryTypes = requiredDocumentTypes.filter((t) => t.mandatory);
+    if (mandatoryTypes.length === 0) return true;
+
+    const uploadedTypes = new Set([
+      ...uploadedDocuments.map((d) => d.documentType),
+      ...documentFiles.map((d) => d.documentType),
+    ]);
+
+    return mandatoryTypes.every((type) => uploadedTypes.has(type.documentType));
+  }, [requiredDocumentTypes, uploadedDocuments, documentFiles]);
+
+  //Get Working location type,distric,designation and nature of occupation in DB
   useEffect(() => {
     const fetchMasters = async () => {
       try {
@@ -274,6 +283,7 @@ export default function ChangeMemberTransferForm() {
     fetchMasters();
   }, []);
 
+  //Get member details
   useEffect(() => {
     const fetchMember = async () => {
       try {
@@ -284,22 +294,22 @@ export default function ChangeMemberTransferForm() {
         setMember(data);
 
         setOldValues({
-          fullName: formatDisplayValue(data.fullName || data.name),
-          dateOfBirth: formatDisplayValue(data.dateOfBirth || data.dob),
-          nicNumber: formatDisplayValue(data.nicNumber || data.nic),
+          fullName: formatDisplayValue(data.fullName ),
+          dateOfBirth: formatDisplayValue(data.dateOfBirth ),
+          nicNumber: formatDisplayValue( data.nic),
           gender: formatDisplayValue(data.gender),
-          preferredLanguage: formatDisplayValue(data.preferredLanguage || data.language),
-          permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress || data.address),
-          privateTelephone: formatDisplayValue(data.privateTelephone || data.telephone),
-          mobileNumber: formatDisplayValue(data.mobileNumber || data.mobile),
-          emailAddress: formatDisplayValue(data.emailAddress || data.email),
+          preferredLanguage: formatDisplayValue(data.preferredLanguage),
+          permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
+          privateTelephone: formatDisplayValue(data.privateTelephone ),
+          mobileNumber: formatDisplayValue(data.mobileNumber),
+          emailAddress: formatDisplayValue(data.emailAddress),
           designation: formatDisplayValue(data.designation),
           natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
           workingLocationType: formatDisplayValue(data.workingLocationType),
           workingLocation: formatDisplayValue(data.workingLocation),
           educationalZone: formatDisplayValue(data.educationalZone),
           educationalDistrict: formatDisplayValue(data.educationalDistrict),
-          computerNoName: formatDisplayValue(data.computerNoInPayslip || data.computerNo),
+          computerNoName: formatDisplayValue(data.computerNoInPayslip ),
           salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
         });
       } catch (error) {
@@ -313,6 +323,7 @@ export default function ChangeMemberTransferForm() {
     fetchMember();
   }, []);
 
+  
   useEffect(() => {
     if (!oldValues || isExistingRequest) return;
 
@@ -337,6 +348,7 @@ export default function ChangeMemberTransferForm() {
     reset,
   ]);
 
+  //Fetch existing request details when requestKey changes (view/edit)
   useEffect(() => {
     if (!requestKey) {
       setLoadedRecord(null);
@@ -362,19 +374,20 @@ export default function ChangeMemberTransferForm() {
     fetchRequest();
   }, [requestKey]);
 
+  // Populate form when loadedRecord changes (after fetch)
   useEffect(() => {
     if (!loadedRecord) return;
 
     reset({
-      designationNew: String(loadedRecord.newDesignationId || loadedRecord.designationNew || ""),
-      natureOfOccupationNew: String(loadedRecord.newNatureOfOccupationId || loadedRecord.natureOfOccupationNew || ""),
-      workingLocationTypeNew: String(loadedRecord.newWorkingLocationTypeId || loadedRecord.workingLocationTypeNew || ""),
-      educationalDistrictNew: String(loadedRecord.newEducationalDistrictId || loadedRecord.educationalDistrictNew || ""),
-      educationalZoneNew: String(loadedRecord.newEducationalZoneId || loadedRecord.educationalZoneNew || ""),
-      workingLocationNew: String(loadedRecord.newWorkingLocationId || loadedRecord.workingLocationNew || ""),
-      workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || loadedRecord.workingLocationAddressNew || "",
-      computerNoNameNew: loadedRecord.newComputerNoInPayslip || loadedRecord.computerNoNameNew || "",
-      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || loadedRecord.salaryPayingOfficeNew || "",
+      designationNew: String(loadedRecord.newDesignationId || ""),
+      natureOfOccupationNew: String(loadedRecord.newNatureOfOccupationId || ""),
+      workingLocationTypeNew: String(loadedRecord.newWorkingLocationTypeId || ""),
+      educationalDistrictNew: String(loadedRecord.newEducationalDistrictId || ""),
+      educationalZoneNew: String(loadedRecord.newEducationalZoneId || ""),
+      workingLocationNew: String(loadedRecord.newWorkingLocationId || ""),
+      workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || "",
+      computerNoNameNew: loadedRecord.newComputerNoInPayslip || "",
+      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || "",
     } as any);
 
     setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
@@ -382,6 +395,7 @@ export default function ChangeMemberTransferForm() {
     setStatus((loadedRecord.status as any) || "NEW");
   }, [loadedRecord, reset]);
 
+  //Fetch uploaded documents based on Request ID
   useEffect(() => {
     if (!requestId) {
       setUploadedDocuments([]);
@@ -410,6 +424,7 @@ export default function ChangeMemberTransferForm() {
     fetchUploadedDocuments();
   }, [requestId]);
 
+  //Select Zone after select Working Location Type
   useEffect(() => {
     if (!selectedWorkingLocationType) {
       setIsZoneEnabled(true);
@@ -432,6 +447,7 @@ export default function ChangeMemberTransferForm() {
     setSalaryOptions([]);
   }, [selectedWorkingLocationType, workingLocationTypes, setValue]);
 
+  //Select District after select Working Location Type
   useEffect(() => {
     if (!selectedDistrict) {
       setZones([]);
@@ -470,6 +486,7 @@ export default function ChangeMemberTransferForm() {
     fetchZones();
   }, [selectedDistrict, isZoneEnabled, setValue]);
 
+  //Select Working Location after select District and Zone
   useEffect(() => {
     setValue("workingLocationNew", "" as any);
     setValue("workingLocationAddressNew", "" as any);
@@ -513,7 +530,8 @@ export default function ChangeMemberTransferForm() {
 
     fetchWorkingLocations();
   }, [selectedWorkingLocationType, selectedDistrict, selectedZone, isZoneEnabled, setValue]);
-
+  
+  //Select Working Location details after select Working Location
   useEffect(() => {
     if (!selectedWorkingLocation) return;
 
@@ -553,6 +571,7 @@ export default function ChangeMemberTransferForm() {
     fetchLocationDetails();
   }, [selectedWorkingLocation, workingLocations, setValue]);
 
+  //Handle form submission for both new and existing requests
   const onSubmit = async (data: MemberTransferFormData) => {
     const confirmSubmit = window.confirm("After submitting, this request cannot be edited. Do you want to continue?");
     if (!confirmSubmit) return;
@@ -609,6 +628,7 @@ export default function ChangeMemberTransferForm() {
     }
   };
 
+  //Hadle Edit mode
   const handleEnterEditMode = () => {
     if (!requestKey) return;
 
@@ -619,6 +639,7 @@ export default function ChangeMemberTransferForm() {
     router.replace(`?${params.toString()}`);
   };
 
+  //Update transfer status after approve/reject
   const updateTransferStatus = (nextStatus: typeof status, reason?: string) => {
     setStatus(nextStatus);
 
@@ -633,6 +654,7 @@ export default function ChangeMemberTransferForm() {
     );
   };
 
+  //Handle Approve transfer
   const handleApproveTransfer = async () => {
     if (!requestId) return;
     const confirmApprove = window.confirm("Approve this member transfer?");
@@ -660,12 +682,14 @@ export default function ChangeMemberTransferForm() {
     }
   };
 
+  //Handle Reject transfer
   const handleRejectTransfer = () => {
     if (!requestId) return;
     setRejectReason("");
     setShowRejectModal(true);
   };
-
+ 
+  //Handle Confirm Reject transfer
   const handleConfirmRejectTransfer = async () => {
     if (!requestId || rejectReason.trim() === "") return;
 
@@ -695,14 +719,12 @@ export default function ChangeMemberTransferForm() {
   };
 
   const statusReason =
-    status === "INCOMPLETE"
-      ? loadedRecord?.incompleteReason || ""
-      : status === "REJECTED"
+    status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
-  const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
   const showRequestStatus = Boolean(requestId || isExistingRequest);
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -745,8 +767,8 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting}
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded }
+                className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>

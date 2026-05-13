@@ -98,6 +98,7 @@ export default function StudentExamSection() {
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+
   const whiteInputClass =
     "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
 
@@ -108,15 +109,10 @@ export default function StudentExamSection() {
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
-
   const cannotEdit = !isEditMode && isSaved;
+  const incomplete= status === "INCOMPLETE";
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    reset,
+  const {register,handleSubmit,watch,setValue,reset,
     formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
@@ -285,6 +281,7 @@ export default function StudentExamSection() {
     }
   }, [loadedRecord, universities, setValue]);
 
+  //set program based on loaded 
   useEffect(() => {
     if (!loadedRecord || programs.length === 0) return;
 
@@ -476,7 +473,7 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    // If editing, persist changes first
+    
     let actionId: string | number | null = requestId;
    
 
@@ -610,6 +607,7 @@ export default function StudentExamSection() {
     }
   };
 
+  //Update scholarship status
   const updateScholarshipStatus = (
     nextStatus: typeof status,
     reason?: string
@@ -626,6 +624,7 @@ export default function StudentExamSection() {
     );
   };
 
+  //Handle Approve Scholarship
   const handleApproveScholarship = async () => {
     if (!requestId) return;
 
@@ -635,12 +634,8 @@ export default function StudentExamSection() {
 
     if (!confirmApprove) return;
 
-    // TODO: replace this placeholder with the actual deviation-check flag
-    // The real flag may be part of `loadedRecord` or the form values.
     const deviationFlag = !!loadedRecord && (
-      !!(loadedRecord as any).followsDeviationProcess ||
-      !!(loadedRecord as any).isDeviation ||
-      !!(loadedRecord as any).followDeviation
+      !!(loadedRecord as any).followsDeviationProcess
     );
 
     const nextStatus = deviationFlag
@@ -648,8 +643,7 @@ export default function StudentExamSection() {
       : "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL";
 
     try {
-      // Use the existing save/update endpoint to persist the status.
-      // The backend's POST /api/university-scholarships is used for create/update.
+      
       const res = await fetch(`http://localhost:8080/api/university-scholarships/approve/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -669,8 +663,8 @@ export default function StudentExamSection() {
       updateScholarshipStatus(serverStatus as any);
       setExamNoPopupMessage(
         deviationFlag
-          ? "Scholarship approved — submitted for deviation board approval"
-          : "Scholarship approved — submitted for normal board approval"
+          ? "Scholarship Approved(Submitted for Deviation Board Approval)"
+          : "Scholarship Approved(Submitted for Normal Board Approval)"
       );
       setShowExamNoPopup(true);
     } catch (error) {
@@ -680,7 +674,8 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
-
+ 
+  //Handle reject request
   const handleRejectScholarship = () => {
     if (!requestId) return;
     setRejectReason("");
@@ -711,7 +706,7 @@ export default function StudentExamSection() {
         const serverStatus = (updated && updated.status) || "REJECTED";
         updateScholarshipStatus(serverStatus as any, rejectReason.trim());
         setShowRejectModal(false);
-        setExamNoPopupMessage("Scholarship rejected successfully");
+        setExamNoPopupMessage("Scholarship Request Rejected Successfully");
         setShowExamNoPopup(true);
       } catch (error) {
         console.error("Reject failed:", error);
@@ -786,7 +781,6 @@ export default function StudentExamSection() {
     try {
       let savedRequest: any = null;
 
-      // If editing an existing request, call PUT to update
       if (requestId && isEditMode) {
         const res = await fetch(
           `http://localhost:8080/api/university-scholarships/${requestId}`,
@@ -835,7 +829,6 @@ export default function StudentExamSection() {
         savedRequest = await response.json();
       }
 
-      // Common post-save handling
       setRequestId(
         savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
       );
@@ -860,7 +853,7 @@ export default function StudentExamSection() {
     }
   };
 
-  // Dedicated update helper (optional reuse)
+  // Update University scholarship
   const updateScholarship = async (id: string | number, data: any) => {
     try {
       const res = await fetch(`http://localhost:8080/api/university-scholarships/${id}`, {
@@ -914,9 +907,7 @@ export default function StudentExamSection() {
     }
   };
 
-  
-
-
+  //Get mandatory document in DB
   const mandatoryDocumentTypes = requiredDocumentTypes
     .filter((doc) => doc.mandatory)
     .map((doc) => doc.documentType);
@@ -926,6 +917,7 @@ export default function StudentExamSection() {
       uploadedDocuments.some((doc) => doc.documentType === type)
   );
 
+  //Handle edit mode
   const handleEnterEditMode = () => {
     if (!requestKey) return;
 
@@ -991,7 +983,7 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode} 
+              disabled={!requestId || !isSaved || isSubmitted || isViewMode||incomplete} 
             >
               Incomplete
             </Button>
