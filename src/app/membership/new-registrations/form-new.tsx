@@ -75,6 +75,7 @@ function IdentificationMultiSelect({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Close the popover when the user clicks outside the control.
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
@@ -205,6 +206,7 @@ export function NewMemberRegistrationForm({
     documentSummary.uploadedMandatoryDocumentCount >=
     documentSummary.mandatoryDocumentCount;
 
+  // Translate between UI labels and backend enum values for the form payload.
   const mapGender = (value: string): Gender =>
     value.toUpperCase() === "FEMALE" ? "FEMALE" : "MALE";
 
@@ -262,6 +264,7 @@ export function NewMemberRegistrationForm({
     return "New";
   };
 
+  // Parse the stored identificationDetails JSON into selection state and input values.
   const parseIdentificationDetails = (
     value?: string
   ): { types: IdentificationType[]; numbers: Record<string, string> } => {
@@ -293,12 +296,14 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Convert blank numeric fields into `undefined` so the API can omit them cleanly.
   const parseAmount = (value?: string) => {
     if (!value || value.trim() === "") return undefined;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
+  // Validate NICs before submit because the backend rejects duplicates and empty values.
   const handleValidateNic = async (nic: string) => {
     const cleanedNic = nic.trim();
     if (!cleanedNic) {
@@ -340,6 +345,7 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Centralize the default form state so resets and initial render stay aligned.
   const defaultFormValues = useMemo<MemberRegistration>(
     () => ({
       applicationDate: new Date().toISOString().split("T")[0],
@@ -394,6 +400,7 @@ export function NewMemberRegistrationForm({
     defaultValues: defaultFormValues,
   });
 
+  // Watch dependent fields so district/zone and identification inputs stay in sync.
   const selectedIdentificationTypes = watch("identificationTypes");
   const selectedIdentificationNumbers = watch("identificationNumbers");
   const selectedDistrict = watch("educationalDistrict");
@@ -402,6 +409,7 @@ export function NewMemberRegistrationForm({
     addToastRef.current = addToast;
   }, [addToast]);
 
+  // Load the district list once, and seed the first district when the form is empty.
   useEffect(() => {
     let isCancelled = false;
 
@@ -441,6 +449,7 @@ export function NewMemberRegistrationForm({
     };
   }, [addToast, getValues, setValue]);
 
+  // Rebuild the zone list whenever the district changes, and clear stale selections.
   useEffect(() => {
     if (!selectedDistrict) {
       setZoneOptions([]);
@@ -490,6 +499,7 @@ export function NewMemberRegistrationForm({
     };
   }, [addToast, getValues, selectedDistrict, setValue]);
 
+  // Hydrate the form from an existing application and preload its documents.
   useEffect(() => {
     const targetApplicationId = applicationId ?? null;
 
@@ -617,6 +627,7 @@ export function NewMemberRegistrationForm({
     };
   }, [applicationId, defaultFormValues, reset]);
 
+  // Build the API payload, validate NIC, then create or update the application.
   const onSubmit = async (data: MemberRegistration) => {
     setIsSubmitting(true);
     try {
@@ -625,6 +636,8 @@ export function NewMemberRegistrationForm({
         return;
       }
 
+      // Store only the primary selected identification as the main field, while
+      // keeping all selected types in the serialized detail list.
       const primaryIdentificationType = data.identificationTypes[0];
       const primaryIdentificationNumber = primaryIdentificationType
         ? String(data.identificationNumbers?.[primaryIdentificationType] ?? "")
@@ -702,6 +715,7 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Upload a document, refresh the preview map, and recompute completion status.
   const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
     if (!savedApplicationId) {
       addToast("Please save the application first", "destructive");
@@ -740,6 +754,7 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Delete the uploaded file and refresh the progress summary after removal.
   const handleDocumentDelete = async (docType: DocumentType) => {
     const entry = existingDocumentUrls[docType];
     if (!entry || !savedApplicationId) return;
