@@ -907,8 +907,8 @@ export default function ChangeMemberTransferForm() {
 
                   <label
                     className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
-                        ? "cursor-pointer text-gray-500 hover:bg-gray-50"
-                        : "cursor-not-allowed bg-gray-50 text-gray-400"
+                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                      : "cursor-not-allowed bg-gray-50 text-gray-400"
                       }`}
                   >
                     <input
