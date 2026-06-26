@@ -30,6 +30,8 @@ export const memberTransferSchema = z.object({
   salaryPayingOfficeNew: z
     .string()
     .min(1, "New salary paying office is required"),
+
+  workingLocationAddressNew: z.string().optional(),
 });
 
 export type MemberTransferFormData = z.infer<typeof memberTransferSchema>;
