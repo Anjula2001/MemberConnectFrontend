@@ -15,8 +15,6 @@ export const memberTransferSchema = z.object({
     .string()
     .min(1, "New working location is required"),
 
-  workingLocationAddressNew: z.string().optional(),
-
   educationalZoneNew: z
     .string()
     .min(1, "New educational zone is required"),

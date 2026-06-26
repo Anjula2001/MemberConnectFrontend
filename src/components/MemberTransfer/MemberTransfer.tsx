@@ -166,12 +166,42 @@ export default function ChangeMemberTransferForm() {
   const [loading, setLoading] = useState(true);
   const [oldValues, setOldValues] = useState<MemberTransferOldValues | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isValid },
-  } = useForm<MemberTransferFormData>({
+  const [member, setMember] = useState<any>(null);
+  const [loadedRecord, setLoadedRecord] = useState<MemberTransferRecord | null>(null);
+
+  const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
+
+  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
+
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const [selectedDocumentType, setSelectedDocumentType] = useState("");
+  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
+
+  const [designationOptions, setDesignationOptions] = useState<OptionItem[]>([]);
+  const [natureOfOccupationOptions, setNatureOfOccupationOptions] = useState<OptionItem[]>([]);
+  const [workingLocationTypes, setWorkingLocationTypes] = useState<OptionItem[]>([]);
+  const [districts, setDistricts] = useState<OptionItem[]>([]);
+  const [zones, setZones] = useState<OptionItem[]>([]);
+  const [workingLocations, setWorkingLocations] = useState<OptionItem[]>([]);
+  const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
+  const [isZoneEnabled, setIsZoneEnabled] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [showPopup, setShowPopup] = useState(false);
+  const [popupMessage, setPopupMessage] = useState("");
+
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const isExistingRequest = Boolean(requestKey);
+  const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
+  const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
+  const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
+  const isViewMode = isExistingRequest && !isEditMode;
+  const isInputsDisabled = isViewMode || isSubmitted;
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isValid }, } = useForm<MemberTransferFormData>({
     resolver: zodResolver(memberTransferSchema),
     mode: "onChange",
     defaultValues: {
@@ -877,8 +907,8 @@ export default function ChangeMemberTransferForm() {
 
                   <label
                     className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
-                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
-                      : "cursor-not-allowed bg-gray-50 text-gray-400"
+                        ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                        : "cursor-not-allowed bg-gray-50 text-gray-400"
                       }`}
                   >
                     <input
