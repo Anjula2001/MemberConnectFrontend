@@ -62,9 +62,9 @@ type ScholarshipRecord = {
 };
 
 export default function StudentExamSection() {
-  const HARDCODED_MEMBER_ID = 8;
   const router = useRouter();
   const searchParams = useSearchParams();
+  const memberId = searchParams.get("memberId") || "";
   const requestKey = searchParams.get("requestId") ;
   const mode = searchParams.get("mode") ;
 
@@ -115,6 +115,7 @@ export default function StudentExamSection() {
     register,
     handleSubmit,
     watch,
+    getValues,
     setValue,
     reset,
     formState: { errors, isValid },
@@ -123,6 +124,8 @@ export default function StudentExamSection() {
     mode: "onChange",
     defaultValues: {
       isSchoolApplicant: false,
+      hasMinorAccount: "",
+      minorAccountMonths: "",
     },
   });
 
@@ -148,10 +151,13 @@ export default function StudentExamSection() {
 
   // Load member details 
   useEffect(() => {
+    const targetMemberId = memberId || loadedRecord?.memberId;
+    if (!targetMemberId) return;
+
     const fetchMember = async () => {
       try {
         const res = await fetch(
-          `http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`
+          `http://localhost:8080/api/members/${targetMemberId}`
         );
 
         if (!res.ok) {
@@ -166,7 +172,7 @@ export default function StudentExamSection() {
     };
 
     fetchMember();
-  }, []);
+  }, [memberId, loadedRecord?.memberId]);
 
   // Load an existing scholarship request for view/edit mode
   useEffect(() => {
@@ -570,7 +576,7 @@ export default function StudentExamSection() {
  
   // Refresh minor account status and remitted months
   const handleRefreshMinorAccount = async () => {
-    const bcNo = watch("bcNo");
+    const bcNo = getValues("bcNo");
 
     if (!bcNo) {
       setExamNoPopupMessage("Please enter Birth Certificate Number first");
@@ -758,7 +764,7 @@ export default function StudentExamSection() {
   
   //Handle save 
   const handleSave = async () => {
-    const currentData = watch();
+    const currentData = getValues();
 
     if (!isEditMode) {
     const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
@@ -768,9 +774,9 @@ export default function StudentExamSection() {
     }
   }
 
-    let saveData: FormData & { memberId: number } = {
+    let saveData: FormData & { memberId: string } = {
       ...currentData,
-      memberId: HARDCODED_MEMBER_ID,
+      memberId: memberId,
     };
 
     if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
@@ -1012,6 +1018,46 @@ export default function StudentExamSection() {
             >
               Submit
             </Button>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
+          <h2 className="text-lg font-bold text-[#953002] mb-4">
+            Member Details
+          </h2>
+
+          <div className="grid grid-cols-3 gap-5">
+            <div>
+              <label className="block font-medium mb-1">Member ID</label>
+              <input
+                type="text"
+                value={member?.memberId || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium mb-1">
+                Surname with Initials
+              </label>
+              <input
+                type="text"
+                value={member?.nameWithInitials || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium mb-1">NIC Number</label>
+              <input
+                type="text"
+                value={member?.nic || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
           </div>
         </div>
 

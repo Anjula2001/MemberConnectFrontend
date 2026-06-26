@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
 import Grade5Form, {
   type Grade5FormRef,
@@ -28,11 +29,12 @@ const LOCKED_STATUSES = [
 ];
 
 export default function Grade5ScholarshipPage() {
+  const searchParams = useSearchParams();
   const formRef = useRef<Grade5FormRef>(null);
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const memberId = "MEM002";
+  const memberId = searchParams.get("memberId") || "";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
