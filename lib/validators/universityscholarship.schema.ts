@@ -105,4 +105,12 @@ export const universityScholarshipSchema = z.object({
   branch: z
     .string()
     .optional(),
+
+  hasMinorAccount: z
+    .string()
+    .optional(),
+
+  minorAccountMonths: z
+    .string()
+    .optional(),
 });

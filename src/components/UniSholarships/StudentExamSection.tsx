@@ -62,11 +62,11 @@ type ScholarshipRecord = {
 };
 
 export default function StudentExamSection() {
-  const HARDCODED_MEMBER_ID = 8;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestKey = searchParams.get("requestId") ;
-  const mode = searchParams.get("mode") ;
+  const memberId = searchParams.get("memberId") || "";
+  const requestKey = searchParams.get("requestId");
+  const mode = searchParams.get("mode");
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [universities, setUniversities] = useState<any[]>([]);
@@ -110,15 +110,23 @@ export default function StudentExamSection() {
   const isViewMode = isExistingRequest && !isEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
-  const incomplete= status === "INCOMPLETE";
+  const incomplete = status === "INCOMPLETE";
 
-  const {register,handleSubmit,watch,setValue,reset,
+  const {
+    register,
+    handleSubmit,
+    watch,
+    getValues,
+    setValue,
+    reset,
     formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
     defaultValues: {
       isSchoolApplicant: false,
+      hasMinorAccount: "",
+      minorAccountMonths: "",
     },
   });
 
@@ -128,7 +136,7 @@ export default function StudentExamSection() {
   const selectedExamNo = watch("examNo");
 
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
-  
+
   // Load required document types 
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
@@ -144,10 +152,13 @@ export default function StudentExamSection() {
 
   // Load member details 
   useEffect(() => {
+    const targetMemberId = memberId || loadedRecord?.memberId;
+    if (!targetMemberId) return;
+
     const fetchMember = async () => {
       try {
         const res = await fetch(
-          `http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`
+          `http://localhost:8080/api/members/${targetMemberId}`
         );
 
         if (!res.ok) {
@@ -162,7 +173,7 @@ export default function StudentExamSection() {
     };
 
     fetchMember();
-  }, []);
+  }, [memberId, loadedRecord?.memberId]);
 
   // Load an existing scholarship request for view/edit mode
   useEffect(() => {
@@ -310,7 +321,7 @@ export default function StudentExamSection() {
       setValue("bank", String(bank.id));
     }
   }, [loadedRecord, banks, setValue]);
- 
+
   // Set branch based on loaded record
   useEffect(() => {
     if (!loadedRecord || branches.length === 0) return;
@@ -376,7 +387,7 @@ export default function StudentExamSection() {
 
     fetchPrograms();
   }, [selectedUniversity, setValue]);
-  
+
   // Load program duration when university or program changes
   useEffect(() => {
     if (!selectedUniversity || !selectedProgram) {
@@ -398,7 +409,7 @@ export default function StudentExamSection() {
 
     fetchDuration();
   }, [selectedUniversity, selectedProgram, setValue]);
-  
+
   // Load branches when bank changes
   useEffect(() => {
     if (!selectedBank) {
@@ -422,12 +433,12 @@ export default function StudentExamSection() {
 
     fetchBranches();
   }, [selectedBank, setValue]);
-  
-  
+
+
   useEffect(() => {
     setIsExamNoDuplicate(false);
   }, [selectedExamNo]);
-  
+
   // Validate exam number when it changes
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
@@ -473,9 +484,9 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    
+
     let actionId: string | number | null = requestId;
-   
+
 
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
@@ -518,7 +529,7 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
-  
+
   // Validate exam number before saving
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
@@ -564,10 +575,10 @@ export default function StudentExamSection() {
       return false;
     }
   };
- 
+
   // Refresh minor account status and remitted months
   const handleRefreshMinorAccount = async () => {
-    const bcNo = watch("bcNo");
+    const bcNo = getValues("bcNo");
 
     if (!bcNo) {
       setExamNoPopupMessage("Please enter Birth Certificate Number first");
@@ -616,10 +627,10 @@ export default function StudentExamSection() {
     setLoadedRecord((prev) =>
       prev
         ? {
-            ...prev,
-            status: nextStatus,
-            decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
-          }
+          ...prev,
+          status: nextStatus,
+          decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+        }
         : prev
     );
   };
@@ -643,7 +654,7 @@ export default function StudentExamSection() {
       : "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL";
 
     try {
-      
+
       const res = await fetch(`http://localhost:8080/api/university-scholarships/approve/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -674,7 +685,7 @@ export default function StudentExamSection() {
       setShowExamNoPopup(true);
     }
   };
- 
+
   //Handle reject request
   const handleRejectScholarship = () => {
     if (!requestId) return;
@@ -750,22 +761,22 @@ export default function StudentExamSection() {
 
     setDocumentFiles(uploadedItems);
   };
-  
+
   //Handle save 
   const handleSave = async () => {
-    const currentData = watch();
+    const currentData = getValues();
 
     if (!isEditMode) {
-    const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
 
-    if (!isExamNoValid) {
-      return;
+      if (!isExamNoValid) {
+        return;
+      }
     }
-  }
 
-    let saveData: FormData & { memberId: number } = {
+    let saveData: FormData & { memberId: string } = {
       ...currentData,
-      memberId: HARDCODED_MEMBER_ID,
+      memberId: memberId,
     };
 
     if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
@@ -819,7 +830,7 @@ export default function StudentExamSection() {
           try {
             const errorJson = JSON.parse(errorText);
             message = errorJson.message || message;
-          } catch {}
+          } catch { }
 
           setExamNoPopupMessage(message);
           setShowExamNoPopup(true);
@@ -868,11 +879,11 @@ export default function StudentExamSection() {
       throw err;
     }
   };
-  
+
   // Handle marking request as incomplete
   const handleMarkIncomplete = async (reason: string) => {
     let actionId: string | number | null = requestId;
-    
+
 
     if (!actionId) {
       alert("Please save request first");
@@ -913,8 +924,8 @@ export default function StudentExamSection() {
     .map((doc) => doc.documentType);
 
   const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((type) =>
-      documentFiles.some((doc) => doc.documentType === type) ||
-      uploadedDocuments.some((doc) => doc.documentType === type)
+    documentFiles.some((doc) => doc.documentType === type) ||
+    uploadedDocuments.some((doc) => doc.documentType === type)
   );
 
   //Handle edit mode
@@ -983,7 +994,7 @@ export default function StudentExamSection() {
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode||incomplete} 
+              disabled={!requestId || !isSaved || isSubmitted || isViewMode || incomplete}
             >
               Incomplete
             </Button>
@@ -992,7 +1003,7 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid ||isSaved}
+              disabled={isInputsDisabled || !isValid || isSaved}
             >
               Save
             </Button>
@@ -1004,6 +1015,46 @@ export default function StudentExamSection() {
             >
               Submit
             </Button>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
+          <h2 className="text-lg font-bold text-[#953002] mb-4">
+            Member Details
+          </h2>
+
+          <div className="grid grid-cols-3 gap-5">
+            <div>
+              <label className="block font-medium mb-1">Member ID</label>
+              <input
+                type="text"
+                value={member?.memberId || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium mb-1">
+                Surname with Initials
+              </label>
+              <input
+                type="text"
+                value={member?.nameWithInitials || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium mb-1">NIC Number</label>
+              <input
+                type="text"
+                value={member?.nic || ""}
+                readOnly
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+              />
+            </div>
           </div>
         </div>
 
@@ -1148,7 +1199,7 @@ export default function StudentExamSection() {
                 <select
                   id="program"
                   {...register("program")}
-                  disabled={!watch("university") || isInputsDisabled || cannotEdit }
+                  disabled={!watch("university") || isInputsDisabled || cannotEdit}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Program</option>
@@ -1174,7 +1225,7 @@ export default function StudentExamSection() {
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass}/>
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
               </div>
             </div>
           </section>
@@ -1207,7 +1258,7 @@ export default function StudentExamSection() {
                 <label className="mb-1 block text-sm  text-gray-600">
                   Remitted Months
                 </label>
-                <Input {...register("minorAccountMonths")}  disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input {...register("minorAccountMonths")} disabled={isInputsDisabled} className={whiteInputClass} />
               </div>
             </div>
           </section>

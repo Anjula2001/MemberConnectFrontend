@@ -8,7 +8,7 @@ import { Trash2, UploadCloud } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
-import {memberTransferSchema,type MemberTransferFormData,} from "@/lib/validators/membertransfer.schema";
+import { memberTransferSchema, type MemberTransferFormData, } from "@/lib/validators/membertransfer.schema";
 
 type DocumentFileItem = {
   file: File;
@@ -50,6 +50,7 @@ type MemberTransferRecord = {
   status?: string;
   incompleteReason?: string;
   decisionReason?: string;
+  member?: any;
 
   designationNew?: string;
   natureOfOccupationNew?: string;
@@ -106,16 +107,16 @@ const formatDisplayValue = (value: any): string => {
   if (typeof value === "object") {
     return String(
       value.name ||
-        value.label ||
-        value.value ||
-        value.designation ||
-        value.occupation ||
-        value.address ||
-        value.locationAddress ||
-        value.fullName ||
-        value.displayName ||
-        value.id ||
-        ""
+      value.label ||
+      value.value ||
+      value.designation ||
+      value.occupation ||
+      value.address ||
+      value.locationAddress ||
+      value.fullName ||
+      value.displayName ||
+      value.id ||
+      ""
     );
   }
   return String(value);
@@ -154,54 +155,23 @@ const toNullableNumber = (value: any) => {
 };
 
 export default function ChangeMemberTransferForm() {
-  const HARDCODED_MEMBER_ID = 7;
-
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const requestKey = searchParams.get("requestId");
+  const memberId = searchParams.get("memberId") || "";
   const mode = searchParams.get("mode");
   const [requestId, setRequestId] = useState<any>(null);
 
   const [loading, setLoading] = useState(true);
   const [oldValues, setOldValues] = useState<MemberTransferOldValues | null>(null);
 
-  const [member, setMember] = useState<any>(null);
-  const [loadedRecord, setLoadedRecord] = useState<MemberTransferRecord | null>(null);
-
-  const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
-
-  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
-
-  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
-  const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
-  const [selectedDocumentType, setSelectedDocumentType] = useState("");
-  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
-
-  const [designationOptions, setDesignationOptions] = useState<OptionItem[]>([]);
-  const [natureOfOccupationOptions, setNatureOfOccupationOptions] = useState<OptionItem[]>([]);
-  const [workingLocationTypes, setWorkingLocationTypes] = useState<OptionItem[]>([]);
-  const [districts, setDistricts] = useState<OptionItem[]>([]);
-  const [zones, setZones] = useState<OptionItem[]>([]);
-  const [workingLocations, setWorkingLocations] = useState<OptionItem[]>([]);
-  const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
-  const [isZoneEnabled, setIsZoneEnabled] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [showPopup, setShowPopup] = useState(false);
-  const [popupMessage, setPopupMessage] = useState("");
-
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
-
-  const isExistingRequest = Boolean(requestKey);
-  const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
-  const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
-  const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  const isViewMode = isExistingRequest && !isEditMode;
-  const isInputsDisabled = isViewMode || isSubmitted;
-
-  const {register,handleSubmit,reset,setValue,watch,formState: { errors, isValid },} = useForm<MemberTransferFormData>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isValid },
+  } = useForm<MemberTransferFormData>({
     resolver: zodResolver(memberTransferSchema),
     mode: "onChange",
     defaultValues: {
@@ -285,22 +255,25 @@ export default function ChangeMemberTransferForm() {
 
   //Get member details
   useEffect(() => {
+    const targetMemberId = memberId || loadedRecord?.member?.memberId;
+    if (!targetMemberId) return;
+
     const fetchMember = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/members/${HARDCODED_MEMBER_ID}`);
+        const res = await fetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
         if (!res.ok) throw new Error("Failed to load member");
 
         const data = await res.json();
         setMember(data);
 
         setOldValues({
-          fullName: formatDisplayValue(data.fullName ),
-          dateOfBirth: formatDisplayValue(data.dateOfBirth ),
-          nicNumber: formatDisplayValue( data.nic),
+          fullName: formatDisplayValue(data.fullName),
+          dateOfBirth: formatDisplayValue(data.dateOfBirth),
+          nicNumber: formatDisplayValue(data.nic),
           gender: formatDisplayValue(data.gender),
           preferredLanguage: formatDisplayValue(data.preferredLanguage),
           permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
-          privateTelephone: formatDisplayValue(data.privateTelephone ),
+          privateTelephone: formatDisplayValue(data.privateTelephone),
           mobileNumber: formatDisplayValue(data.mobileNumber),
           emailAddress: formatDisplayValue(data.emailAddress),
           designation: formatDisplayValue(data.designation),
@@ -309,7 +282,7 @@ export default function ChangeMemberTransferForm() {
           workingLocation: formatDisplayValue(data.workingLocation),
           educationalZone: formatDisplayValue(data.educationalZone),
           educationalDistrict: formatDisplayValue(data.educationalDistrict),
-          computerNoName: formatDisplayValue(data.computerNoInPayslip ),
+          computerNoName: formatDisplayValue(data.computerNoInPayslip),
           salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
         });
       } catch (error) {
@@ -321,9 +294,9 @@ export default function ChangeMemberTransferForm() {
     };
 
     fetchMember();
-  }, []);
+  }, [memberId, loadedRecord?.member?.memberId]);
 
-  
+
   useEffect(() => {
     if (!oldValues || isExistingRequest) return;
 
@@ -530,7 +503,7 @@ export default function ChangeMemberTransferForm() {
 
     fetchWorkingLocations();
   }, [selectedWorkingLocationType, selectedDistrict, selectedZone, isZoneEnabled, setValue]);
-  
+
   //Select Working Location details after select Working Location
   useEffect(() => {
     if (!selectedWorkingLocation) return;
@@ -579,7 +552,7 @@ export default function ChangeMemberTransferForm() {
     setIsSubmitting(true);
     try {
       const payload = {
-        memberId: HARDCODED_MEMBER_ID,
+        memberId: member?.id,
         requestedDate: new Date().toISOString().slice(0, 10),
 
         newWorkingLocationTypeId: toNullableNumber((data as any).workingLocationTypeNew),
@@ -646,10 +619,10 @@ export default function ChangeMemberTransferForm() {
     setLoadedRecord((prev) =>
       prev
         ? {
-            ...prev,
-            status: nextStatus,
-            decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
-          }
+          ...prev,
+          status: nextStatus,
+          decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+        }
         : prev
     );
   };
@@ -688,7 +661,7 @@ export default function ChangeMemberTransferForm() {
     setRejectReason("");
     setShowRejectModal(true);
   };
- 
+
   //Handle Confirm Reject transfer
   const handleConfirmRejectTransfer = async () => {
     if (!requestId || rejectReason.trim() === "") return;
@@ -720,8 +693,8 @@ export default function ChangeMemberTransferForm() {
 
   const statusReason =
     status === "REJECTED"
-        ? loadedRecord?.decisionReason || ""
-        : "";
+      ? loadedRecord?.decisionReason || ""
+      : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
   const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
@@ -767,7 +740,7 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded }
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded}
                 className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
@@ -903,11 +876,10 @@ export default function ChangeMemberTransferForm() {
                   </div>
 
                   <label
-                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${
-                      selectedDocumentType
-                        ? "cursor-pointer text-gray-500 hover:bg-gray-50"
-                        : "cursor-not-allowed bg-gray-50 text-gray-400"
-                    }`}
+                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
+                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                      : "cursor-not-allowed bg-gray-50 text-gray-400"
+                      }`}
                   >
                     <input
                       type="file"
@@ -1121,7 +1093,7 @@ function EditableInput({
         {typeof value !== "undefined" ? (
           <Input {...register} value={value || ""} disabled={disabled} readOnly />
         ) : (
-          <Input {...register} disabled={disabled}  />
+          <Input {...register} disabled={disabled} />
         )}
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
       </div>

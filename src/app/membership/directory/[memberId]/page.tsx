@@ -30,6 +30,7 @@ const actionGroups = {
 		"Change Name",
 		"Change Remittance",
 		"Change Nominee",
+		"Member Transfer",
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
@@ -150,18 +151,22 @@ export default function MemberProfilePage({
 	}, [memberIdParam]);
 
 	const handleActionClick = (action: string) => {
+		if (!profile?.memberId) return;
+		const memberIdQuery = `?memberId=${profile.memberId}`;
+
 		const routeMap: Record<string, string> = {
-			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
-			"Change Name": "/membership/directory/change-name",
-			"Change Remittance": "/membership/directory/change-remittance",
-			"Change Nominee": "/membership/directory/change-nominee",
-			"Grade 5 Scholarship": "/membership/directory/grade5-scholarship",
-			"University Scholarship": "/membership/directory/university-scholarship",
-			"Request Termination": "/membership/directory/request-termination",
-			"Retirement": "/membership/directory/retirement",
-			"Death Donation Request": "/membership/directory/death-donation-request",
-			"Add Documents": "/membership/directory/add-documents",
-			"Record Member Death": "/membership/directory/record-member-death",
+			"Basic Profile Changes": `/membership/directory/basic-profile-change-request${memberIdQuery}`,
+			"Change Name": `/membership/directory/change-name${memberIdQuery}`,
+			"Change Remittance": `/membership/directory/change-remittance${memberIdQuery}`,
+			"Change Nominee": `/membership/directory/change-nominee${memberIdQuery}`,
+			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
+			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
+			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"Request Termination": `/membership/directory/request-termination${memberIdQuery}`,
+			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
+			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
+			"Add Documents": `/membership/directory/add-documents${memberIdQuery}`,
+			"Record Member Death": `/membership/directory/record-member-death${memberIdQuery}`,
 
 		};
 

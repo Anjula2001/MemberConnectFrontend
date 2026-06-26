@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
-import Grade5Form, {type Grade5FormRef,type Grade5InitialData,} from "../../../../components/ui/grade5schoolarship/grade5form";
+import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "../../../../components/ui/grade5schoolarship/grade5form";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -44,11 +45,12 @@ const LOCKED_STATUSES = [
 ];
 
 export default function Grade5ScholarshipPage() {
+  const searchParams = useSearchParams();
   const formRef = useRef<Grade5FormRef>(null);
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const DEFAULT_MEMBER_ID = "MEM031";
+  const memberId = searchParams.get("memberId") || "";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
@@ -66,14 +68,14 @@ export default function Grade5ScholarshipPage() {
   const selectedMemberId = searchParams.get("memberId") || DEFAULT_MEMBER_ID;
   const pageMode = searchParams.get("mode") || "";
   const [isEditing, setIsEditing] = useState(pageMode === "edit");
-  
+
 
   const isViewRequestMode = pageMode === "view" && !!requestId;
 
 
-  const currencyFormatter = new Intl.NumberFormat("en-LK", {style: "currency",currency: "LKR",maximumFractionDigits: 0,});
+  const currencyFormatter = new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0, });
 
-  const [member, setMember] = useState({memberId: "",fullName: "",nameWithInitials: "",nic: "",});
+  const [member, setMember] = useState({ memberId: "", fullName: "", nameWithInitials: "", nic: "", });
 
   const [grade5Request, setGrade5Request] = useState<Grade5Request | null>(
     null
@@ -101,7 +103,7 @@ export default function Grade5ScholarshipPage() {
   const [submitError, setSubmitError] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
-  const isRequestSubmitted = grade5Request?.status? LOCKED_STATUSES.includes(grade5Request.status): false;
+  const isRequestSubmitted = grade5Request?.status ? LOCKED_STATUSES.includes(grade5Request.status) : false;
 
   useEffect(() => {
     setIsEditing(pageMode === "edit");
@@ -223,7 +225,7 @@ export default function Grade5ScholarshipPage() {
       setFundError("Failed to mark request as incomplete.");
     }
   };
-  
+
   //Validates the fund disbursement details before saving or submitting the request.
   const validateFundDisbursement = () => {
     if (!fundRefreshed) {
@@ -401,7 +403,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-  
+
   const handleConfirmSubmit = async () => {
     if (!grade5Request?.id) {
       setSubmitError("Please save the Grade 5 request before submitting.");
@@ -549,7 +551,7 @@ export default function Grade5ScholarshipPage() {
     <>
       <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
         <div className="min-h-[100vh] flex-1 rounded-xl px-14 py-10 bg-muted/50 p-6">
-          
+
           <div className="flex items-center justify-between ">
             <div>
               <p className="text-2xl font-bold text-[#953002]">
@@ -586,8 +588,8 @@ export default function Grade5ScholarshipPage() {
                   <Button
                     onClick={() => {
                       setIsEditing(true);
-                      
-                      {/*Page routing*/}
+
+                      {/*Page routing*/ }
                       router.replace(
                         `/membership/directory/grade5-scholarship?requestId=${encodeURIComponent(
                           String(requestId)
@@ -649,16 +651,16 @@ export default function Grade5ScholarshipPage() {
               )}
             </div>
           </div>
-          
+
           {/*show document error if exists*/}
           {documentError && (
-              <p className="text-red-500 text-sm mb-3">
-                {documentError}
-              </p>
+            <p className="text-red-500 text-sm mb-3">
+              {documentError}
+            </p>
           )}
 
           {fundError && (
-              <p className="text-red-500 text-sm mb-3">{fundError}</p>
+            <p className="text-red-500 text-sm mb-3">{fundError}</p>
           )}
 
           <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
@@ -701,10 +703,10 @@ export default function Grade5ScholarshipPage() {
             </div>
           </div>
 
-         
+
           <div className="flex gap-6 mt-6">
             <div className="flex-1 flex flex-col gap-6">
-              
+
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <Grade5Form
                   ref={formRef}
@@ -714,7 +716,7 @@ export default function Grade5ScholarshipPage() {
                 />
               </div>
 
-            
+
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-xl font-bold text-[#953002]">
@@ -730,7 +732,7 @@ export default function Grade5ScholarshipPage() {
                   </Button>
                 </div>
 
-                
+
                 {!fundRefreshed ? (
                   <p className="text-gray-500 text-sm">
                     Click Refresh to enable fund disbursement.
@@ -744,7 +746,7 @@ export default function Grade5ScholarshipPage() {
                         </label>
                         <select
                           value={minorAccountExists ? "YES" : "NO"}
-                          onChange={(e) =>handleMinorAccountExistsChange(e.target.value)}
+                          onChange={(e) => handleMinorAccountExistsChange(e.target.value)}
                           disabled={fundReadOnly}
                           className="border rounded-md px-3 py-2 w-full"
                         >
@@ -833,11 +835,10 @@ export default function Grade5ScholarshipPage() {
                         {minorAccountExists && (
                           <>
                             <label
-                              className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${
-                                disbursementOption === MEMBER_AND_MINOR
+                              className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MEMBER_AND_MINOR
                                   ? "border-[#953002] bg-orange-50"
                                   : ""
-                              }`}
+                                }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
                                 <input
@@ -865,11 +866,10 @@ export default function Grade5ScholarshipPage() {
                             </label>
 
                             <label
-                              className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${
-                                disbursementOption === MINOR_ONLY
+                              className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MINOR_ONLY
                                   ? "border-[#953002] bg-orange-50"
                                   : ""
-                              }`}
+                                }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
                                 <input
@@ -878,13 +878,13 @@ export default function Grade5ScholarshipPage() {
                                   value={MINOR_ONLY}
                                   checked={disbursementOption === MINOR_ONLY}
                                   onChange={(e) =>
-                                    calculateDisbursementAmount(e.target.value,eligibleMonths,minorAccountExists)
+                                    calculateDisbursementAmount(e.target.value, eligibleMonths, minorAccountExists)
                                   }
                                 />
                                 Minor Account Only
                               </span>
                               <span className="text-gray-600">
-                                  Disburse the full scholarship amount to the minor account.
+                                Disburse the full scholarship amount to the minor account.
                               </span>
                             </label>
                           </>
@@ -982,11 +982,10 @@ export default function Grade5ScholarshipPage() {
             {/*approval options*/}
             <div className="mt-5 space-y-3">
               <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
-                  submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
+                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
                     ? "border-[#953002] bg-orange-50"
                     : "border-gray-200"
-                }`}
+                  }`}
               >
                 <input
                   type="radio"
@@ -1008,11 +1007,10 @@ export default function Grade5ScholarshipPage() {
               </label>
 
               <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
-                  submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
+                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
                     ? "border-[#953002] bg-orange-50"
                     : "border-gray-200"
-                }`}
+                  }`}
               >
                 <input
                   type="radio"
