@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import {Card,CardContent,CardHeader,CardTitle,} from "@/src/components/ui/card";
@@ -39,6 +40,48 @@ export default function Page() {
   const [sortBy, setSortBy] = useState("request-id");
   const [sortAsc, setSortAsc] = useState(true);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const router = useRouter();
+
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [boardMeetings, setBoardMeetings] = useState<any[]>([]);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [isSavingApprovalList, setIsSavingApprovalList] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [createdCount, setCreatedCount] = useState(0);
+
+  const hasRights = true; // rights to create University Scholarship Approval List
+
+  const isSelectable = (item: RequestRow) => {
+    const status = (item.status || "").toUpperCase();
+    return status === "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL" || status === "SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL";
+  };
+
+  const selectableDisplayedRows = displayed.filter(isSelectable);
+  const selectableDisplayedRowIds = selectableDisplayedRows.map(r => r.id);
+  const selectedSelectableCount = selectedIds.filter(id => selectableDisplayedRowIds.includes(id)).length;
+  const isAllSelectableSelected = selectableDisplayedRowIds.length > 0 && selectedSelectableCount === selectableDisplayedRowIds.length;
+  const isSomeSelectableSelected = selectedSelectableCount > 0 && selectedSelectableCount < selectableDisplayedRowIds.length;
+
+  const toggleRow = (id: number) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAllSelectable = (checked: boolean) => {
+    setSelectedIds(prev => {
+      if (checked) {
+        const newSelection = Array.from(new Set([...prev, ...selectableDisplayedRowIds]));
+        return newSelection;
+      } else {
+        return prev.filter(id => !selectableDisplayedRowIds.includes(id));
+      }
+    });
+  };
+
+  const selectedRequests = displayed.filter(item => selectedIds.includes(item.id));
+  const showNormalApprovalBtn = hasRights && selectedRequests.length > 0 && selectedRequests.every(item => (item.status || "").toUpperCase() === "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL");
 
   // Convert a date string in YYYY-MM-DD format to a Date object 
   const parseYMD = (input?: string | null) => {
@@ -98,7 +141,7 @@ export default function Page() {
   const getStatusColor = (status?: string) => {
     if (!status) return "bg-yellow-100 border-yellow-200 text-yellow-500";
     
-    const statusLower = status.toLowerCase();
+    const statusLower = status.toLowerCase().replace(/[\s_]+/g, "");
     
     if (statusLower === "new") {
       return "bg-blue-100 border-blue-200 text-blue-500";
@@ -108,10 +151,34 @@ export default function Page() {
       return "bg-green-100 border-green-200 text-green-500";
     } else if (statusLower === "rejected") {
       return "bg-red-100 border-red-200 text-red-500";
-    } else if (statusLower === "submitted_for_committee_approval") {
+    } else if (statusLower === "submittedforcommitteeapproval") {
       return "bg-purple-100 border-purple-200 text-purple-500";
+    } else if (statusLower === "submittedfornormalboardapproval" || statusLower === "submittedfordeviationboardapproval") {
+      return "bg-amber-100 border-amber-200 text-amber-600";
+    } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
+      return "bg-emerald-100 border-emerald-200 text-emerald-600";
     } else {
       return "bg-yellow-100 border-yellow-200 text-yellow-500";
+    }
+  };
+
+  const formatStatusLabel = (status?: string) => {
+    if (!status) return "";
+    const statusUpper = status.toUpperCase().replace(/[\s_]+/g, "");
+    switch (statusUpper) {
+      case "NEW": return "New";
+      case "INCOMPLETE": return "Incomplete";
+      case "SUBMITTEDFORCOMMITTEEAPPROVAL": return "Submitted for Committee Approval";
+      case "SUBMITTEDFORNORMALBOARDAPPROVAL": return "Submitted for Normal Board Approval";
+      case "SUBMITTEDFORDEVIATIONBOARDAPPROVAL": return "Submitted for Deviation Board Approval";
+      case "ADDEDTONORMALBOARDAPPROVALIST":
+      case "ADDEDTONORMALBOARDAPPROVALLIST":
+      case "ADDEDTONORMALAPPROVALLIST":
+        return "Added to Normal Approval List";
+      case "ADDEDTODEVIATIONBOARDAPPROVALLIST": return "Added to Deviation Board Approval List";
+      case "APPROVED": return "Approved";
+      case "REJECTED": return "Rejected";
+      default: return status.replace(/_/g, " ");
     }
   };
 
@@ -385,6 +452,67 @@ export default function Page() {
     }
   };
 
+  const handleOpenBoardMeetingModal = async () => {
+    try {
+      const res = await fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
+      if (!res.ok) {
+        throw new Error("Failed to fetch board meetings");
+      }
+      const data = await res.json();
+      setBoardMeetings(data);
+      setShowBoardMeetingModal(true);
+    } catch (error) {
+      console.error("Failed to fetch board meetings:", error);
+      alert("Failed to retrieve Board Meetings.");
+    }
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveBoardMeeting = async () => {
+    if (!selectedBoardMeeting) {
+      alert("Please select a Board Meeting.");
+      return;
+    }
+    try {
+      setIsSavingApprovalList(true);
+      const requestIds = selectedRequests.map(r => r.requestId).filter(Boolean);
+      
+      const res = await fetch("http://localhost:8080/api/university-scholarships/attach-board-meeting", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          boardMeetingId: Number(selectedBoardMeeting),
+          requestIds: requestIds,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || "Failed to attach requests to Board Meeting");
+      }
+
+      setCreatedCount(selectedRequests.length);
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowConfirmModal(true);
+
+      // Refresh table data
+      await handleRetrieve();
+      setSelectedIds([]);
+    } catch (error) {
+      console.error("Failed to create approval list:", error);
+      alert(error instanceof Error ? error.message : "Failed to create approval list");
+    } finally {
+      setIsSavingApprovalList(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -393,6 +521,12 @@ export default function Page() {
         </h1>
 
         <div className="flex gap-2">
+          {showNormalApprovalBtn && (
+            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={handleOpenBoardMeetingModal}>
+              Create University Scholarship Normal Approval List ({selectedRequests.length})
+            </Button>
+          )}
+
           <Link href="/membership/directory/university-scholarship">
             <Button className="bg-[#D4183D] text-white hover:bg-[#a3152f]">
               + New Application
@@ -525,6 +659,20 @@ export default function Page() {
                 <table className="w-full text-left text-sm">
                     <thead>
                     <tr className="text-sm text-gray bold">
+                        <th className="py-4 px-4 font-medium w-10">
+                            <Checkbox
+                                checked={
+                                    isAllSelectableSelected
+                                        ? true
+                                        : isSomeSelectableSelected
+                                            ? "indeterminate"
+                                            : false
+                                }
+                                onCheckedChange={(checked) => toggleAllSelectable(checked === true)}
+                                disabled={selectableDisplayedRowIds.length === 0}
+                                className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                            />
+                        </th>
                         <th className="py-4 px-4 font-medium">Request ID</th>
                         <th className="py-4 px-4 font-medium">Student</th>
                         <th className="py-4 px-4 font-medium">NIC</th>
@@ -537,7 +685,7 @@ export default function Page() {
                     <tbody>
                     {displayed.length === 0 ? (
                         <tr>
-                      <td colSpan={6} className="text-center py-4 text-gray-500">
+                      <td colSpan={7} className="text-center py-4 text-gray-500">
                         No data available
                       </td>
                         </tr>
@@ -547,6 +695,17 @@ export default function Page() {
 
                         return (
                         <tr key={item.id} className="border-t text-sm text-gray-600">
+                            <td className="py-4 px-4">
+                                {isSelectable(item) ? (
+                                    <Checkbox
+                                        checked={selectedIds.includes(item.id)}
+                                        onCheckedChange={() => toggleRow(item.id)}
+                                        className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                                    />
+                                ) : (
+                                    <span className="size-4 block" />
+                                )}
+                            </td>
                             <td className="py-4 px-4">
                               <Link
                                 href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
@@ -560,7 +719,7 @@ export default function Page() {
                             <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
                             <td className="py-4 px-4">
                             <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
-                                {item.status}
+                                {formatStatusLabel(item.status)}
                             </span>
                             </td>
                             <td className="py-4 px-4">
@@ -582,6 +741,73 @@ export default function Page() {
             </div>
             </div>
         </div>
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-[500px] rounded-xl border bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-[#953002]">Select Board Meeting</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Select the Board Meeting for these {selectedRequests.length} scholarship requests.
+                </p>
+              </div>
+              <button onClick={handleCloseBoardMeetingModal} className="text-gray-400 hover:text-gray-600">
+                <span className="text-xl">×</span>
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 mb-6">
+              <label className="text-xs font-semibold text-gray-600">Board Meeting Record</label>
+              <Select value={selectedBoardMeeting} onValueChange={setSelectedBoardMeeting}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a Board Meeting..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  {boardMeetings.length === 0 ? (
+                    <SelectItem value="none" disabled>No Board Meetings created</SelectItem>
+                  ) : (
+                    boardMeetings.map((meeting: any) => (
+                      <SelectItem key={meeting.id} value={String(meeting.id)}>
+                        {meeting.scheduledDate} ({meeting.boardMeetingId || meeting.id})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={handleCloseBoardMeetingModal} disabled={isSavingApprovalList}>
+                Cancel
+              </Button>
+              <Button className="bg-[#953002] hover:bg-[#7a2700] text-white" onClick={handleSaveBoardMeeting} disabled={isSavingApprovalList || !selectedBoardMeeting}>
+                {isSavingApprovalList ? "Saving..." : "Save Details"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-[500px] rounded-xl border bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-[#953002] mb-3">Approval List Created</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              The University Scholarship Normal Approval List for {createdCount} requests has been created. Do you want to view the list?
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowConfirmModal(false)}>
+                No
+              </Button>
+              <Button className="bg-[#953002] hover:bg-[#7a2700] text-white" onClick={() => {
+                setShowConfirmModal(false);
+                router.push("/scholarships/university/approvals");
+              }}>
+                Yes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
