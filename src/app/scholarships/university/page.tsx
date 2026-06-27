@@ -44,11 +44,13 @@ export default function Page() {
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [isDeviationModal, setIsDeviationModal] = useState(false);
   const [boardMeetings, setBoardMeetings] = useState<any[]>([]);
   const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
   const [isSavingApprovalList, setIsSavingApprovalList] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [createdCount, setCreatedCount] = useState(0);
+  const [confirmedIsDeviation, setConfirmedIsDeviation] = useState(false);
 
   const hasRights = true; // rights to create University Scholarship Approval List
 
@@ -82,6 +84,7 @@ export default function Page() {
 
   const selectedRequests = displayed.filter(item => selectedIds.includes(item.id));
   const showNormalApprovalBtn = hasRights && selectedRequests.length > 0 && selectedRequests.every(item => (item.status || "").toUpperCase() === "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL");
+  const showDeviationApprovalBtn = hasRights && selectedRequests.length > 0 && selectedRequests.every(item => (item.status || "").toUpperCase() === "SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL");
 
   // Convert a date string in YYYY-MM-DD format to a Date object 
   const parseYMD = (input?: string | null) => {
@@ -452,7 +455,7 @@ export default function Page() {
     }
   };
 
-  const handleOpenBoardMeetingModal = async () => {
+  const handleOpenBoardMeetingModal = async (deviation = false) => {
     try {
       const res = await fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
       if (!res.ok) {
@@ -460,6 +463,7 @@ export default function Page() {
       }
       const data = await res.json();
       setBoardMeetings(data);
+      setIsDeviationModal(deviation);
       setShowBoardMeetingModal(true);
     } catch (error) {
       console.error("Failed to fetch board meetings:", error);
@@ -481,7 +485,11 @@ export default function Page() {
       setIsSavingApprovalList(true);
       const requestIds = selectedRequests.map(r => r.requestId).filter(Boolean);
 
-      const res = await fetch("http://localhost:8080/api/university-scholarships/attach-board-meeting", {
+      const endpoint = isDeviationModal
+        ? "http://localhost:8080/api/university-scholarships/attach-deviation-board-meeting"
+        : "http://localhost:8080/api/university-scholarships/attach-board-meeting";
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -498,6 +506,7 @@ export default function Page() {
       }
 
       setCreatedCount(selectedRequests.length);
+      setConfirmedIsDeviation(isDeviationModal);
       setShowBoardMeetingModal(false);
       setSelectedBoardMeeting("");
       setShowConfirmModal(true);
@@ -522,8 +531,14 @@ export default function Page() {
 
         <div className="flex gap-2">
           {showNormalApprovalBtn && (
-            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={handleOpenBoardMeetingModal}>
+            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(false)}>
               Create University Scholarship Normal Approval List ({selectedRequests.length})
+            </Button>
+          )}
+
+          {showDeviationApprovalBtn && (
+            <Button className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
+              Create University Scholarship Deviation Approval List ({selectedRequests.length})
             </Button>
           )}
 
@@ -747,7 +762,9 @@ export default function Page() {
           <div className="w-full max-w-[500px] rounded-xl border bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-xl font-bold text-[#953002]">Select Board Meeting</h3>
+                <h3 className="text-xl font-bold text-[#953002]">
+                  {isDeviationModal ? "Create Deviation Approval List" : "Select Board Meeting"}
+                </h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Select the Board Meeting for these {selectedRequests.length} scholarship requests.
                 </p>
@@ -792,7 +809,9 @@ export default function Page() {
           <div className="w-full max-w-[500px] rounded-xl border bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-[#953002] mb-3">Approval List Created</h3>
             <p className="text-sm text-gray-600 mb-6">
-              The University Scholarship Normal Approval List for {createdCount} requests has been created. Do you want to view the list?
+              {confirmedIsDeviation
+                ? `The University Scholarship Deviation Approval List for ${createdCount} requests has been created. Do you want to view the list?`
+                : `The University Scholarship Normal Approval List for ${createdCount} requests has been created. Do you want to view the list?`}
             </p>
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => setShowConfirmModal(false)}>
@@ -800,7 +819,10 @@ export default function Page() {
               </Button>
               <Button className="bg-[#953002] hover:bg-[#7a2700] text-white" onClick={() => {
                 setShowConfirmModal(false);
-                router.push("/scholarships/university/approvals");
+                router.push(confirmedIsDeviation
+                  ? "/scholarships/university/approvals?tab=deviation"
+                  : "/scholarships/university/approvals"
+                );
               }}>
                 Yes
               </Button>

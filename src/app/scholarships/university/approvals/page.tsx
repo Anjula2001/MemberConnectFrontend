@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
-import { ArrowLeft, FileText, Printer, Search, Trash2, Upload, X, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, FileText, Printer, Search, Trash2, Upload, X, CheckCircle2, XCircle, AlertCircle, ChevronDown, File } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,8 +43,37 @@ type Decision = "approve" | "reject";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ApprovalsPage() {
+function ApprovalsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Tab state — reads ?tab=deviation from URL
+  const [activeTab, setActiveTab] = useState<"normal" | "deviation">(
+    searchParams.get("tab") === "deviation" ? "deviation" : "normal"
+  );
+
+  // Sync tab to URL when changed by user click
+  const switchTab = (tab: "normal" | "deviation") => {
+    setActiveTab(tab);
+    router.replace(`/scholarships/university/approvals${tab === "deviation" ? "?tab=deviation" : ""}`);
+    // Reset all list/request state on tab switch
+    setAllGroupedLists([]);
+    setFilteredLists([]);
+    setHasRetrieved(false);
+    setSelectedMeetingId(null);
+    setRetrievedRequests([]);
+    setHasRetrievedRequests(false);
+    setDecisions({});
+  };
+
+  // Helper to determine list status
+  const getListStatus = (list: GroupedList) => {
+    if (!list.requests || list.requests.length === 0) return "CREATED";
+    const allProcessed = list.requests.every(
+      (r) => r.status === "APPROVED" || r.status === "REJECTED"
+    );
+    return allProcessed ? "PROCESSED" : "CREATED";
+  };
 
   // Filter controls
   const [filterMode, setFilterMode] = useState<"all" | "custom">("all");
@@ -87,7 +116,7 @@ export default function ApprovalsPage() {
     fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings")
       .then((r) => r.json())
       .then((data: BoardMeetingOption[]) => setBoardMeetingOptions(data))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // ── Fetch all approval lists from backend ────────────────────────────────
@@ -104,14 +133,11 @@ export default function ApprovalsPage() {
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
       const data: RequestRow[] = await res.json();
 
-      const attached = data.filter(
-        (r) =>
-          r.boardMeetingId &&
-          (r.status === "ADDED_TO_NORMAL_BOARD_APPROVAL_LIST" ||
-            r.status === "Added to Normal Approval List")
-      );
+      // Collect all requests that have ever been attached to a board meeting
+      const attached = data.filter((r) => r.boardMeetingId);
 
-      const groups: Record<number, GroupedList> = {};
+      // Build groups keyed by boardMeetingId, tracking list type per group
+      const groups: Record<number, GroupedList & { listType: "normal" | "deviation" }> = {};
       attached.forEach((req) => {
         const mid = req.boardMeetingId!;
         if (!groups[mid]) {
@@ -120,12 +146,31 @@ export default function ApprovalsPage() {
             boardMeetingName: req.boardMeetingName || `Meeting #${mid}`,
             boardMeetingDate: req.boardMeetingDate,
             requests: [],
+            listType: "normal", // default; will be overridden below
           };
         }
         groups[mid].requests.push(req);
       });
 
-      const groupArr = Object.values(groups);
+      // Determine listType for each group from the most specific status available
+      Object.values(groups).forEach((g) => {
+        const hasDeviation = g.requests.some(
+          (r) =>
+            r.status === "ADDED_TO_DEVIATION_BOARD_APPROVAL_LIST" ||
+            r.status === "Added to Deviation Board Approval List"
+        );
+        const hasNormal = g.requests.some(
+          (r) =>
+            r.status === "ADDED_TO_NORMAL_BOARD_APPROVAL_LIST" ||
+            r.status === "Added to Normal Approval List"
+        );
+        if (hasDeviation) g.listType = "deviation";
+        else if (hasNormal) g.listType = "normal";
+        // If all are APPROVED/REJECTED, keep listType as normal (safe default)
+      });
+
+      // Filter by active tab
+      const groupArr = Object.values(groups).filter((g) => g.listType === activeTab);
       setAllGroupedLists(groupArr);
       applyFilter(groupArr);
       setHasRetrieved(true);
@@ -273,10 +318,11 @@ export default function ApprovalsPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(
-        `http://localhost:8080/api/university-scholarships/approval-list/${meetingId}`,
-        { method: "DELETE" }
-      );
+      const endpoint = activeTab === "deviation"
+        ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${meetingId}`
+        : `http://localhost:8080/api/university-scholarships/approval-list/${meetingId}`;
+
+      const res = await fetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete the approval list");
@@ -333,155 +379,326 @@ export default function ApprovalsPage() {
           </Button>
         </Link>
         <h1 className="text-2xl font-bold text-[#953002]">
-          University Scholarship Normal Approval Lists
+          University Scholarship Approval Lists
         </h1>
       </div>
 
+      {/* ── TAB BAR ─────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => switchTab("normal")}
+          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "normal"
+              ? "bg-white text-[#953002] shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+            }`}
+        >
+          Normal Board Approval
+        </button>
+        <button
+          onClick={() => switchTab("deviation")}
+          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "deviation"
+              ? "bg-white text-[#7c3aed] shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+            }`}
+        >
+          Deviation Board Approval
+        </button>
+      </div>
+
       {/* ── FILTER SECTION ──────────────────────────────────────────────── */}
-      <Card className="rounded-xl shadow-sm mb-6 py-0">
-        <CardHeader className="px-5 pt-5 pb-3">
-          <CardTitle className="text-base text-[#953002]">Filter Approval Lists</CardTitle>
-        </CardHeader>
-        <CardContent className="px-5 pb-5">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Show</label>
+      <Card className="rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 className="text-lg font-bold text-[#953002] mb-4">Search Approval Lists</h2>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Filter</label>
+            <div className="relative w-64">
               <select
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 w-full pr-10 shadow-sm"
                 value={filterMode}
                 onChange={(e) => setFilterMode(e.target.value as "all" | "custom")}
               >
-                <option value="all">All</option>
+                <option value="all">All Dates</option>
                 <option value="custom">Select Board Meeting Date Period</option>
               </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             </div>
-
-            {filterMode === "custom" && (
-              <>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-600">From Date</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-600">To Date</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40"
-                  />
-                </div>
-              </>
-            )}
-
-            <Button
-              onClick={retrieveLists}
-              disabled={isRetrieving}
-              className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2"
-            >
-              <Search size={15} />
-              {isRetrieving ? "Retrieving..." : "Retrieve"}
-            </Button>
           </div>
-        </CardContent>
+
+          {filterMode === "custom" && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">From Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">To Date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
+                />
+              </div>
+            </>
+          )}
+
+          <Button
+            onClick={retrieveLists}
+            disabled={isRetrieving}
+            className="bg-[#8b3007] hover:bg-[#702604] text-white gap-2 h-9 px-4 rounded-lg flex items-center justify-center font-semibold text-sm shadow-sm"
+          >
+            <Search size={15} />
+            {isRetrieving ? "Retrieving..." : "Retrieve"}
+          </Button>
+        </div>
       </Card>
 
-      {/* ── APPROVAL LISTS TABLE ────────────────────────────────────────── */}
-      {hasRetrieved && (
-        <Card className="rounded-xl shadow-sm mb-6 py-0">
-          <CardHeader className="px-5 pt-5 pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base text-[#953002]">
-              University Scholarship Normal Approval Lists
-              {filteredLists.length > 0 && (
-                <span className="ml-2 text-xs font-normal text-gray-500">
-                  ({filteredLists.length} list{filteredLists.length !== 1 ? "s" : ""})
-                </span>
-              )}
-            </CardTitle>
+      {/* ── TWO-COLUMN GRID ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mb-6">
+        {/* Left Column: Approval Lists (col-span-4) */}
+        <Card className="lg:col-span-4 rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between min-h-[480px]">
+          <div>
+            <h2 className="text-[#953002] text-lg font-bold">Approval Lists</h2>
+            <p className="text-xs text-gray-400 font-medium mt-0.5 mb-6">Select a list to view details</p>
 
-            <div className="flex items-center gap-2">
-              {canDelete && (
+            {/* Headers */}
+            <div className="flex justify-between items-center text-[11px] font-bold text-gray-400 uppercase tracking-wider pb-2 border-b border-gray-100 mb-3 px-1">
+              <span>List ID</span>
+              <span>Status</span>
+            </div>
+
+            {/* List Body */}
+            {!hasRetrieved ? (
+              <div className="text-center py-12 text-gray-400 text-xs italic">
+                Use the filter above to retrieve lists
+              </div>
+            ) : filteredLists.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-xs">
+                No approval lists found
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {filteredLists.map((list) => {
+                  const isSelected = selectedMeetingId === list.boardMeetingId;
+                  const status = getListStatus(list);
+
+                  return (
+                    <div
+                      key={list.boardMeetingId}
+                      onClick={() => {
+                        setSelectedMeetingId(isSelected ? null : list.boardMeetingId);
+                        setHasRetrievedRequests(false);
+                        setRetrievedRequests([]);
+                        setDecisions({});
+                      }}
+                      className={`flex justify-between items-center p-3 rounded-lg border transition-all cursor-pointer ${isSelected
+                        ? "bg-gray-100 border-transparent"
+                        : "bg-white border-gray-100 hover:bg-gray-50/80"
+                        }`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-gray-800">
+                          {list.boardMeetingName}
+                        </span>
+                        <span className="text-[11px] text-gray-400 font-medium mt-0.5">
+                          {list.boardMeetingId}
+                        </span>
+                      </div>
+
+                      <div>
+                        {isSelected ? (
+                          <span className="text-xs font-bold text-gray-800">
+                            {status}
+                          </span>
+                        ) : (
+                          <span className="border border-gray-200 px-2 py-0.5 rounded-full text-[10px] font-semibold text-gray-500 bg-white">
+                            {status}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Action button at the bottom of left card */}
+          <div className="mt-6">
+            <Button
+              onClick={retrieveRequestsForList}
+              disabled={selectedMeetingId === null || isLoadingRequests}
+              className="bg-[#8b3007] hover:bg-[#702604] disabled:bg-gray-100 disabled:text-gray-400 text-white font-semibold py-2.5 px-4 rounded-lg w-full transition-all duration-200 text-center text-sm shadow-sm flex items-center justify-center gap-2"
+            >
+              {isLoadingRequests ? "Retrieving..." : "Retrieve Applications"}
+            </Button>
+          </div>
+        </Card>
+
+        {/* Right Column: Applications Details (col-span-8) */}
+        <Card className="lg:col-span-8 rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col min-h-[480px]">
+          {/* Card Header */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-[#953002] text-lg font-bold">Applications</h2>
+              <p className="text-xs text-gray-400 font-medium mt-0.5">Click &apos;Retrieve Applications&apos; to view data</p>
+            </div>
+
+            {hasRetrievedRequests && retrievedRequests.length > 0 && (
+              <div className="flex items-center gap-2">
+                {canDelete && selectedMeetingId !== null && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setPendingDeleteMeetingId(selectedMeetingId);
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    Delete List
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-1.5 border-red-300 text-red-600 hover:bg-red-50 text-sm"
-                  disabled={selectedMeetingId === null}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setPendingDeleteMeetingId(selectedMeetingId);
-                  }}
+                  className="gap-2 border-[#953002] text-[#953002] hover:bg-[#fff6f2] text-xs font-medium"
+                  onClick={printRequests}
                 >
-                  <Trash2 size={14} />
-                  Delete List
+                  <Printer size={13} />
+                  Print List
                 </Button>
-              )}
-              <Button
-                onClick={retrieveRequestsForList}
-                disabled={selectedMeetingId === null || isLoadingRequests}
-                className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2 text-sm"
-              >
-                <FileText size={14} />
-                {isLoadingRequests ? "Retrieving..." : "Retrieve University Scholarship Requests"}
-              </Button>
-            </div>
-          </CardHeader>
-
-          <CardContent className="px-5 pb-5">
-            {filteredLists.length === 0 ? (
-              <div className="text-center py-10 text-gray-500 text-sm">
-                No University Scholarship Normal Approval Lists found.
               </div>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
+            )}
+          </div>
+
+          {/* Card Body */}
+          {!hasRetrievedRequests ? (
+            /* Empty State */
+            <div className="flex flex-col items-center justify-center flex-1 py-16">
+              <File size={56} className="text-gray-200 stroke-[1.2] mb-3" />
+              <p className="text-sm font-semibold text-gray-400">
+                Select a list and click Retrieve Applications
+              </p>
+            </div>
+          ) : retrievedRequests.length === 0 ? (
+            <div className="text-center py-16 text-gray-500 text-sm">
+              No requests found in this approval list.
+            </div>
+          ) : (
+            <>
+              {/* Validation warning */}
+              {rejectedRequests.some(
+                (r) => !(decisions[r.requestId || String(r.id)]?.rejectReason ?? "").trim()
+              ) && (
+                  <div className="mb-4 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
+                    <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                    Please enter a rejection reason for all requests marked as &quot;Reject&quot; before proceeding.
+                  </div>
+                )}
+
+              <div className="border border-gray-100 rounded-lg overflow-hidden flex-1 shadow-sm">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead className="font-semibold text-gray-700">List / Meeting ID</TableHead>
-                      <TableHead className="font-semibold text-gray-700">Board Meeting Name</TableHead>
-                      <TableHead className="font-semibold text-gray-700">Scheduled Date</TableHead>
-                      <TableHead className="font-semibold text-gray-700 text-center">No. of Requests</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Request ID</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Member ID</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Student Name</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">NIC</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Member Name</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">University</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Decision</TableHead>
+                      <TableHead className="font-semibold text-xs text-gray-600">Rejection Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredLists.map((list) => {
-                      const isSelected = selectedMeetingId === list.boardMeetingId;
+                    {retrievedRequests.map((req) => {
+                      const key = req.requestId || String(req.id);
+                      const dec = decisions[key] ?? { decision: "approve" as Decision, rejectReason: "" };
+                      const isRejected = dec.decision === "reject";
+                      const isProcessed =
+                        req.status === "APPROVED" || req.status === "REJECTED";
+
                       return (
                         <TableRow
-                          key={list.boardMeetingId}
-                          className={`cursor-pointer border-t transition-colors ${
-                            isSelected
-                              ? "bg-[#fff6f2] border-l-4 border-l-[#953002]"
-                              : "hover:bg-gray-50"
-                          }`}
-                          onClick={() => {
-                            setSelectedMeetingId(isSelected ? null : list.boardMeetingId);
-                            setHasRetrievedRequests(false);
-                            setRetrievedRequests([]);
-                            setDecisions({});
-                          }}
+                          key={req.id}
+                          className={`text-xs border-t transition-colors ${isRejected ? "bg-red-50/40" : "hover:bg-gray-50/60"
+                            }`}
                         >
-                          <TableCell className="p-4 text-center">
-                            <div
-                              className={`w-4 h-4 rounded-full border-2 mx-auto transition-colors ${
-                                isSelected ? "bg-[#953002] border-[#953002]" : "border-gray-400"
-                              }`}
-                            />
+                          {/* Request ID */}
+                          <TableCell className="p-3 font-semibold text-[#953002]">
+                            <Link
+                              href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(key)}&mode=view`}
+                              className="hover:underline"
+                            >
+                              {req.requestId}
+                            </Link>
                           </TableCell>
-                          <TableCell className="p-4 font-medium text-gray-800">
-                            #{list.boardMeetingId}
+
+                          {/* Member ID */}
+                          <TableCell className="p-3">
+                            <Link
+                              href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(key)}&mode=view`}
+                              className="font-semibold text-[#953002] hover:underline"
+                              title="Click to open request"
+                            >
+                              {req.memberId || "—"}
+                            </Link>
                           </TableCell>
-                          <TableCell className="p-4 text-gray-700">{list.boardMeetingName}</TableCell>
-                          <TableCell className="p-4 text-gray-600">
-                            {list.boardMeetingDate || "—"}
+
+                          <TableCell className="p-3 text-gray-700">{req.studentName}</TableCell>
+                          <TableCell className="p-3 text-gray-500">{req.nic || "—"}</TableCell>
+                          <TableCell className="p-3 text-gray-700">{req.memberName || "—"}</TableCell>
+                          <TableCell className="p-3 text-gray-600">{req.universityName || "—"}</TableCell>
+
+                          {/* Decision dropdown */}
+                          <TableCell className="p-3">
+                            {isProcessed ? (
+                              statusBadge(req.status)
+                            ) : (
+                              <select
+                                value={dec.decision}
+                                onChange={(e) => setDecision(key, e.target.value as Decision)}
+                                className={`border rounded px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 transition-colors ${isRejected
+                                  ? "border-red-300 text-red-700 bg-red-50 focus:ring-red-300"
+                                  : "border-green-300 text-green-700 bg-green-50 focus:ring-green-300"
+                                  }`}
+                              >
+                                <option value="approve">✓ Approve</option>
+                                <option value="reject">✗ Reject</option>
+                              </select>
+                            )}
                           </TableCell>
-                          <TableCell className="p-4 text-center font-semibold text-gray-800">
-                            {list.requests.length}
+
+                          {/* Rejection reason — mandatory when reject selected */}
+                          <TableCell className="p-3">
+                            {!isProcessed && isRejected ? (
+                              <div className="flex flex-col gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="Enter rejection reason (required)"
+                                  value={dec.rejectReason}
+                                  onChange={(e) => setRejectReason(key, e.target.value)}
+                                  className={`border rounded px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 ${!dec.rejectReason.trim()
+                                    ? "border-red-400 focus:ring-red-300 bg-red-50"
+                                    : "border-gray-300 focus:ring-gray-300"
+                                    }`}
+                                />
+                                {!dec.rejectReason.trim() && (
+                                  <span className="text-[10px] text-red-500">This field is required</span>
+                                )}
+                              </div>
+                            ) : isProcessed ? (
+                              <span className="text-gray-400 italic text-[10px]">—</span>
+                            ) : (
+                              <span className="text-gray-400 italic text-[10px]">N/A</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -489,344 +706,25 @@ export default function ApprovalsPage() {
                   </TableBody>
                 </Table>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
-      {/* ── REQUESTS TABLE WITH INLINE APPROVE/REJECT ───────────────────── */}
-      {hasRetrievedRequests && (
-        <Card className="rounded-xl shadow-sm py-0 print:shadow-none mb-6">
-          <CardHeader className="px-5 pt-5 pb-3 flex flex-row items-center justify-between print:hidden">
-            <CardTitle className="text-base text-[#953002] flex items-center gap-2">
-              <FileText size={16} />
-              Scholarship Requests in Selected Approval List
-              <span className="text-xs font-normal text-gray-500">
-                ({retrievedRequests.length} record{retrievedRequests.length !== 1 ? "s" : ""})
-              </span>
-            </CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 border-[#953002] text-[#953002] hover:bg-[#fff6f2]"
-              onClick={printRequests}
-            >
-              <Printer size={14} />
-              Print List
-            </Button>
-          </CardHeader>
-
-          <CardContent className="px-5 pb-5">
-            {retrievedRequests.length === 0 ? (
-              <div className="text-center py-10 text-gray-500 text-sm">
-                No requests found in this approval list.
-              </div>
-            ) : (
-              <>
-                {/* Validation warning */}
-                {rejectedRequests.some(
-                  (r) => !(decisions[r.requestId || String(r.id)]?.rejectReason ?? "").trim()
-                ) && (
-                  <div className="mb-4 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
-                    <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                    Please enter a rejection reason for all requests marked as &quot;Reject&quot; before proceeding.
-                  </div>
-                )}
-
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead className="font-semibold text-xs text-gray-600">Request ID</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">Member ID</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">Student Name</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">NIC</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">Member Name</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">University</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">Decision</TableHead>
-                        <TableHead className="font-semibold text-xs text-gray-600">Rejection Reason</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {retrievedRequests.map((req) => {
-                        const key = req.requestId || String(req.id);
-                        const dec = decisions[key] ?? { decision: "approve" as Decision, rejectReason: "" };
-                        const isRejected = dec.decision === "reject";
-                        const isProcessed =
-                          req.status === "APPROVED" || req.status === "REJECTED";
-
-                        return (
-                          <TableRow
-                            key={req.id}
-                            className={`text-xs border-t transition-colors ${
-                              isRejected ? "bg-red-50/40" : "hover:bg-gray-50/60"
-                            }`}
-                          >
-                            {/* Request ID */}
-                            <TableCell className="p-3 font-semibold text-[#953002]">
-                              <Link
-                                href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(key)}&mode=view`}
-                                className="hover:underline"
-                              >
-                                {req.requestId}
-                              </Link>
-                            </TableCell>
-
-                            {/* Member ID */}
-                            <TableCell className="p-3">
-                              <Link
-                                href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(key)}&mode=view`}
-                                className="font-semibold text-[#953002] hover:underline"
-                                title="Click to open request"
-                              >
-                                {req.memberId || "—"}
-                              </Link>
-                            </TableCell>
-
-                            <TableCell className="p-3 text-gray-700">{req.studentName}</TableCell>
-                            <TableCell className="p-3 text-gray-500">{req.nic || "—"}</TableCell>
-                            <TableCell className="p-3 text-gray-700">{req.memberName || "—"}</TableCell>
-                            <TableCell className="p-3 text-gray-600">{req.universityName || "—"}</TableCell>
-
-                            {/* Decision dropdown */}
-                            <TableCell className="p-3">
-                              {isProcessed ? (
-                                statusBadge(req.status)
-                              ) : (
-                                <select
-                                  value={dec.decision}
-                                  onChange={(e) => setDecision(key, e.target.value as Decision)}
-                                  className={`border rounded px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 transition-colors ${
-                                    isRejected
-                                      ? "border-red-300 text-red-700 bg-red-50 focus:ring-red-300"
-                                      : "border-green-300 text-green-700 bg-green-50 focus:ring-green-300"
-                                  }`}
-                                >
-                                  <option value="approve">✓ Approve</option>
-                                  <option value="reject">✗ Reject</option>
-                                </select>
-                              )}
-                            </TableCell>
-
-                            {/* Rejection reason — mandatory when reject selected */}
-                            <TableCell className="p-3">
-                              {!isProcessed && isRejected ? (
-                                <div className="flex flex-col gap-1">
-                                  <input
-                                    type="text"
-                                    placeholder="Enter rejection reason (required)"
-                                    value={dec.rejectReason}
-                                    onChange={(e) => setRejectReason(key, e.target.value)}
-                                    className={`border rounded px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 ${
-                                      !dec.rejectReason.trim()
-                                        ? "border-red-400 focus:ring-red-300 bg-red-50"
-                                        : "border-gray-300 focus:ring-gray-300"
-                                    }`}
-                                  />
-                                  {!dec.rejectReason.trim() && (
-                                    <span className="text-[10px] text-red-500">This field is required</span>
-                                  )}
-                                </div>
-                              ) : isProcessed ? (
-                                <span className="text-gray-400 italic text-[10px]">—</span>
-                              ) : (
-                                <span className="text-gray-400 italic text-[10px]">N/A</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Proceed button */}
-                {retrievedRequests.some((r) => r.status !== "APPROVED" && r.status !== "REJECTED") && (
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2"
-                      disabled={!allRejectedHaveReasons}
-                      onClick={openProceedModal}
-                      title={!allRejectedHaveReasons ? "Enter rejection reasons for all rejected requests first" : ""}
-                    >
-                      Proceed
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── PROCEED CONFIRMATION MODAL ───────────────────────────────────── */}
-      {showProceedModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h2 className="text-lg font-bold text-gray-800">Confirm Approval Process</h2>
-              <button
-                onClick={() => setShowProceedModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="px-6 py-5 space-y-5">
-              {/* Board meeting dates */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-gray-600">Board Meeting Date (Scheduled)</label>
-                  <div className="border border-gray-200 rounded-md px-3 py-2 text-sm bg-gray-50 text-gray-700">
-                    {selectedGroup?.boardMeetingDate || "—"}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-gray-600">
-                    Actual Board Meeting Date
-                    <span className="text-gray-400 font-normal ml-1">(select from records)</span>
-                  </label>
-                  <select
-                    value={actualBoardMeetingId}
-                    onChange={(e) => setActualBoardMeetingId(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40"
+              {/* Proceed button */}
+              {retrievedRequests.some((r) => r.status !== "APPROVED" && r.status !== "REJECTED") && (
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2"
+                    disabled={!allRejectedHaveReasons}
+                    onClick={openProceedModal}
+                    title={!allRejectedHaveReasons ? "Enter rejection reasons for all rejected requests first" : ""}
                   >
-                    <option value="">— Select Actual Date —</option>
-                    {boardMeetingOptions.map((bm) => (
-                      <option key={bm.id} value={String(bm.id)}>
-                        {bm.boardMeetingId} — {bm.scheduledDate}
-                        {bm.actualDate ? ` (Actual: ${bm.actualDate})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="rounded-xl border bg-gray-50 p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Request Summary</h3>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-white rounded-lg border p-3 text-center">
-                    <div className="text-2xl font-bold text-gray-800">{retrievedRequests.length}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">Total Requests</div>
-                  </div>
-                  <div className="bg-green-50 rounded-lg border border-green-200 p-3 text-center">
-                    <div className="text-2xl font-bold text-green-600">{approvedRequests.length}</div>
-                    <div className="text-xs text-green-600 mt-0.5">To be Approved</div>
-                  </div>
-                  <div className="bg-red-50 rounded-lg border border-red-200 p-3 text-center">
-                    <div className="text-2xl font-bold text-red-600">{rejectedRequests.length}</div>
-                    <div className="text-xs text-red-600 mt-0.5">To be Rejected</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rejection reasons summary */}
-              {rejectedRequests.length > 0 && (
-                <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">
-                  <h3 className="text-sm font-semibold text-red-700 mb-2">Requests to be Rejected</h3>
-                  <div className="space-y-2">
-                    {rejectedRequests.map((req) => {
-                      const key = req.requestId || String(req.id);
-                      return (
-                        <div key={key} className="text-xs text-gray-700">
-                          <span className="font-semibold text-red-600">{req.requestId}</span>
-                          {" — "}
-                          <span className="text-gray-500">{req.studentName}</span>
-                          <br />
-                          <span className="italic text-gray-600">Reason: {decisions[key]?.rejectReason}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                    Proceed
+                  </Button>
                 </div>
               )}
+            </>
+          )}
+        </Card>
+      </div>
 
-              {/* File upload */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-gray-600">
-                  Upload Scanned Approval List Report
-                  <span className="text-gray-400 font-normal ml-1">(optional)</span>
-                </label>
-                <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-[#953002]/50 hover:bg-[#fff6f2]/30 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {uploadedFile ? (
-                    <div className="flex items-center justify-center gap-2 text-sm text-gray-700">
-                      <FileText size={16} className="text-[#953002]" />
-                      <span>{uploadedFile.name}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setUploadedFile(null);
-                        }}
-                        className="text-red-400 hover:text-red-600"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-gray-400">
-                      <Upload size={22} />
-                      <span className="text-xs">Click to upload a scanned image (PNG, JPG, PDF)</span>
-                    </div>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  onChange={(e) => setUploadedFile(e.target.files?.[0] ?? null)}
-                />
-              </div>
-
-              {/* Comment */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-gray-600">
-                  Comment
-                  <span className="text-gray-400 font-normal ml-1">(optional)</span>
-                </label>
-                <textarea
-                  rows={3}
-                  value={proceedComment}
-                  onChange={(e) => setProceedComment(e.target.value)}
-                  placeholder="Add any additional comments..."
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 resize-none"
-                />
-              </div>
-
-              {/* Error */}
-              {processError && (
-                <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-700">
-                  {processError}
-                </div>
-              )}
-            </div>
-
-            {/* Modal footer */}
-            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-2xl">
-              <Button
-                variant="outline"
-                onClick={() => setShowProceedModal(false)}
-                disabled={isProcessing}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2"
-                onClick={processDecisions}
-                disabled={isProcessing}
-              >
-                {isProcessing ? "Processing..." : "Process"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── DELETE CONFIRMATION MODAL ────────────────────────────────────── */}
       {pendingDeleteMeetingId !== null && (
@@ -882,3 +780,12 @@ export default function ApprovalsPage() {
     </div>
   );
 }
+
+export default function ApprovalsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-400">Loading...</div>}>
+      <ApprovalsPageInner />
+    </Suspense>
+  );
+}
+
