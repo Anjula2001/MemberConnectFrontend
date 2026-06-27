@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { Card } from "@/src/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
-import { ArrowLeft, FileText, Printer, Search, Trash2, Upload, X, CheckCircle2, XCircle, AlertCircle, ChevronDown, File } from "lucide-react";
+import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,8 +38,6 @@ type BoardMeetingOption = {
   actualDate?: string;
 };
 
-// Decision tracked per request
-type Decision = "approve" | "reject";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -63,7 +61,6 @@ function ApprovalsPageInner() {
     setSelectedMeetingId(null);
     setRetrievedRequests([]);
     setHasRetrievedRequests(false);
-    setDecisions({});
   };
 
   // Helper to determine list status
@@ -92,32 +89,12 @@ function ApprovalsPageInner() {
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [hasRetrievedRequests, setHasRetrievedRequests] = useState(false);
 
-  // Per-request decisions: map of requestId -> { decision, rejectReason }
-  const [decisions, setDecisions] = useState<Record<string, { decision: Decision; rejectReason: string }>>({});
-
-  // Proceed / confirmation popup
-  const [showProceedModal, setShowProceedModal] = useState(false);
-  const [proceedComment, setProceedComment] = useState("");
-  const [actualBoardMeetingId, setActualBoardMeetingId] = useState<string>("");
-  const [boardMeetingOptions, setBoardMeetingOptions] = useState<BoardMeetingOption[]>([]);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processError, setProcessError] = useState<string | null>(null);
-
   // Delete list state
   const canDelete = true; // TODO: wire to user role/privilege check
   const [pendingDeleteMeetingId, setPendingDeleteMeetingId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // ── Fetch board meetings for the actual-date dropdown ────────────────────
-  useEffect(() => {
-    fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings")
-      .then((r) => r.json())
-      .then((data: BoardMeetingOption[]) => setBoardMeetingOptions(data))
-      .catch(() => { });
-  }, []);
 
   // ── Fetch all approval lists from backend ────────────────────────────────
   const retrieveLists = async () => {
@@ -127,7 +104,6 @@ function ApprovalsPageInner() {
       setSelectedMeetingId(null);
       setRetrievedRequests([]);
       setHasRetrievedRequests(false);
-      setDecisions({});
 
       const res = await fetch("http://localhost:8080/api/university-scholarships");
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
@@ -207,110 +183,12 @@ function ApprovalsPageInner() {
 
     setIsLoadingRequests(true);
     setHasRetrievedRequests(false);
-    setDecisions({});
 
     await new Promise((r) => setTimeout(r, 400));
 
     setRetrievedRequests(group.requests);
     setHasRetrievedRequests(true);
     setIsLoadingRequests(false);
-
-    // Default all to "approve"
-    const initial: Record<string, { decision: Decision; rejectReason: string }> = {};
-    group.requests.forEach((req) => {
-      const key = req.requestId || String(req.id);
-      initial[key] = { decision: "approve", rejectReason: "" };
-    });
-    setDecisions(initial);
-
-    // Pre-select actual board meeting date = scheduled date
-    const match = boardMeetingOptions.find(
-      (bm) => bm.scheduledDate === group.boardMeetingDate
-    );
-    setActualBoardMeetingId(match ? String(match.id) : "");
-  };
-
-  // ── Decision helpers ──────────────────────────────────────────────────────
-  const setDecision = (key: string, decision: Decision) => {
-    setDecisions((prev) => ({
-      ...prev,
-      [key]: { ...prev[key], decision, rejectReason: decision === "approve" ? "" : prev[key]?.rejectReason ?? "" },
-    }));
-  };
-
-  const setRejectReason = (key: string, reason: string) => {
-    setDecisions((prev) => ({
-      ...prev,
-      [key]: { ...prev[key], rejectReason: reason },
-    }));
-  };
-
-  const rejectedRequests = retrievedRequests.filter(
-    (r) => decisions[r.requestId || String(r.id)]?.decision === "reject"
-  );
-  const approvedRequests = retrievedRequests.filter(
-    (r) => decisions[r.requestId || String(r.id)]?.decision !== "reject"
-  );
-
-  // Validate: all rejected items must have a reason
-  const allRejectedHaveReasons = rejectedRequests.every(
-    (r) => (decisions[r.requestId || String(r.id)]?.rejectReason ?? "").trim().length > 0
-  );
-
-  // ── Open Proceed modal ────────────────────────────────────────────────────
-  const openProceedModal = () => {
-    if (!allRejectedHaveReasons) return;
-    setProcessError(null);
-    setProceedComment("");
-    setUploadedFile(null);
-    setShowProceedModal(true);
-  };
-
-  // ── Process (submit) all decisions ───────────────────────────────────────
-  const processDecisions = async () => {
-    setIsProcessing(true);
-    setProcessError(null);
-    try {
-      for (const req of retrievedRequests) {
-        const key = req.requestId || String(req.id);
-        const dec = decisions[key];
-        if (!dec) continue;
-
-        if (dec.decision === "approve") {
-          const res = await fetch(
-            `http://localhost:8080/api/university-scholarships/approve/${key}`,
-            { method: "POST" }
-          );
-          if (!res.ok) throw new Error(`Approval failed for ${key}`);
-        } else {
-          const res = await fetch(
-            `http://localhost:8080/api/university-scholarships/reject/${key}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ decisionReason: dec.rejectReason }),
-            }
-          );
-          if (!res.ok) throw new Error(`Rejection failed for ${key}`);
-        }
-      }
-
-      // Update local state to reflect new statuses
-      setRetrievedRequests((prev) =>
-        prev.map((r) => {
-          const key = r.requestId || String(r.id);
-          const dec = decisions[key];
-          return dec
-            ? { ...r, status: dec.decision === "approve" ? "APPROVED" : "REJECTED" }
-            : r;
-        })
-      );
-      setShowProceedModal(false);
-    } catch (err: any) {
-      setProcessError(err.message ?? "An error occurred while processing.");
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   // ── Delete approval list ──────────────────────────────────────────────────
@@ -333,7 +211,6 @@ function ApprovalsPageInner() {
         setSelectedMeetingId(null);
         setRetrievedRequests([]);
         setHasRetrievedRequests(false);
-        setDecisions({});
       }
       setPendingDeleteMeetingId(null);
     } catch (err: any) {
@@ -388,8 +265,8 @@ function ApprovalsPageInner() {
         <button
           onClick={() => switchTab("normal")}
           className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "normal"
-              ? "bg-white text-[#953002] shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
+            ? "bg-white text-[#953002] shadow-sm"
+            : "text-gray-500 hover:text-gray-700"
             }`}
         >
           Normal Board Approval
@@ -397,8 +274,8 @@ function ApprovalsPageInner() {
         <button
           onClick={() => switchTab("deviation")}
           className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "deviation"
-              ? "bg-white text-[#7c3aed] shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
+            ? "bg-white text-[#953002] shadow-sm"
+            : "text-gray-500 hover:text-gray-700"
             }`}
         >
           Deviation Board Approval
@@ -494,7 +371,6 @@ function ApprovalsPageInner() {
                         setSelectedMeetingId(isSelected ? null : list.boardMeetingId);
                         setHasRetrievedRequests(false);
                         setRetrievedRequests([]);
-                        setDecisions({});
                       }}
                       className={`flex justify-between items-center p-3 rounded-lg border transition-all cursor-pointer ${isSelected
                         ? "bg-gray-100 border-transparent"
@@ -593,16 +469,6 @@ function ApprovalsPageInner() {
             </div>
           ) : (
             <>
-              {/* Validation warning */}
-              {rejectedRequests.some(
-                (r) => !(decisions[r.requestId || String(r.id)]?.rejectReason ?? "").trim()
-              ) && (
-                  <div className="mb-4 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
-                    <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                    Please enter a rejection reason for all requests marked as &quot;Reject&quot; before proceeding.
-                  </div>
-                )}
-
               <div className="border border-gray-100 rounded-lg overflow-hidden flex-1 shadow-sm">
                 <Table>
                   <TableHeader>
@@ -620,16 +486,10 @@ function ApprovalsPageInner() {
                   <TableBody>
                     {retrievedRequests.map((req) => {
                       const key = req.requestId || String(req.id);
-                      const dec = decisions[key] ?? { decision: "approve" as Decision, rejectReason: "" };
-                      const isRejected = dec.decision === "reject";
-                      const isProcessed =
-                        req.status === "APPROVED" || req.status === "REJECTED";
-
                       return (
                         <TableRow
                           key={req.id}
-                          className={`text-xs border-t transition-colors ${isRejected ? "bg-red-50/40" : "hover:bg-gray-50/60"
-                            }`}
+                          className="text-xs border-t transition-colors hover:bg-gray-50/60"
                         >
                           {/* Request ID */}
                           <TableCell className="p-3 font-semibold text-[#953002]">
@@ -656,70 +516,13 @@ function ApprovalsPageInner() {
                           <TableCell className="p-3 text-gray-500">{req.nic || "—"}</TableCell>
                           <TableCell className="p-3 text-gray-700">{req.memberName || "—"}</TableCell>
                           <TableCell className="p-3 text-gray-600">{req.universityName || "—"}</TableCell>
-
-                          {/* Decision dropdown */}
-                          <TableCell className="p-3">
-                            {isProcessed ? (
-                              statusBadge(req.status)
-                            ) : (
-                              <select
-                                value={dec.decision}
-                                onChange={(e) => setDecision(key, e.target.value as Decision)}
-                                className={`border rounded px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 transition-colors ${isRejected
-                                  ? "border-red-300 text-red-700 bg-red-50 focus:ring-red-300"
-                                  : "border-green-300 text-green-700 bg-green-50 focus:ring-green-300"
-                                  }`}
-                              >
-                                <option value="approve">✓ Approve</option>
-                                <option value="reject">✗ Reject</option>
-                              </select>
-                            )}
-                          </TableCell>
-
-                          {/* Rejection reason — mandatory when reject selected */}
-                          <TableCell className="p-3">
-                            {!isProcessed && isRejected ? (
-                              <div className="flex flex-col gap-1">
-                                <input
-                                  type="text"
-                                  placeholder="Enter rejection reason (required)"
-                                  value={dec.rejectReason}
-                                  onChange={(e) => setRejectReason(key, e.target.value)}
-                                  className={`border rounded px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 ${!dec.rejectReason.trim()
-                                    ? "border-red-400 focus:ring-red-300 bg-red-50"
-                                    : "border-gray-300 focus:ring-gray-300"
-                                    }`}
-                                />
-                                {!dec.rejectReason.trim() && (
-                                  <span className="text-[10px] text-red-500">This field is required</span>
-                                )}
-                              </div>
-                            ) : isProcessed ? (
-                              <span className="text-gray-400 italic text-[10px]">—</span>
-                            ) : (
-                              <span className="text-gray-400 italic text-[10px]">N/A</span>
-                            )}
-                          </TableCell>
+                          <TableCell className="p-3">{statusBadge(req.status)}</TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
               </div>
-
-              {/* Proceed button */}
-              {retrievedRequests.some((r) => r.status !== "APPROVED" && r.status !== "REJECTED") && (
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    className="bg-[#953002] hover:bg-[#7a2700] text-white gap-2"
-                    disabled={!allRejectedHaveReasons}
-                    onClick={openProceedModal}
-                    title={!allRejectedHaveReasons ? "Enter rejection reasons for all rejected requests first" : ""}
-                  >
-                    Proceed
-                  </Button>
-                </div>
-              )}
             </>
           )}
         </Card>
