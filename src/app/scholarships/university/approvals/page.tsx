@@ -21,13 +21,13 @@ type RequestRow = {
   nic?: string;
   boardMeetingId?: number;
   boardMeetingName?: string;
-  boardMeetingDate?: string;
+  scheduledDate?: string;
 };
 
 type GroupedList = {
   boardMeetingId: number;
   boardMeetingName: string;
-  boardMeetingDate?: string;
+  scheduledDate?: string;
   requests: RequestRow[];
 };
 
@@ -76,6 +76,7 @@ function ApprovalsPageInner() {
   const [filterMode, setFilterMode] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [dateError, setDateError] = useState("");
 
   // List data
   const [allGroupedLists, setAllGroupedLists] = useState<GroupedList[]>([]);
@@ -117,6 +118,54 @@ function ApprovalsPageInner() {
     return normalized.toLowerCase();
   };
 
+  const parseYMD = (input?: string | null) => {
+    if (!input) return null;
+    const match = String(input).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const parsed = new Date(year, month, day);
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+  };
+
+  const validateDates = () => {
+    setDateError("");
+
+    if (filterMode !== "custom") {
+      return true;
+    }
+
+    if (!startDate || !endDate) {
+      setDateError("Both From Date and To Date are required.");
+      return false;
+    }
+
+    const from = parseYMD(startDate);
+    const to = parseYMD(endDate);
+    if (!from || !to) {
+      setDateError("Please enter valid dates.");
+      return false;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (from > today || to > today) {
+      setDateError("Date period cannot include a future date.");
+      return false;
+    }
+
+    if (from > to) {
+      setDateError("From Date must be earlier than To Date.");
+      return false;
+    }
+
+    return true;
+  };
+
   const getRelevantApprovalStatuses = (tab: "normal" | "deviation") => {
     return tab === "deviation"
       ? ["addedtoscholarshipdeviationapprovallist"]
@@ -132,6 +181,13 @@ function ApprovalsPageInner() {
   // ── Fetch all approval lists from backend ────────────────────────────────
   const retrieveLists = async () => {
     try {
+      if (!validateDates()) {
+        setHasRetrieved(false);
+        setAllGroupedLists([]);
+        setFilteredLists([]);
+        return;
+      }
+
       setIsRetrieving(true);
       setHasRetrieved(false);
       setSelectedMeetingId(null);
@@ -153,7 +209,7 @@ function ApprovalsPageInner() {
           groups[mid] = {
             boardMeetingId: mid,
             boardMeetingName: req.boardMeetingName || `Meeting #${mid}`,
-            boardMeetingDate: req.boardMeetingDate,
+            scheduledDate: req.scheduledDate,
             requests: [],
           };
         }
@@ -181,15 +237,17 @@ function ApprovalsPageInner() {
 
   const applyFilter = (lists: GroupedList[]) => {
     if (filterMode === "all") {
+      setDateError("");
       setFilteredLists(lists);
       return;
     }
-    const from = startDate ? new Date(startDate) : null;
-    const to = endDate ? new Date(endDate) : null;
+    const from = parseYMD(startDate);
+    const to = parseYMD(endDate);
     setFilteredLists(
       lists.filter((g) => {
-        if (!g.boardMeetingDate) return false;
-        const d = new Date(g.boardMeetingDate);
+        if (!g.scheduledDate) return false;
+        const d = parseYMD(g.scheduledDate);
+        if (!d) return false;
         if (from && d < from) return false;
         if (to && d > to) return false;
         return true;
@@ -335,7 +393,11 @@ function ApprovalsPageInner() {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setDateError("");
+                  }}
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
                 />
               </div>
@@ -344,7 +406,11 @@ function ApprovalsPageInner() {
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDateError("");
+                  }}
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
                 />
               </div>
@@ -360,6 +426,12 @@ function ApprovalsPageInner() {
             {isRetrieving ? "Retrieving..." : "Retrieve"}
           </Button>
         </div>
+
+        {dateError && (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {dateError}
+          </div>
+        )}
       </Card>
 
       {/* ── TWO-COLUMN GRID ────────────────────────────────────────────── */}
