@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
-import {Card,CardContent,CardHeader,CardTitle,} from "@/src/components/ui/card";
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil } from "lucide-react";
 
@@ -140,9 +140,9 @@ export default function Page() {
   // Function to get status colors based on status value
   const getStatusColor = (status?: string) => {
     if (!status) return "bg-yellow-100 border-yellow-200 text-yellow-500";
-    
+
     const statusLower = status.toLowerCase().replace(/[\s_]+/g, "");
-    
+
     if (statusLower === "new") {
       return "bg-blue-100 border-blue-200 text-blue-500";
     } else if (statusLower === "incomplete") {
@@ -188,7 +188,7 @@ export default function Page() {
 
   // Real-time filtering as user changes filters
   useEffect(() => {
-    if (requests.length === 0) return; 
+    if (requests.length === 0) return;
 
     let filtered = [...requests];
 
@@ -200,7 +200,7 @@ export default function Page() {
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((r) => {
         const requestAddress = (r.address || "").toLowerCase().trim();
-        return selectedLocations.some(loc => 
+        return selectedLocations.some(loc =>
           requestAddress === loc.toLowerCase().trim()
         );
       });
@@ -220,7 +220,7 @@ export default function Page() {
     if (applicationReceivedOn !== "all") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       filtered = filtered.filter((r) => {
         if (!r.requestDate) return false;
         const rDate = parseYMD(r.requestDate);
@@ -316,8 +316,8 @@ export default function Page() {
       selected.length === 0
         ? placeholder
         : selected.length === options.length
-        ? "All Selected"
-        : `${selected.length} Selected`;
+          ? "All Selected"
+          : `${selected.length} Selected`;
 
     return (
       <div ref={ref} className="relative">
@@ -358,7 +358,7 @@ export default function Page() {
   // Validate date inputs
   const validateDates = () => {
     setDateError("");
-    
+
     if (applicationReceivedOn === "datePeriod") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -404,7 +404,7 @@ export default function Page() {
     setToDate(value);
     setDateError("");
   };
- 
+
   // Function to retrieve fresh data from backend
   const handleRetrieve = async () => {
     if (!validateDates()) {
@@ -412,30 +412,30 @@ export default function Page() {
     }
     try {
       setIsLoading(true);
-      
+
       const res = await fetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
-      
+
       console.log("Retrieved fresh data from backend:", data);
-      
+
       if (Array.isArray(data) && data.length > 0) {
         const fieldNames = Object.keys(data[0]);
         console.log("Available fields in the data:", fieldNames);
-        
+
         // Check for location-related fields
-        const locationFields = fieldNames.filter(f => 
-          f.toLowerCase().includes('location') || 
-          f.toLowerCase().includes('district') || 
+        const locationFields = fieldNames.filter(f =>
+          f.toLowerCase().includes('location') ||
+          f.toLowerCase().includes('district') ||
           f.toLowerCase().includes('area')
         );
         console.log("Location-related fields found:", locationFields);
-        
+
         // Get all unique values for each field
         fieldNames.forEach(field => {
           const uniqueValues = [...new Set(data.map(r => r[field]))].slice(0, 5);
           console.log(`${field}:`, uniqueValues);
         });
-        
+
         setRequests(data);
       } else {
         setRequests([]);
@@ -480,7 +480,7 @@ export default function Page() {
     try {
       setIsSavingApprovalList(true);
       const requestIds = selectedRequests.map(r => r.requestId).filter(Boolean);
-      
+
       const res = await fetch("http://localhost:8080/api/university-scholarships/attach-board-meeting", {
         method: "POST",
         headers: {
@@ -538,209 +538,209 @@ export default function Page() {
           </Link>
         </div>
       </div>
-    <div className="px-6">
-      {/* Search Criteria Card */}
-      <Card className="rounded-xl shadow-sm py-0 mb-4">
-        <CardHeader className="px-5 pt-5 pb-3">
-          <CardTitle className="text-base text-[#953002]">Search Criteria</CardTitle>
-        </CardHeader>
-        <CardContent className="px-5 pb-5 flex flex-col gap-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Location (District)</label>
-              <MultiSelect
-                options={locationOptions}
-                selected={selectedLocations}
-                onChange={setSelectedLocations}
-                placeholder="Select Locations"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Request Received On</label>
-              <Select value={applicationReceivedOn} onValueChange={(value) => {setApplicationReceivedOn(value); setDateError("");}}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="All Days" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Days</SelectItem>
-                  <SelectItem value="thisMonth">This Month</SelectItem>
-                  <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
-                  <SelectItem value="datePeriod">Date Period</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Status</label>
-              <MultiSelect
-                options={statusOptions}
-                selected={selectedStatuses}
-                onChange={setSelectedStatuses}
-                placeholder="Select Status"
-              />
-            </div>
-          </div>
-
-          {applicationReceivedOn === "datePeriod" && (
+      <div className="px-6">
+        {/* Search Criteria Card */}
+        <Card className="rounded-xl shadow-sm py-0 mb-4">
+          <CardHeader className="px-5 pt-5 pb-3">
+            <CardTitle className="text-base text-[#953002]">Search Criteria</CardTitle>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 flex flex-col gap-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">From Date</label>
-                <Input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => handleFromDateChange(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
+                <label className="text-xs font-medium text-gray-600">Location (District)</label>
+                <MultiSelect
+                  options={locationOptions}
+                  selected={selectedLocations}
+                  onChange={setSelectedLocations}
+                  placeholder="Select Locations"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">To Date</label>
-                <Input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => handleToDateChange(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </div>
-          )}
-
-          {dateError && (
-            <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-              {dateError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            <div className="flex flex-col gap-1 md:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Search (MemberName / MemberID / StudentName / StudentNIC / RequestID / ExamNumber)</label>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by StudentName, StudentID, MemberName, MemberID, ExamNumber or Request ID..."
-                  className="pl-8"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">Sort By</label>
-              <div className="flex items-center gap-2">
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Request ID" />
+                <label className="text-xs font-medium text-gray-600">Request Received On</label>
+                <Select value={applicationReceivedOn} onValueChange={(value) => { setApplicationReceivedOn(value); setDateError(""); }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="All Days" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="request-id">Request ID</SelectItem>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="university">University</SelectItem>
+                    <SelectItem value="all">All Days</SelectItem>
+                    <SelectItem value="thisMonth">This Month</SelectItem>
+                    <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
+                    <SelectItem value="datePeriod">Date Period</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
-                  <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
-                </Button>
-                <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap" onClick={handleRetrieve} disabled={isLoading}>
-                  <RotateCcw size={14} className={isLoading ? "animate-spin" : ""} />
-                  {isLoading ? "Retrieving..." : "Retrieve"}
-                </Button>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Status</label>
+                <MultiSelect
+                  options={statusOptions}
+                  selected={selectedStatuses}
+                  onChange={setSelectedStatuses}
+                  placeholder="Select Status"
+                />
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <div className="rounded-lg border bg-white shadow-sm">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead>
-                    <tr className="text-sm text-gray bold">
-                        <th className="py-4 px-4 font-medium w-10">
+            {applicationReceivedOn === "datePeriod" && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">From Date</label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => handleFromDateChange(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">To Date</label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => handleToDateChange(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+            )}
+
+            {dateError && (
+              <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+                {dateError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <div className="flex flex-col gap-1 md:col-span-2">
+                <label className="text-xs font-medium text-gray-600">Search (MemberName / MemberID / StudentName / StudentNIC / RequestID / ExamNumber)</label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by StudentName, StudentID, MemberName, MemberID, ExamNumber or Request ID..."
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort By</label>
+                <div className="flex items-center gap-2">
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Request ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="request-id">Request ID</SelectItem>
+                      <SelectItem value="student">Student</SelectItem>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="university">University</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
+                    <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
+                  </Button>
+                  <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap" onClick={handleRetrieve} disabled={isLoading}>
+                    <RotateCcw size={14} className={isLoading ? "animate-spin" : ""} />
+                    {isLoading ? "Retrieving..." : "Retrieve"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="rounded-lg border bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-sm text-gray bold">
+                  <th className="py-4 px-4 font-medium w-10">
+                    <Checkbox
+                      checked={
+                        isAllSelectableSelected
+                          ? true
+                          : isSomeSelectableSelected
+                            ? "indeterminate"
+                            : false
+                      }
+                      onCheckedChange={(checked) => toggleAllSelectable(checked === true)}
+                      disabled={selectableDisplayedRowIds.length === 0}
+                      className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                    />
+                  </th>
+                  <th className="py-4 px-4 font-medium">Request ID</th>
+                  <th className="py-4 px-4 font-medium">Student</th>
+                  <th className="py-4 px-4 font-medium">NIC</th>
+                  <th className="py-4 px-4 font-medium">Member</th>
+                  <th className="py-4 px-4 font-medium">Status</th>
+                  <th className="py-4 px-4 font-medium">Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {displayed.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-4 text-gray-500">
+                      No data available
+                    </td>
+                  </tr>
+                ) : (
+                  displayed.map((item) => {
+                    const requestKey = item.requestId || String(item.id);
+
+                    return (
+                      <tr key={item.id} className="border-t text-sm text-gray-600">
+                        <td className="py-4 px-4">
+                          {isSelectable(item) ? (
                             <Checkbox
-                                checked={
-                                    isAllSelectableSelected
-                                        ? true
-                                        : isSomeSelectableSelected
-                                            ? "indeterminate"
-                                            : false
-                                }
-                                onCheckedChange={(checked) => toggleAllSelectable(checked === true)}
-                                disabled={selectableDisplayedRowIds.length === 0}
-                                className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                              checked={selectedIds.includes(item.id)}
+                              onCheckedChange={() => toggleRow(item.id)}
+                              className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
                             />
-                        </th>
-                        <th className="py-4 px-4 font-medium">Request ID</th>
-                        <th className="py-4 px-4 font-medium">Student</th>
-                        <th className="py-4 px-4 font-medium">NIC</th>
-                        <th className="py-4 px-4 font-medium">Member</th>
-                        <th className="py-4 px-4 font-medium">Status</th>
-                        <th className="py-4 px-4 font-medium">Action</th>
-                    </tr>
-                    </thead>
-
-                    <tbody>
-                    {displayed.length === 0 ? (
-                        <tr>
-                      <td colSpan={7} className="text-center py-4 text-gray-500">
-                        No data available
-                      </td>
-                        </tr>
-                    ) : (
-                      displayed.map((item) => {
-                        const requestKey = item.requestId || String(item.id);
-
-                        return (
-                        <tr key={item.id} className="border-t text-sm text-gray-600">
-                            <td className="py-4 px-4">
-                                {isSelectable(item) ? (
-                                    <Checkbox
-                                        checked={selectedIds.includes(item.id)}
-                                        onCheckedChange={() => toggleRow(item.id)}
-                                        className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
-                                    />
-                                ) : (
-                                    <span className="size-4 block" />
-                                )}
-                            </td>
-                            <td className="py-4 px-4">
-                              <Link
-                                href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                                className="text-[#953002] hover:underline font-medium"
-                              >
-                                {requestKey}
-                              </Link>
-                            </td>
-                            <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
-                            <td className="py-4 px-4 text-gray-600">{item.nic}</td>
-                            <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
-                            <td className="py-4 px-4">
-                            <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
-                                {formatStatusLabel(item.status)}
-                            </span>
-                            </td>
-                            <td className="py-4 px-4">
-                                {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
-                                  <Link
-                                    href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
-                                    className="text-[#953002] hover:text-[#c44515] transition-colors"
-                                  >
-                                    <Pencil size={18} />
-                                  </Link>
-                                )}
-                            </td>
-                              </tr>
-                              );
-                              })
-                    )}
-                    </tbody>
-                </table>
-            </div>
-            </div>
+                          ) : (
+                            <span className="size-4 block" />
+                          )}
+                        </td>
+                        <td className="py-4 px-4">
+                          <Link
+                            href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
+                            className="text-[#953002] hover:underline font-medium"
+                          >
+                            {requestKey}
+                          </Link>
+                        </td>
+                        <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
+                        <td className="py-4 px-4 text-gray-600">{item.nic}</td>
+                        <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
+                        <td className="py-4 px-4">
+                          <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
+                            {formatStatusLabel(item.status)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
+                            <Link
+                              href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
+                              className="text-[#953002] hover:text-[#c44515] transition-colors"
+                            >
+                              <Pencil size={18} />
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </div>
 
       {showBoardMeetingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
