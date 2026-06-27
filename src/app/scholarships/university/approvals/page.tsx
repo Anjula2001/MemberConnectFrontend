@@ -95,6 +95,28 @@ function ApprovalsPageInner() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const normalizeScholarshipStatus = (status?: string) => {
+    if (!status) return "";
+
+    const normalized = status.toUpperCase().replace(/[\s_]+/g, "");
+
+    if (
+      normalized === "ADDEDTONORMALBOARDAPPROVALLIST" ||
+      normalized === "ADDEDTOSCHOLARSHIPNORMALAPPROVALLIST"
+    ) {
+      return "addedtoscholarshipnormalapprovallist";
+    }
+
+    if (
+      normalized === "ADDEDTODEVIATIONBOARDAPPROVALLIST" ||
+      normalized === "ADDEDTOSCHOLARSHIPDEVIATIONAPPROVALLIST"
+    ) {
+      return "addedtoscholarshipdeviationapprovallist";
+    }
+
+    return normalized.toLowerCase();
+  };
+
 
   // ── Fetch all approval lists from backend ────────────────────────────────
   const retrieveLists = async () => {
@@ -131,14 +153,10 @@ function ApprovalsPageInner() {
       // Determine listType for each group from the most specific status available
       Object.values(groups).forEach((g) => {
         const hasDeviation = g.requests.some(
-          (r) =>
-            r.status === "ADDED_TO_DEVIATION_BOARD_APPROVAL_LIST" ||
-            r.status === "Added to Deviation Board Approval List"
+          (r) => normalizeScholarshipStatus(r.status) === "addedtoscholarshipdeviationapprovallist"
         );
         const hasNormal = g.requests.some(
-          (r) =>
-            r.status === "ADDED_TO_NORMAL_BOARD_APPROVAL_LIST" ||
-            r.status === "Added to Normal Approval List"
+          (r) => normalizeScholarshipStatus(r.status) === "addedtoscholarshipnormalapprovallist"
         );
         if (hasDeviation) g.listType = "deviation";
         else if (hasNormal) g.listType = "normal";
@@ -226,15 +244,20 @@ function ApprovalsPageInner() {
   // ── Status badge ─────────────────────────────────────────────────────────
   const statusBadge = (status?: string) => {
     if (!status) return null;
+    const statusKey = normalizeScholarshipStatus(status);
     const map: Record<string, string> = {
-      APPROVED: "bg-green-100 text-green-700",
-      REJECTED: "bg-red-100 text-red-700",
-      ADDED_TO_NORMAL_BOARD_APPROVAL_LIST: "bg-blue-100 text-blue-700",
-      "Added to Normal Approval List": "bg-blue-100 text-blue-700",
+      approved: "bg-green-100 text-green-700",
+      rejected: "bg-red-100 text-red-700",
+      addedtoscholarshipnormalapprovallist: "bg-blue-100 text-blue-700",
+      addedtoscholarshipdeviationapprovallist: "bg-purple-100 text-purple-700",
     };
-    const cls = map[status] ?? "bg-gray-100 text-gray-600";
+    const cls = map[statusKey] ?? "bg-gray-100 text-gray-600";
     const label =
-      status === "ADDED_TO_NORMAL_BOARD_APPROVAL_LIST" ? "In Approval List" : status;
+      statusKey === "addedtoscholarshipnormalapprovallist"
+        ? "Added to Scholarship Normal Approval List"
+        : statusKey === "addedtoscholarshipdeviationapprovallist"
+          ? "Added to Scholarship Deviation Approval List"
+          : status;
     return (
       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
         {label}
@@ -480,7 +503,6 @@ function ApprovalsPageInner() {
                       <TableHead className="font-semibold text-xs text-gray-600">Member Name</TableHead>
                       <TableHead className="font-semibold text-xs text-gray-600">University</TableHead>
                       <TableHead className="font-semibold text-xs text-gray-600">Decision</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">Rejection Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -541,11 +563,19 @@ function ApprovalsPageInner() {
                 <h2 className="text-lg font-bold text-gray-800 mb-1">Delete Approval List</h2>
                 <p className="text-sm text-gray-600">
                   Do you want to delete the selected{" "}
-                  <span className="font-semibold">University Scholarship Normal Approval List</span>?
+                  <span className="font-semibold">
+                    {activeTab === "deviation"
+                      ? "University Scholarship Deviation Approval List"
+                      : "University Scholarship Normal Approval List"}
+                  </span>?
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
                   All scholarship requests attached to this list will be rolled back to{" "}
-                  <span className="font-medium text-gray-700">&quot;Submitted for Normal Board Approval&quot;</span>{" "}
+                  <span className="font-medium text-gray-700">
+                    &quot;{activeTab === "deviation"
+                      ? "Submitted for Deviation Board Approval"
+                      : "Submitted for Normal Board Approval"}&quot;
+                  </span>{" "}
                   status.
                 </p>
               </div>
