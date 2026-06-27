@@ -117,6 +117,17 @@ function ApprovalsPageInner() {
     return normalized.toLowerCase();
   };
 
+  const getRelevantApprovalStatuses = (tab: "normal" | "deviation") => {
+    return tab === "deviation"
+      ? ["addedtoscholarshipdeviationapprovallist"]
+      : ["addedtoscholarshipnormalapprovallist"];
+  };
+
+  const getRelevantRequests = (requests: RequestRow[], tab: "normal" | "deviation") => {
+    const allowedStatuses = new Set(getRelevantApprovalStatuses(tab));
+    return requests.filter((request) => allowedStatuses.has(normalizeScholarshipStatus(request.status)));
+  };
+
 
   // ── Fetch all approval lists from backend ────────────────────────────────
   const retrieveLists = async () => {
@@ -134,8 +145,8 @@ function ApprovalsPageInner() {
       // Collect all requests that have ever been attached to a board meeting
       const attached = data.filter((r) => r.boardMeetingId);
 
-      // Build groups keyed by boardMeetingId, tracking list type per group
-      const groups: Record<number, GroupedList & { listType: "normal" | "deviation" }> = {};
+      // Build groups keyed by boardMeetingId
+      const groups: Record<number, GroupedList> = {};
       attached.forEach((req) => {
         const mid = req.boardMeetingId!;
         if (!groups[mid]) {
@@ -144,27 +155,20 @@ function ApprovalsPageInner() {
             boardMeetingName: req.boardMeetingName || `Meeting #${mid}`,
             boardMeetingDate: req.boardMeetingDate,
             requests: [],
-            listType: "normal", // default; will be overridden below
           };
         }
         groups[mid].requests.push(req);
       });
 
-      // Determine listType for each group from the most specific status available
-      Object.values(groups).forEach((g) => {
-        const hasDeviation = g.requests.some(
-          (r) => normalizeScholarshipStatus(r.status) === "addedtoscholarshipdeviationapprovallist"
-        );
-        const hasNormal = g.requests.some(
-          (r) => normalizeScholarshipStatus(r.status) === "addedtoscholarshipnormalapprovallist"
-        );
-        if (hasDeviation) g.listType = "deviation";
-        else if (hasNormal) g.listType = "normal";
-        // If all are APPROVED/REJECTED, keep listType as normal (safe default)
-      });
+      // Keep only the requests relevant to the active tab, but allow the same
+      // board meeting to appear in both tabs if it contains both request types.
+      const groupArr = Object.values(groups)
+        .map((group) => ({
+          ...group,
+          requests: getRelevantRequests(group.requests, activeTab),
+        }))
+        .filter((group) => group.requests.length > 0);
 
-      // Filter by active tab
-      const groupArr = Object.values(groups).filter((g) => g.listType === activeTab);
       setAllGroupedLists(groupArr);
       applyFilter(groupArr);
       setHasRetrieved(true);
@@ -204,7 +208,7 @@ function ApprovalsPageInner() {
 
     await new Promise((r) => setTimeout(r, 400));
 
-    setRetrievedRequests(group.requests);
+    setRetrievedRequests(getRelevantRequests(group.requests, activeTab));
     setHasRetrievedRequests(true);
     setIsLoadingRequests(false);
   };
