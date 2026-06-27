@@ -172,11 +172,7 @@ export default function MemberProfilePage({
 
 		const route = routeMap[action];
 		if (route) {
-			router.push(
-				action === "Grade 5 Scholarship"
-					? `${route}?memberId=${encodeURIComponent(profile.memberId)}`
-					: route
-			);
+			router.push(route);
 		}
 	};
 

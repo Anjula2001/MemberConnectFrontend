@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
 import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "../../../../components/ui/grade5schoolarship/grade5form";
 import DocumentUpload from "../../../../components/ui/documentupload";
@@ -46,11 +45,10 @@ const LOCKED_STATUSES = [
 
 export default function Grade5ScholarshipPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const formRef = useRef<Grade5FormRef>(null);
 
   const API_BASE_URL = "http://localhost:8080";
-
-  const memberId = searchParams.get("memberId") || "";
 
   const NORMAL_DISBURSEMENT_AMOUNT = 5000;
   const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
@@ -61,11 +59,8 @@ export default function Grade5ScholarshipPage() {
   const MEMBER_AND_MINOR = "MEMBER_AND_MINOR";
   const MINOR_ONLY = "MINOR_ONLY";
 
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
   const requestId = searchParams.get("requestId");
-  const selectedMemberId = searchParams.get("memberId") || DEFAULT_MEMBER_ID;
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const pageMode = searchParams.get("mode") || "";
   const [isEditing, setIsEditing] = useState(pageMode === "edit");
 
@@ -104,6 +99,33 @@ export default function Grade5ScholarshipPage() {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
   const isRequestSubmitted = grade5Request?.status ? LOCKED_STATUSES.includes(grade5Request.status) : false;
+
+  useEffect(() => {
+    let memberIdParam = searchParams.get("memberId");
+    if (memberIdParam) {
+      if (memberIdParam.includes("?")) {
+        memberIdParam = memberIdParam.split("?")[0];
+      }
+      setSelectedMemberId(memberIdParam);
+    } else {
+      const fetchDefaultMember = async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
+          if (!res.ok) throw new Error("Failed to fetch members");
+          const members = await res.json();
+          const activeMember = members.find((m: any) => m.status === "ACTIVE" || m.status === "active");
+          if (activeMember) {
+            setSelectedMemberId(activeMember.memberId);
+          } else if (members.length > 0) {
+            setSelectedMemberId(members[0].memberId);
+          }
+        } catch (error) {
+          console.error("Failed to fetch default member:", error);
+        }
+      };
+      fetchDefaultMember();
+    }
+  }, [searchParams, API_BASE_URL]);
 
   useEffect(() => {
     setIsEditing(pageMode === "edit");
@@ -147,8 +169,14 @@ export default function Grade5ScholarshipPage() {
 
       console.log("Response status:", res.status);
 
+      if (res.status === 404) {
+        console.warn(`No Grade 5 request found for member: ${selectedMemberId} (404)`);
+        setGrade5Request(null);
+        return;
+      }
+
       if (!res.ok) {
-        throw new Error("API error " + res.status);
+        throw new Error(`API error ${res.status} fetching ${url}`);
       }
 
       const text = await res.text();
@@ -156,6 +184,8 @@ export default function Grade5ScholarshipPage() {
 
       if (data) {
         setGrade5Request(data);
+      } else {
+        setGrade5Request(null);
       }
     } catch (error) {
       console.error("Fetch Grade 5 request error:", error);
@@ -836,8 +866,8 @@ export default function Grade5ScholarshipPage() {
                           <>
                             <label
                               className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MEMBER_AND_MINOR
-                                  ? "border-[#953002] bg-orange-50"
-                                  : ""
+                                ? "border-[#953002] bg-orange-50"
+                                : ""
                                 }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
@@ -867,8 +897,8 @@ export default function Grade5ScholarshipPage() {
 
                             <label
                               className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MINOR_ONLY
-                                  ? "border-[#953002] bg-orange-50"
-                                  : ""
+                                ? "border-[#953002] bg-orange-50"
+                                : ""
                                 }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
@@ -983,8 +1013,8 @@ export default function Grade5ScholarshipPage() {
             <div className="mt-5 space-y-3">
               <label
                 className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
-                    ? "border-[#953002] bg-orange-50"
-                    : "border-gray-200"
+                  ? "border-[#953002] bg-orange-50"
+                  : "border-gray-200"
                   }`}
               >
                 <input
@@ -1008,8 +1038,8 @@ export default function Grade5ScholarshipPage() {
 
               <label
                 className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
-                    ? "border-[#953002] bg-orange-50"
-                    : "border-gray-200"
+                  ? "border-[#953002] bg-orange-50"
+                  : "border-gray-200"
                   }`}
               >
                 <input

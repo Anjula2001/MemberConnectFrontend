@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
-import RetirementForm, {RetirementFormRef,} from "../../../../components/ui/retirement/retirementform";
+import RetirementForm, { RetirementFormRef, } from "../../../../components/ui/retirement/retirementform";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
-import AddBankDetails, {AddBankDetailsRef,} from "../../../../components/ui/retirement/addbankdetails";
+import AddBankDetails, { AddBankDetailsRef, } from "../../../../components/ui/retirement/addbankdetails";
 
 interface BankAccountRow {
   id: number;
@@ -52,8 +52,6 @@ interface MemberDetails {
 
 const API_BASE_URL = "http://localhost:8080";
 
-const DEFAULT_MEMBER_ID = "MEM016";
-
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
   "APPROVED",
@@ -65,7 +63,7 @@ export default function RetirementPage() {
   const formRef = useRef<RetirementFormRef>(null);
   const bankFormRef = useRef<AddBankDetailsRef>(null);
   const requestId = searchParams.get("requestId");
-  const selectedMemberId = searchParams.get("memberId") || DEFAULT_MEMBER_ID;
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const pageMode = searchParams.get("mode") || "";
   const [isEditing, setIsEditing] = useState(pageMode === "edit");
 
@@ -83,7 +81,7 @@ export default function RetirementPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
 
-  const [member, setMember] = useState<MemberDetails>({memberId: "",fullName: "",nameWithInitials: "",nic: "",});
+  const [member, setMember] = useState<MemberDetails>({ memberId: "", fullName: "", nameWithInitials: "", nic: "", });
 
   const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
@@ -110,15 +108,44 @@ export default function RetirementPage() {
     !showDisabledRequestActions &&
     (!isViewRequestMode || isEditMode || isCurrentSessionSaved);
 
+  useEffect(() => {
+    let memberIdParam = searchParams.get("memberId");
+    if (memberIdParam) {
+      if (memberIdParam.includes("?")) {
+        memberIdParam = memberIdParam.split("?")[0];
+      }
+      setSelectedMemberId(memberIdParam);
+    } else {
+      const fetchDefaultMember = async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
+          if (!res.ok) throw new Error("Failed to fetch members");
+          const members = await res.json();
+          const activeMember = members.find((m: any) => m.status === "ACTIVE" || m.status === "active");
+          if (activeMember) {
+            setSelectedMemberId(activeMember.memberId);
+          } else if (members.length > 0) {
+            setSelectedMemberId(members[0].memberId);
+          }
+        } catch (error) {
+          console.error("Failed to fetch default member:", error);
+        }
+      };
+      fetchDefaultMember();
+    }
+  }, [searchParams]);
+
   // Loads all data needed when opening a retirement request record.
   useEffect(() => {
     setIsEditing(pageMode === "edit");
     setIsCurrentSessionSaved(false);
-    fetchMember();
-    fetchRetirementValidation();
-    fetchMinorSavingsAccounts();
-    fetchMemberBankAccounts();
-    fetchRetirementRequests();
+    if (selectedMemberId) {
+      fetchMember();
+      fetchRetirementValidation();
+      fetchMinorSavingsAccounts();
+      fetchMemberBankAccounts();
+      fetchRetirementRequests();
+    }
   }, [pageMode, selectedMemberId]);
 
   //Fetches the selected member details for the page header and member panel.
@@ -344,7 +371,7 @@ export default function RetirementPage() {
     }
 
     if (minorSavingsAccounts.length > 0 && bankAccounts.length === 0) {
-      const missingBankDetailsMessage ="Please add disbursement bank details before submitting.";
+      const missingBankDetailsMessage = "Please add disbursement bank details before submitting.";
       setSaveError(missingBankDetailsMessage);
       return;
     }
@@ -354,7 +381,7 @@ export default function RetirementPage() {
       return;
     }
 
-    const confirmed = window.confirm( "After submitting, this retirement request cannot be edited. Do you want to continue?");
+    const confirmed = window.confirm("After submitting, this retirement request cannot be edited. Do you want to continue?");
 
     if (!confirmed) return;
 
@@ -413,7 +440,7 @@ export default function RetirementPage() {
       const response = await fetch(
         `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/${action}`,
         {
-          method: "PUT", 
+          method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
@@ -436,9 +463,9 @@ export default function RetirementPage() {
       const updatedRequest: RetirementRequest = responseText
         ? JSON.parse(responseText)
         : {
-            ...retirementRequest,
-            status: action === "approve" ? "APPROVED" : "REJECTED",
-          };
+          ...retirementRequest,
+          status: action === "approve" ? "APPROVED" : "REJECTED",
+        };
       setRetirementRequest(updatedRequest);
       await fetchMember();
       setSaveError("");
@@ -476,7 +503,7 @@ export default function RetirementPage() {
                 <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
                   Member: {member.fullName} ({member.memberId})
                 </div>
-                
+
                 {/*show status and incomplete reason if the request is in incomplete status*/}
                 {retirementRequest?.status && (
                   <p className="text-sm font-semibold text-blue-600">
@@ -494,7 +521,7 @@ export default function RetirementPage() {
             </div>
 
             <div className="flex gap-2">
-              
+
               {/*Edit button is only shown when viewing an existing request that is not locked*/}
               {(isViewRequestMode) &&
                 retirementRequest?.id &&
@@ -508,7 +535,7 @@ export default function RetirementPage() {
                     Edit
                   </Button>
                 )}
-              
+
               {/*Approval actions are only shown to approvers */}
               {showApprovalActions && (
                 <>
@@ -532,27 +559,27 @@ export default function RetirementPage() {
                   </Button>
                 </>
               )}
-              
+
               {/*  */}
               {showDisabledRequestActions && (
-                  <>
-                    <Button
-                      type="button"
-                      disabled
-                      className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      Mark Incomplete
-                    </Button>
+                <>
+                  <Button
+                    type="button"
+                    disabled
+                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    Mark Incomplete
+                  </Button>
 
-                    <Button
-                      type="button"
-                      disabled
-                      className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      Submit for Approval
-                    </Button>
-                  </>
-                )}
+                  <Button
+                    type="button"
+                    disabled
+                    className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    Submit for Approval
+                  </Button>
+                </>
+              )}
 
               {/*  */}
               {showRequestEditActions && (
@@ -661,11 +688,9 @@ export default function RetirementPage() {
             <div className="flex-1 flex flex-col space-y-6">
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <RetirementForm
-                  key={`${selectedMemberId}-${retirementRequest?.id || "new"}-${
-                    retirementRequest?.requestedDate || ""
-                  }-${retirementRequest?.effectiveDate || ""}-${
-                    retirementRequest?.comment || ""
-                  }`}
+                  key={`${selectedMemberId}-${retirementRequest?.id || "new"}-${retirementRequest?.requestedDate || ""
+                    }-${retirementRequest?.effectiveDate || ""}-${retirementRequest?.comment || ""
+                    }`}
                   ref={formRef}
                   readOnly={!!retirementRequest?.id && !isEditMode}
                   initialData={{
@@ -767,7 +792,7 @@ export default function RetirementPage() {
                               <th className="w-1/4 text-left px-4 py-2 border-b">
                                 Account Number
                               </th>
-                              
+
                               {/** Only show action column when the user can edit the bank details */}
                               {isEditMode && (
                                 <th className="w-1/4 text-left px-4 py-2 border-b">Action</th>
@@ -787,20 +812,20 @@ export default function RetirementPage() {
                                 <td className="px-4 py-2 border-b">
                                   {account.accountNumber}
                                 </td>
-                                
+
                                 {isEditMode && (
                                   <td className="px-4 py-2 border-b">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={() => {
-                                      setEditingBankAccount(account);
-                                      setOpenBankModal(true);
-                                    }}
-                                  >
-                                    Edit
-                                  </Button>
-                                </td>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingBankAccount(account);
+                                        setOpenBankModal(true);
+                                      }}
+                                    >
+                                      Edit
+                                    </Button>
+                                  </td>
                                 )}
                               </tr>
                             ))}
@@ -818,7 +843,7 @@ export default function RetirementPage() {
                 </p>
 
                 <DocumentUpload
-                  requestNo={retirementRequest?.requestNo|| null}
+                  requestNo={retirementRequest?.requestNo || null}
                   memberId={selectedMemberId}
                   requestStatus={retirementRequest?.status || "NEW"}
                   requestType="retirement-requests"
@@ -891,15 +916,15 @@ export default function RetirementPage() {
             </h2>
 
             <AddBankDetails
-            ref={bankFormRef}
-            memberId={selectedMemberId}
-            initialData={editingBankAccount} 
-            onSave={handleBankSave}
-            onClose={() => {
-              setOpenBankModal(false);
-              setEditingBankAccount(null);
-            }}
-          />
+              ref={bankFormRef}
+              memberId={selectedMemberId}
+              initialData={editingBankAccount}
+              onSave={handleBankSave}
+              onClose={() => {
+                setOpenBankModal(false);
+                setEditingBankAccount(null);
+              }}
+            />
           </div>
         </div>
       )}
