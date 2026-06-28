@@ -738,12 +738,19 @@ export default function Page() {
                           </span>
                         </td>
                         <td className="py-4 px-4">
-                          {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
+                          {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") ? (
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
                               className="text-[#953002] hover:text-[#c44515] transition-colors"
                             >
                               <Pencil size={18} />
+                            </Link>
+                          ) : (
+                            <Link
+                              href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
+                              className="text-[#953002] hover:underline font-medium"
+                            >
+                              Open
                             </Link>
                           )}
                         </td>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -17,7 +18,25 @@ type FundRequestSchema = ReturnType<typeof fundRequestSchema>;
 type FundRequestFormInput = z.input<FundRequestSchema>;
 type FundRequestFormOutput = z.output<FundRequestSchema>;
 
+type ScholarshipFundRequest = {
+  id?: number | string;
+  requestId?: string;
+  requestedDate?: string;
+  requestedPeriod?: string;
+  requestedAmount?: number;
+  status?: "NEW" | "INCOMPLETE" | "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+};
+
+type ScholarshipSummary = {
+  totalScholarshipAmount?: number;
+  totalDisbursedAmount?: number;
+  fundRequests?: ScholarshipFundRequest[];
+};
+
 export default function FundDisbursementRequest() {
+  const searchParams = useSearchParams();
+  const scholarshipRequestId = searchParams.get("scholarshipRequestId") || "";
+  const fundRequestId = searchParams.get("fundRequestId") || "";
   const [requestId, setRequestId] = useState<number | null>(null);
   const [showIncomplete, setShowIncomplete] = useState(false);
   const [status, setStatus] = useState<
@@ -27,11 +46,15 @@ export default function FundDisbursementRequest() {
 
   const [isSaved, setIsSaved] = useState(false);
   
-  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
+  const [scholarshipSummary, setScholarshipSummary] = useState<ScholarshipSummary | null>(null);
 
-  const availableBalance = 200000;
+  const availableBalance = Math.max(
+    0,
+    Number(scholarshipSummary?.totalScholarshipAmount || 0) -
+      Number(scholarshipSummary?.totalDisbursedAmount || 0)
+  );
 
   const {
     register,
@@ -48,6 +71,49 @@ export default function FundDisbursementRequest() {
     reset();
   };
 
+  useEffect(() => {
+    if (!scholarshipRequestId) return;
+
+    const fetchScholarshipSummary = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}`
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load scholarship details");
+        }
+
+        const data = await response.json();
+        setScholarshipSummary(data);
+      } catch (error) {
+        console.error("Failed to load scholarship details:", error);
+        setScholarshipSummary(null);
+      }
+    };
+
+    fetchScholarshipSummary();
+  }, [scholarshipRequestId]);
+
+  useEffect(() => {
+    if (!fundRequestId || !scholarshipSummary?.fundRequests) return;
+
+    const found = scholarshipSummary.fundRequests.find((item) => {
+      return String(item.id) === fundRequestId || item.requestId === fundRequestId;
+    });
+
+    if (!found) return;
+
+    reset({
+      requestDate: found.requestedDate || "",
+      requestedPeriod: found.requestedPeriod || "",
+      amount: found.requestedAmount ? String(found.requestedAmount) : "",
+    });
+    setStatus(found.status || "NEW");
+    setRequestId(found.id ? Number(found.id) : null);
+    setIsSaved(true);
+  }, [fundRequestId, scholarshipSummary, reset]);
+
   const handleIncompleteConfirm = (reason: string) => {
     console.log("Marked as Incomplete");
     console.log("Reason:", reason);
@@ -61,8 +127,14 @@ export default function FundDisbursementRequest() {
         {/* TITLE */}
         <div>
           <h1 className="text-2xl font-bold text-[#953002]">
-            Fund Disbursement Request
+            University Scholarship - Fund Request Entry
           </h1>
+          {scholarshipRequestId && (
+            <p className="mt-1 text-sm text-gray-600">
+              Scholarship Request: {scholarshipRequestId}
+              {fundRequestId && ` | Fund Request: ${fundRequestId}`}
+            </p>
+          )}
         </div>
 
 
@@ -86,6 +158,12 @@ export default function FundDisbursementRequest() {
               <p className="text-lg font-bold">
                 LKR {availableBalance.toLocaleString()}
               </p>
+              {scholarshipSummary && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Total Scholarship Amount: LKR {Number(scholarshipSummary.totalScholarshipAmount || 0).toLocaleString()} |
+                  Total Disbursed: LKR {Number(scholarshipSummary.totalDisbursedAmount || 0).toLocaleString()}
+                </p>
+              )}
             </div>
 
             {/* FORM FIELDS */}

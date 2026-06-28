@@ -9,6 +9,7 @@ import { Input } from "../ui/input";
 import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 
 type FormData = {
   requestDate: string;
@@ -59,6 +60,21 @@ type ScholarshipRecord = {
   decisionReason?: string | null;
   requestDate?: string | null;
   programName?: string | null;
+  totalScholarshipAmount?: number | null;
+  totalDisbursedAmount?: number | null;
+  lastDisbursementDate?: string | null;
+  fundRequests?: FundRequestRow[] | null;
+};
+
+type FundRequestRow = {
+  id?: number | string;
+  requestId?: string;
+  requestedDate?: string;
+  requestedPeriod?: string;
+  requestedAmount?: number;
+  disbursedAmount?: number;
+  disbursementDate?: string;
+  status?: string;
 };
 
 export default function StudentExamSection() {
@@ -98,6 +114,7 @@ export default function StudentExamSection() {
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const [activeTab, setActiveTab] = useState("request");
 
   const whiteInputClass =
     "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
@@ -184,25 +201,16 @@ export default function StudentExamSection() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/university-scholarships");
+        const res = await fetch(
+          `http://localhost:8080/api/university-scholarships/${encodeURIComponent(requestKey)}`
+        );
 
         if (!res.ok) {
           throw new Error("Failed to load scholarship request");
         }
 
-        const data: ScholarshipRecord[] = await res.json();
-        const found = data.find((item) => {
-          const idMatches = String(item.id) === requestKey;
-          const requestMatches = item.requestId === requestKey;
-
-          return idMatches || requestMatches;
-        });
-
-        if (!found) {
-          throw new Error("Scholarship request not found");
-        }
-
-        setLoadedRecord(found);
+        const data: ScholarshipRecord = await res.json();
+        setLoadedRecord(data);
       } catch (error) {
         console.error("Failed to load scholarship request:", error);
         setLoadedRecord(null);
@@ -947,6 +955,33 @@ export default function StudentExamSection() {
         : "";
   const pageTitle = isExistingRequest ? "University Scholarship" : "New University Scholarship";
   const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const isApprovedScholarship = status === "APPROVED";
+  const fundRequests = loadedRecord?.fundRequests || [];
+  const availableBalance =
+    (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
+
+  const formatCurrency = (amount?: number | null) =>
+    typeof amount === "number"
+      ? `LKR ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "LKR 0.00";
+
+  const formatDate = (date?: string | null) =>
+    date ? new Date(date).toLocaleDateString() : "-";
+
+  const handleNewFundRequest = () => {
+    if (!requestId) return;
+    router.push(
+      `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(requestId)}`
+    );
+  };
+
+  const handleOpenFundRequest = (fundRequest: FundRequestRow) => {
+    const fundRequestId = fundRequest.requestId || fundRequest.id;
+    if (!fundRequestId || !requestId) return;
+    router.push(
+      `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(requestId)}&fundRequestId=${encodeURIComponent(String(fundRequestId))}&mode=view`
+    );
+  };
 
   return (
     <>
@@ -1023,7 +1058,7 @@ export default function StudentExamSection() {
             Member Details
           </h2>
 
-          <div className="grid grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
               <label className="block font-medium mb-1">Member ID</label>
               <input
@@ -1056,9 +1091,60 @@ export default function StudentExamSection() {
               />
             </div>
           </div>
+
+          {isApprovedScholarship && (
+            <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
+              <div>
+                <label className="block font-medium mb-1">Total Scholarship Amount</label>
+                <input
+                  type="text"
+                  value={formatCurrency(loadedRecord?.totalScholarshipAmount)}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium mb-1">Total Disbursed Amount</label>
+                <input
+                  type="text"
+                  value={formatCurrency(loadedRecord?.totalDisbursedAmount)}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium mb-1">Last Disbursement Date</label>
+                <input
+                  type="text"
+                  value={formatDate(loadedRecord?.lastDisbursementDate)}
+                  readOnly
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="flex w-full gap-2 rounded-lg border bg-white p-1">
+            <TabsTrigger
+              value="request"
+              className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white"
+            >
+              Scholarship Request Details
+            </TabsTrigger>
+            <TabsTrigger
+              value="funds"
+              disabled={!isApprovedScholarship}
+              className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Fund Requests
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="request" className="space-y-6">
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">
               Student & Exam
@@ -1395,7 +1481,81 @@ export default function StudentExamSection() {
               </Button>
             </div>
           )}
-        </div>
+          </TabsContent>
+
+          <TabsContent value="funds" className="space-y-6">
+            <section className="rounded-lg border bg-white p-4">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-[#953002]">
+                    Fund Requests
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Available Balance: {formatCurrency(availableBalance)}
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                  onClick={handleNewFundRequest}
+                  disabled={!isApprovedScholarship || availableBalance <= 0}
+                >
+                  New Fund Disbursement Request
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Fund Request ID</th>
+                      <th className="px-4 py-3 font-medium">Requested Date</th>
+                      <th className="px-4 py-3 font-medium">Requested Period</th>
+                      <th className="px-4 py-3 font-medium">Requested Amount</th>
+                      <th className="px-4 py-3 font-medium">Disbursed Amount</th>
+                      <th className="px-4 py-3 font-medium">Disbursement Date</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fundRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
+                          No fund requests have been created for this scholarship.
+                        </td>
+                      </tr>
+                    ) : (
+                      fundRequests.map((fundRequest) => (
+                        <tr key={fundRequest.requestId || fundRequest.id} className="border-t text-gray-600">
+                          <td className="px-4 py-3 font-medium text-gray-800">
+                            {fundRequest.requestId || fundRequest.id}
+                          </td>
+                          <td className="px-4 py-3">{formatDate(fundRequest.requestedDate)}</td>
+                          <td className="px-4 py-3">{fundRequest.requestedPeriod || "-"}</td>
+                          <td className="px-4 py-3">{formatCurrency(fundRequest.requestedAmount)}</td>
+                          <td className="px-4 py-3">{formatCurrency(fundRequest.disbursedAmount)}</td>
+                          <td className="px-4 py-3">{formatDate(fundRequest.disbursementDate)}</td>
+                          <td className="px-4 py-3">{fundRequest.status || "-"}</td>
+                          <td className="px-4 py-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleOpenFundRequest(fundRequest)}
+                            >
+                              Open
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </TabsContent>
+        </Tabs>
       </form>
 
       <MarkIncompleteModal
