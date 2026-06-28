@@ -11,6 +11,7 @@ import {
 import {
   createMemberApplication,
   getMemberApplicationById,
+  validateApplicationNic,
   type ApplicationStatus,
   type Gender,
   type Identification,
@@ -27,6 +28,10 @@ import {
   type DocumentSummaryDTO,
   type DocumentType,
 } from "@/lib/api/documents";
+import {
+  getEducationalDistricts,
+  getEducationalZonesByDistrict,
+} from "@/lib/api/education";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Checkbox } from "@/src/components/ui/checkbox";
@@ -70,6 +75,7 @@ function IdentificationMultiSelect({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Close the popover when the user clicks outside the control.
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
@@ -167,6 +173,7 @@ export function NewMemberRegistrationForm({
   onDone,
 }: NewMemberRegistrationFormProps) {
   const { addToast } = useToast();
+  const addToastRef = useRef(addToast);
   const isEditMode = !!applicationId;
   const [currentTab, setCurrentTab] = useState<"application" | "documents">(
     "application"
@@ -180,6 +187,15 @@ export function NewMemberRegistrationForm({
     useState<DocumentSummaryDTO | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [boardDecisionReason, setBoardDecisionReason] = useState("");
+  const [isValidatingNic, setIsValidatingNic] = useState(false);
+  const [nicValidationMessage, setNicValidationMessage] = useState<string | null>(
+    null
+  );
+  const [nicValidationError, setNicValidationError] = useState(false);
+  const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+  const [zoneOptions, setZoneOptions] = useState<string[]>([]);
+  const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
+  const [isLoadingZones, setIsLoadingZones] = useState(false);
   // Map of documentType -> { id, url, fileName } for previewing already-uploaded files
   const [existingDocumentUrls, setExistingDocumentUrls] = useState<
     Record<string, { id: number; url: string; fileName: string }>
@@ -190,6 +206,7 @@ export function NewMemberRegistrationForm({
     documentSummary.uploadedMandatoryDocumentCount >=
     documentSummary.mandatoryDocumentCount;
 
+  // Translate between UI labels and backend enum values for the form payload.
   const mapGender = (value: string): Gender =>
     value.toUpperCase() === "FEMALE" ? "FEMALE" : "MALE";
 
@@ -247,9 +264,7 @@ export function NewMemberRegistrationForm({
     return "New";
   };
 
-  const mapIdentificationToForm = (value?: Identification): string =>
-    value ?? "NIC";
-
+  // Parse the stored identificationDetails JSON into selection state and input values.
   const parseIdentificationDetails = (
     value?: string
   ): { types: IdentificationType[]; numbers: Record<string, string> } => {
@@ -281,12 +296,56 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Convert blank numeric fields into `undefined` so the API can omit them cleanly.
   const parseAmount = (value?: string) => {
     if (!value || value.trim() === "") return undefined;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
+  // Validate NICs before submit because the backend rejects duplicates and empty values.
+  const handleValidateNic = async (nic: string) => {
+    const cleanedNic = nic.trim();
+    if (!cleanedNic) {
+      setNicValidationError(true);
+      setNicValidationMessage("NIC number is required");
+      addToast("NIC number is required", "destructive");
+      return false;
+    }
+
+    setIsValidatingNic(true);
+    setNicValidationMessage(null);
+    setNicValidationError(false);
+    try {
+      const response = await validateApplicationNic(
+        cleanedNic,
+        savedApplicationId ?? applicationId ?? undefined
+      );
+
+      if (response.duplicate) {
+        setNicValidationError(true);
+        setNicValidationMessage(response.message);
+        addToast(response.message, "destructive");
+        return false;
+      }
+
+      setNicValidationError(false);
+      setNicValidationMessage(response.message);
+      addToast(response.message);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to validate NIC";
+      setNicValidationError(true);
+      setNicValidationMessage(message);
+      addToast(message, "destructive");
+      return false;
+    } finally {
+      setIsValidatingNic(false);
+    }
+  };
+
+  // Centralize the default form state so resets and initial render stay aligned.
   const defaultFormValues = useMemo<MemberRegistration>(
     () => ({
       applicationDate: new Date().toISOString().split("T")[0],
@@ -297,7 +356,7 @@ export function NewMemberRegistrationForm({
       workingLocationType: "",
       designation: "",
       natureOfOccupation: "Permanent",
-      educationalDistrict: "Colombo",
+      educationalDistrict: "",
       educationalZone: "",
       workingLocationAddress: "",
       nomineeRelationship: "",
@@ -332,6 +391,7 @@ export function NewMemberRegistrationForm({
     register,
     reset,
     setValue,
+    getValues,
     watch,
     handleSubmit,
     formState: { errors },
@@ -340,9 +400,106 @@ export function NewMemberRegistrationForm({
     defaultValues: defaultFormValues,
   });
 
+  // Watch dependent fields so district/zone and identification inputs stay in sync.
   const selectedIdentificationTypes = watch("identificationTypes");
   const selectedIdentificationNumbers = watch("identificationNumbers");
+  const selectedDistrict = watch("educationalDistrict");
 
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
+
+  // Load the district list once, and seed the first district when the form is empty.
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadDistricts = async () => {
+      setIsLoadingDistricts(true);
+      try {
+        const districts = await getEducationalDistricts();
+        if (isCancelled) return;
+        setDistrictOptions(districts);
+
+        const currentDistrict = getValues("educationalDistrict");
+        if (!currentDistrict && districts.length > 0) {
+          setValue("educationalDistrict", districts[0], {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load educational districts";
+          addToastRef.current(message, "destructive");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingDistricts(false);
+        }
+      }
+    };
+
+    void loadDistricts();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [addToast, getValues, setValue]);
+
+  // Rebuild the zone list whenever the district changes, and clear stale selections.
+  useEffect(() => {
+    if (!selectedDistrict) {
+      setZoneOptions([]);
+      setValue("educationalZone", "", {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadZones = async () => {
+      setIsLoadingZones(true);
+      try {
+        const zones = await getEducationalZonesByDistrict(selectedDistrict);
+        if (isCancelled) return;
+
+        setZoneOptions(zones);
+        const currentZone = getValues("educationalZone");
+        if (!currentZone || !zones.includes(currentZone)) {
+          setValue("educationalZone", zones[0] ?? "", {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load educational zones";
+          addToastRef.current(message, "destructive");
+          setZoneOptions([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingZones(false);
+        }
+      }
+    };
+
+    void loadZones();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [addToast, getValues, selectedDistrict, setValue]);
+
+  // Hydrate the form from an existing application and preload its documents.
   useEffect(() => {
     const targetApplicationId = applicationId ?? null;
 
@@ -454,7 +611,7 @@ export function NewMemberRegistrationForm({
             error instanceof Error
               ? error.message
               : "Failed to load application details";
-          addToast(message, "destructive");
+          addToastRef.current(message, "destructive");
         }
       } finally {
         if (!isCancelled) {
@@ -470,9 +627,17 @@ export function NewMemberRegistrationForm({
     };
   }, [applicationId, defaultFormValues, reset]);
 
+  // Build the API payload, validate NIC, then create or update the application.
   const onSubmit = async (data: MemberRegistration) => {
     setIsSubmitting(true);
     try {
+      const isNicValid = await handleValidateNic(data.nicNumber);
+      if (!isNicValid) {
+        return;
+      }
+
+      // Store only the primary selected identification as the main field, while
+      // keeping all selected types in the serialized detail list.
       const primaryIdentificationType = data.identificationTypes[0];
       const primaryIdentificationNumber = primaryIdentificationType
         ? String(data.identificationNumbers?.[primaryIdentificationType] ?? "")
@@ -550,6 +715,7 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Upload a document, refresh the preview map, and recompute completion status.
   const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
     if (!savedApplicationId) {
       addToast("Please save the application first", "destructive");
@@ -588,6 +754,7 @@ export function NewMemberRegistrationForm({
     }
   };
 
+  // Delete the uploaded file and refresh the progress summary after removal.
   const handleDocumentDelete = async (docType: DocumentType) => {
     const entry = existingDocumentUrls[docType];
     if (!entry || !savedApplicationId) return;
@@ -600,16 +767,6 @@ export function NewMemberRegistrationForm({
     const updated = await getDocumentSummary(savedApplicationId);
     setDocumentSummary(updated);
   };
-
-  const districtZoneMap: Record<string, string[]> = {
-    Colombo: ["Colombo South", "Colombo North", "Homagama"],
-    Kandy: ["Kandy", "Gampola", "Katugastota"],
-    Galle: ["Galle", "Elpitiya", "Ambalangoda"],
-    Matara: ["Matara", "Akuressa", "Weligama"],
-    Jaffna: ["Jaffna", "Nallur", "Chavakachcheri"],
-    Gampaha: ["Gampaha", "Negombo", "Minuwangoda"],
-  };
-  const selectedDistrict = watch("educationalDistrict");
 
   return (
     <Tabs
@@ -797,10 +954,31 @@ export function NewMemberRegistrationForm({
                     error={errors.nicNumber?.message}
                     required
                   >
-                    <Input
-                      {...register("nicNumber")}
-                      placeholder="NIC Number"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        {...register("nicNumber")}
+                        placeholder="NIC Number"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleValidateNic(watch("nicNumber"))}
+                        disabled={isValidatingNic || readOnly}
+                        className="border-[#953002] text-[#953002] hover:bg-[#953002] hover:text-white"
+                      >
+                        {isValidatingNic ? "Validating..." : "Validate"}
+                      </Button>
+                    </div>
+                    {nicValidationMessage && (
+                      <span
+                        className={`text-xs ${
+                          nicValidationError ? "text-red-500" : "text-green-600"
+                        }`}
+                      >
+                        {nicValidationMessage}
+                      </span>
+                    )}
                   </FormField>
                   <FormField
                     label="Date of Birth"
@@ -947,22 +1125,28 @@ export function NewMemberRegistrationForm({
                           value={field.value}
                           onValueChange={(value) => {
                             field.onChange(value);
-                            const zones = districtZoneMap[value] ?? [];
-                            const firstZone =
-                              zones.length > 0 ? zones[0] : "";
-                            setValue("educationalZone", firstZone);
+                            setValue("educationalZone", "", {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
                           }}
+                          disabled={isLoadingDistricts || districtOptions.length === 0}
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select District" />
+                            <SelectValue
+                              placeholder={
+                                isLoadingDistricts
+                                  ? "Loading Districts..."
+                                  : "Select District"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Colombo">Colombo</SelectItem>
-                            <SelectItem value="Kandy">Kandy</SelectItem>
-                            <SelectItem value="Galle">Galle</SelectItem>
-                            <SelectItem value="Matara">Matara</SelectItem>
-                            <SelectItem value="Jaffna">Jaffna</SelectItem>
-                            <SelectItem value="Gampaha">Gampaha</SelectItem>
+                            {districtOptions.map((district) => (
+                              <SelectItem key={district} value={district}>
+                                {district}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       )}
@@ -976,18 +1160,29 @@ export function NewMemberRegistrationForm({
                       name="educationalZone"
                       control={control}
                       render={({ field }) => {
-                        const zones = districtZoneMap[selectedDistrict] ?? [];
-
                         return (
                           <Select
                             value={field.value}
                             onValueChange={field.onChange}
+                            disabled={
+                              !selectedDistrict ||
+                              isLoadingZones ||
+                              zoneOptions.length === 0
+                            }
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select Zone" />
+                              <SelectValue
+                                placeholder={
+                                  !selectedDistrict
+                                    ? "Select District First"
+                                    : isLoadingZones
+                                      ? "Loading Zones..."
+                                      : "Select Zone"
+                                }
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              {zones.map((zone) => (
+                              {zoneOptions.map((zone) => (
                                 <SelectItem key={zone} value={zone}>
                                   {zone}
                                 </SelectItem>

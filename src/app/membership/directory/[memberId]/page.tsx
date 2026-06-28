@@ -12,7 +12,8 @@ import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
 import { getMemberById, type MemberDTO } from "@/lib/api/member";
-import { getDocumentsByApplication, type UploadDocumentResponseDTO } from "@/lib/api/documents";
+import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
+import { useToast } from "@/lib/toast-context";
 
 const detailTabs = [
 	"Profile Details",
@@ -29,10 +30,11 @@ const actionGroups = {
 		"Change Name",
 		"Change Remittance",
 		"Change Nominee",
+		"Member Transfer",
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Death Donation Request", "Add Documents", "Record Member Death"],
+	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death"],
 };
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
@@ -60,8 +62,68 @@ export default function MemberProfilePage({
 	const [loading, setLoading] = useState(true);
 	const [activeTab, setActiveTab] = useState("Profile Details");
 	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
+	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
+	const { addToast } = useToast();
 
-	const uniqueDocTypes = Array.from(new Set(documents.map(d => d.documentType)));
+	// Filter out orphaned old local files ("uploads/...") for ALL documents
+	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
+
+	// displayDocuments is used for the "Documents" tab. We want ALL valid documents to show up as folders.
+	const displayDocuments = validDocuments;
+	const uniqueDocTypes = Array.from(new Set(displayDocuments.map(d => d.documentType)));
+	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
+	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
+	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
+		if (!profile?.applicationId) {
+			addToast("No application ID found for this member", "destructive");
+			return;
+		}
+
+		setUploadingDocType(documentType);
+		try {
+			// Find all existing documents of this type to replace
+			const existingDocs = documents.filter(d => d.documentType === documentType);
+			for (const existingDoc of existingDocs) {
+				await deleteDocument(existingDoc.id).catch(e => console.error(e));
+			}
+
+			const uploaded = await uploadDocumentFile({
+				applicationId: profile.applicationId,
+				documentType,
+				file,
+			});
+
+			setDocuments(prev => [
+				...prev.filter(d => d.documentType !== documentType),
+				uploaded
+			]);
+			addToast(`${documentType.replace(/_/g, " ")} saved successfully!`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Failed to upload document";
+			addToast(message, "destructive");
+		} finally {
+			setUploadingDocType(null);
+		}
+	};
+
+	const handleDocumentDelete = async (documentType: DocumentType) => {
+		const doc = documents.find(d => d.documentType === documentType);
+		if (!doc) return;
+
+		setDeletingDocType(documentType);
+		try {
+			await deleteDocument(doc.id);
+			setDocuments(prev => prev.filter(d => d.id !== doc.id));
+			addToast(`${documentType.replace(/_/g, " ")} removed successfully!`);
+		} catch (error) {
+			addToast("Failed to delete document", "destructive");
+		} finally {
+			setDeletingDocType(null);
+		}
+	};
 
 	useEffect(() => {
 		params.then((p) => setMemberIdParam(p.memberId));
@@ -89,16 +151,24 @@ export default function MemberProfilePage({
 	}, [memberIdParam]);
 
 	const handleActionClick = (action: string) => {
+		if (!profile?.memberId) return;
+		const memberIdQuery = `?memberId=${profile.memberId}`;
+
 		const routeMap: Record<string, string> = {
+\
 		"Basic Profile Changes": `/membership/directory/basic-profile-change-request?memberId=${memberIdParam}`,
 		"Change Name": `/membership/directory/change-name?memberId=${memberIdParam}`,
 		"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
 		"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
-			"University Scholarship": "/membership/directory/university-scholarship",
-			"Request Termination": "/membership/directory/request-termination",
-			"Death Donation Request": "/membership/directory/death-donation-request",
-			"Add Documents": "/membership/directory/add-documents",
-			"Record Member Death": "/membership/directory/record-member-death",
+			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
+			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
+			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"Request Termination": `/membership/directory/request-termination${memberIdQuery}`,
+			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
+			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
+			"Add Documents": `/membership/directory/add-documents${memberIdQuery}`,
+			"Record Member Death": `/membership/directory/record-member-death${memberIdQuery}`,
+
 		};
 
 		const route = routeMap[action];
@@ -133,8 +203,10 @@ export default function MemberProfilePage({
 			<div className="rounded-xl border border-neutral-200 bg-white">
 				<div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 p-4">
 					<div className="flex items-center gap-3">
-						<div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 overflow-hidden">
-							{profile.profilePictureUrl ? (
+						<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 overflow-hidden border border-neutral-200">
+							{profilePhotoDoc?.storagePath ? (
+								<img src={`/api/documents/file/${profilePhotoDoc.storagePath}`} alt={profile.fullName} className="h-full w-full object-cover" />
+							) : profile.profilePictureUrl ? (
 								<img src={profile.profilePictureUrl} alt={profile.fullName} className="h-full w-full object-cover" />
 							) : (
 								<User className="h-6 w-6" />
@@ -279,8 +351,24 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="grid gap-4 pt-2 md:grid-cols-2">
-									<ImageDropzoneCard title="Profile Picture" buttonLabel="Add Profile Image" />
-									<ImageDropzoneCard title="Signature" buttonLabel="Add Signature Image" />
+									<ImageDropzoneCard
+										title="Profile Picture"
+										buttonLabel="Save Profile Image"
+										existingUrl={profilePhotoDoc?.storagePath ? `/api/documents/file/${profilePhotoDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "PROFILE_PHOTO"}
+										isDeleting={deletingDocType === "PROFILE_PHOTO"}
+										onFileSelected={(file) => handleDocumentUpload(file, "PROFILE_PHOTO")}
+										onDelete={() => handleDocumentDelete("PROFILE_PHOTO")}
+									/>
+									<ImageDropzoneCard
+										title="Signature"
+										buttonLabel="Save Signature Image"
+										existingUrl={signatureDoc?.storagePath ? `/api/documents/file/${signatureDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "SIGNATURE"}
+										isDeleting={deletingDocType === "SIGNATURE"}
+										onFileSelected={(file) => handleDocumentUpload(file, "SIGNATURE")}
+										onDelete={() => handleDocumentDelete("SIGNATURE")}
+									/>
 								</div>
 							</CardContent>
 						</Card>
@@ -296,7 +384,7 @@ export default function MemberProfilePage({
 									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
 								</div>
 
-								{documents.length === 0 ? (
+								{displayDocuments.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
 										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
 										<p>No documents found for this member.</p>
@@ -304,7 +392,7 @@ export default function MemberProfilePage({
 								) : !selectedDocType ? (
 									<div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
 										{uniqueDocTypes.map((type) => {
-											const count = documents.filter((d) => d.documentType === type).length;
+											const count = displayDocuments.filter((d) => d.documentType === type).length;
 											return (
 												<button
 													key={type}
@@ -337,7 +425,7 @@ export default function MemberProfilePage({
 										</button>
 
 										<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-											{documents
+											{displayDocuments
 												.filter((d) => d.documentType === selectedDocType)
 												.map((doc) => (
 													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm">
@@ -364,7 +452,7 @@ export default function MemberProfilePage({
 														</div>
 														{doc.storagePath && (
 															<a
-																href={doc.storagePath}
+																href={`/api/documents/file/${doc.storagePath}`}
 																target="_blank"
 																rel="noreferrer"
 																download={doc.fileName}

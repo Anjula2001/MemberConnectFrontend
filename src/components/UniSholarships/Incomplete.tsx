@@ -22,12 +22,7 @@ export function MarkIncompleteModal({
   onClose,
   onConfirm,
 }: MarkIncompleteModalProps) {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isValid },
-  } = useForm<IncompleteFormValues>({
+  const {register,handleSubmit,reset,formState: { errors, isValid },} = useForm<IncompleteFormValues>({
     resolver: zodResolver(incompleteSchema),
     mode: "onChange",
   });

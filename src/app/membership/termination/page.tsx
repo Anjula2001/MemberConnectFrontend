@@ -1,61 +1,88 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/src/components/ui/select";
+import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/src/components/ui/table";
+import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import { Eye, Pencil, ChevronDown } from "lucide-react";
+import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
 
 interface TerminationRequest {
   id: string;
   requestId: string;
   date: string;
   member: string;
+  nameAsInPayroll: string;
+  nameWithInitials: string;
   memberNumber: string;
+  nicNumber: string;
+  hasLoanBalance: boolean;
+  hasIndirectObligations: boolean;
   reason: string;
   status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE";
 }
 
+type TerminationRequestApiRow = {
+  id?: string | number;
+  requestId?: string;
+  requestNo?: string;
+  requestNumber?: string;
+  requestedDate?: string;
+  date?: string;
+  memberName?: string;
+  member?: {
+    fullName?: string;
+    nameWithInitials?: string;
+    memberName?: string;
+    memberId?: string;
+  } | string;
+  fullName?: string;
+  nameWithInitials?: string;
+  employeeName?: string;
+  memberFullName?: string;
+  nameAsInPayroll?: string;
+  memberId?: string;
+  memberNumber?: string;
+  memberNo?: string;
+  nic?: string;
+  nicNumber?: string;
+  nicNo?: string;
+  memberNic?: string;
+  hasLoanBalance?: boolean;
+  hasOutstandingLoans?: boolean;
+  hasLoanObligations?: boolean;
+  hasIndirectObligations?: boolean;
+  indirectObligations?: boolean;
+  totalOutstandingLoanBalance?: number;
+  reason?: string;
+  terminationReason?: string;
+  status?: TerminationRequest["status"];
+};
+
+type TerminationRequestApiResponse =
+  | TerminationRequestApiRow[]
+  | {
+      content?: TerminationRequestApiRow[];
+      data?: TerminationRequestApiRow[];
+      requests?: TerminationRequestApiRow[];
+    };
+
 type RequestType = "termination" | "retirement" | "member_deaths" | "all";
-type StatusType = 
-  | "new" 
-  | "submitted_for_approval" 
-  | "added_to_approval_list" 
-  | "approved" 
-  | "rejected" 
-  | "incomplete"
-  | "pending_review"
-  | "approved_by_board"
-  | "disbursement_initiated"
-  | "disbursement_completed"
-  | "awaiting_nominee_confirmation"
-  | "on_hold"
-  | "district-committee"
-  | "pnd-committee"
-  | "inactive"
-  ;
+type StatusType = | "new" | "submitted_for_approval" | "added_to_approval_list" | "approved" | "rejected" | "incomplete"
+                  |"pending_review"| "approved_by_board"| "disbursement_initiated"| "disbursement_completed"
+                  | "awaiting_nominee_confirmation"| "on_hold"| "district-committee"| "pnd-committee"| "inactive";
 
 type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
 type SortBy = "requestedDate" | "status" | "memberId";
 type SortOrder = "asc" | "desc";
+
+const API_BASE_URL = "http://localhost:8080";
+const TODAY = new Date().toISOString().split("T")[0];
+const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
+const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
 
 // Status options by request type
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
@@ -66,10 +93,10 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "inactive", label: "Inactive" },
-
   ],
   retirement: [
     { value: "new", label: "New" },
+    { value: "incomplete", label: "Incomplete" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
@@ -84,8 +111,6 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
     { value: "rejected", label: "Rejected" },
     { value: "approved", label: "Approved" },
     { value: "inactive", label: "Inactive" },
-
-
   ],
   all: [
     { value: "new", label: "New" },
@@ -177,12 +202,115 @@ function StatusMultiSelect({
   );
 }
 
+function LocationMultiSelect({
+  selectedLocations,
+  onLocationChange,
+}: {
+  selectedLocations: string[];
+  onLocationChange: (locations: string[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const locationOptions = AVAILABLE_LOCATIONS.filter(
+    (location) => location.id !== "all"
+  );
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
+  const toggleLocation = (locationId: string) => {
+    onLocationChange(
+      selectedLocations.includes(locationId)
+        ? selectedLocations.filter((id) => id !== locationId)
+        : [...selectedLocations, locationId]
+    );
+  };
+
+  const displayText =
+    selectedLocations.length === 0
+      ? "All Locations"
+      : selectedLocations.length === 1
+        ? locationOptions.find((location) => location.id === selectedLocations[0])
+            ?.name
+        : `${selectedLocations.length} selected`;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between"
+      >
+        <span className="text-sm">{displayText}</span>
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+          <div className="p-2 max-h-64 overflow-y-auto">
+            {locationOptions.map((location) => (
+              <label
+                key={location.id}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded cursor-pointer"
+              >
+                <Checkbox
+                  checked={selectedLocations.includes(location.id)}
+                  onCheckedChange={() => toggleLocation(location.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <span className="text-sm">{location.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Location configuration
 const AVAILABLE_LOCATIONS = [
   { id: "all", name: "All Locations" },
-  { id: "district1", name: "District 1" },
-  { id: "district2", name: "District 2" },
-  { id: "district3", name: "District 3" },
+  { id: "colombo", name: "Colombo" },
+  { id: "gampaha", name: "Gampaha" },
+  { id: "kalutara", name: "Kalutara" },
+  { id: "kandy", name: "Kandy" },
+  { id: "matale", name: "Matale" },
+  { id: "nuwara_eliya", name: "Nuwara Eliya" },
+  { id: "galle", name: "Galle" },
+  { id: "matara", name: "Matara" },
+  { id: "hambantota", name: "Hambantota" },
+  { id: "jaffna", name: "Jaffna" },
+  { id: "kilinochchi", name: "Kilinochchi" },
+  { id: "mannar", name: "Mannar" },
+  { id: "vavuniya", name: "Vavuniya" },
+  { id: "mullaitivu", name: "Mullaitivu" },
+  { id: "batticaloa", name: "Batticaloa" },
+  { id: "ampara", name: "Ampara" },
+  { id: "trincomalee", name: "Trincomalee" },
+  { id: "kurunegala", name: "Kurunegala" },
+  { id: "puttalam", name: "Puttalam" },
+  { id: "anuradhapura", name: "Anuradhapura" },
+  { id: "polonnaruwa", name: "Polonnaruwa" },
+  { id: "badulla", name: "Badulla" },
+  { id: "monaragala", name: "Monaragala" },
+  { id: "ratnapura", name: "Ratnapura" },
+  { id: "kegalle", name: "Kegalle" }
 ];
 
 // Helper function to get current month date range
@@ -209,84 +337,165 @@ const getThisAndLastMonthRange = () => {
 
 export default function TerminationPage() {
   const router = useRouter();
-  const [requestType, setRequestType] = useState<RequestType>("termination");
-  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>([]);
+
+  //Fiter state value
+  const [requestType, setRequestType] = useState<RequestType>("retirement");
+  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(DEFAULT_RETIREMENT_STATUSES);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
-  const [selectedLocation, setSelectedLocation] = useState<string>("all");  const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("requestedDate");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [requests, setRequests] = useState<TerminationRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const showRowSelection = false;
 
   // Get current status options based on request type
-  const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
+  const currentStatusOptions = requestType === "all"
+      ? STATUS_OPTIONS_BY_TYPE.retirement
+      : STATUS_OPTIONS_BY_TYPE[requestType];
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
     setRequestType(newType);
-    setSelectedStatuses([]); // Reset selected statuses when type changes
+    setSelectedStatuses(
+      newType === "retirement" ? DEFAULT_RETIREMENT_STATUSES : []
+    );
   };
 
-  // Sample data - replace with API data
-  const requests: TerminationRequest[] = [
-    {
-      id: "1",
-      requestId: "TR-2026-003",
-      date: "2026-02-06",
-      member: "Jane Smith",
-      memberNumber: "MR-001002",
-      reason: "Personal reasons",
-      status: "NEW",
-    },
-  ];
-  const filteredRequests = useMemo(() => {
-    let filtered = requests.filter((request) => {
-      const matchesStatus =
-        selectedStatuses.length === 0 || selectedStatuses.includes(request.status.toLowerCase() as StatusType);
-      const matchesSearch =
-        searchQuery === "" ||
-        request.member.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        request.memberNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        request.requestId.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = requestType === "all" || (requestType === "termination" ? true : true);
+  const normalizeApiRows = (
+    responseData: TerminationRequestApiResponse
+  ): TerminationRequest[] => {
+    const rows = Array.isArray(responseData)
+      ? responseData
+      : responseData.content ?? responseData.data ?? responseData.requests ?? [];
 
-      // Date filtering logic
-      let matchesDateFilter = true;
-      const requestDate = new Date(request.date);
+    return rows.map((row) => {
+      const nestedMember =
+        typeof row.member === "object" && row.member !== null
+          ? row.member
+          : null;
 
-      if (dateFilter === "this_month") {
-        const { from, to } = getCurrentMonthRange();
-        matchesDateFilter = requestDate >= new Date(from) && requestDate <= new Date(to);
-      } else if (dateFilter === "this_and_last_month") {
-        const { from, to } = getThisAndLastMonthRange();
-        matchesDateFilter = requestDate >= new Date(from) && requestDate <= new Date(to);
-      } else if (dateFilter === "date_period") {
-        if (fromDate && toDate) {
-          matchesDateFilter = requestDate >= new Date(fromDate) && requestDate <= new Date(toDate);
+      return {
+        id: String(row.id ?? row.requestId ?? row.requestNo ?? row.requestNumber ?? ""),
+        requestId: row.requestId ?? row.requestNo ?? row.requestNumber ?? "-",
+        date: row.requestedDate ?? row.date ?? "-",
+        member:
+          row.memberName ??
+          row.memberFullName ??
+          row.fullName ??
+          row.nameWithInitials ??
+          row.employeeName ??
+          nestedMember?.fullName ??
+          nestedMember?.nameWithInitials ??
+          nestedMember?.memberName ??
+          (typeof row.member === "string" ? row.member : "-"),
+        nameAsInPayroll: row.nameAsInPayroll ?? "-",
+        nameWithInitials:
+          row.nameWithInitials ?? nestedMember?.nameWithInitials ?? "-",
+        memberNumber:
+          row.memberNumber ??
+          row.memberNo ??
+          row.memberId ??
+          nestedMember?.memberId ??
+          "-",
+        nicNumber: row.nicNumber ?? row.nicNo ?? row.memberNic ?? row.nic ?? "-",
+        hasLoanBalance:
+          row.hasLoanBalance ??
+          row.hasOutstandingLoans ??
+          Number(row.totalOutstandingLoanBalance ?? 0) > 0,
+        hasIndirectObligations:
+          row.hasIndirectObligations ??
+          row.indirectObligations ??
+          row.hasLoanObligations ??
+          false,
+        reason: row.reason ?? row.terminationReason ?? "-",
+        status: row.status ?? "NEW",
+      };
+    });
+  };
+
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      
+      //Validate Dates
+      if (dateFilter === "date_period") {
+        if (fromDate && fromDate > TODAY) {
+          setError("From Date cannot be a future date.");
+          setRequests([]);
+          setSelectedRequests([]);
+          return;
+        }
+
+        if (toDate && toDate > TODAY) {
+          setError("To Date cannot be a future date.");
+          setRequests([]);
+          setSelectedRequests([]);
+          return;
         }
       }
 
-      return matchesStatus && matchesSearch && matchesType && matchesDateFilter;
-    });
-
-    // Sorting logic
-    filtered.sort((a, b) => {
-      let compareValue = 0;
-
-      if (sortBy === "requestedDate") {
-        compareValue = new Date(a.date).getTime() - new Date(b.date).getTime();
-      } else if (sortBy === "status") {
-        compareValue = a.status.localeCompare(b.status);
-      } else if (sortBy === "memberId") {
-        compareValue = a.memberNumber.localeCompare(b.memberNumber);
+      if (requestType !== "all" && requestType !== "retirement") {
+        setRequests([]);
+        setSelectedRequests([]);
+        return;
       }
 
-      return sortOrder === "asc" ? compareValue : -compareValue;
-    });
+      const params = new URLSearchParams();
 
-    return filtered;
-  }, [requests, selectedStatuses, searchQuery, requestType, dateFilter, fromDate, toDate, sortBy, sortOrder]);
+      selectedStatuses.forEach((status) =>
+        params.append("statuses", status.toUpperCase())
+      );
+
+      if (searchQuery.trim()) {
+        params.append("searchKey", searchQuery.trim());
+      }
+
+      if (dateFilter === "this_month") {
+        const { from, to } = getCurrentMonthRange();
+        params.append("fromDate", from);
+        params.append("toDate", to);
+      } else if (dateFilter === "this_and_last_month") {
+        const { from, to } = getThisAndLastMonthRange();
+        params.append("fromDate", from);
+        params.append("toDate", to);
+      } else if (dateFilter === "date_period" && fromDate && toDate) {
+        params.append("fromDate", fromDate);
+        params.append("toDate", toDate);
+      }
+
+      params.append("sortBy", sortBy);
+      params.append("sortOrder", sortOrder);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests?${params.toString()}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        setError(errorText || "Failed to retrieve requests.");
+        setRequests([]);
+        return;
+      }
+
+      const data = (await response.json()) as TerminationRequestApiResponse;
+      const retrievedRequests = normalizeApiRows(data);
+      setRequests(retrievedRequests);
+      setSelectedRequests([]);
+    } catch (requestError) {
+      console.error("Retrieve termination requests error:", requestError);
+      setError("Failed to retrieve requests.");
+      setRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSelectRequest = (requestId: string) => {
     setSelectedRequests((prev) =>
@@ -295,10 +504,10 @@ export default function TerminationPage() {
   };
 
   const handleSelectAll = () => {
-    if (selectedRequests.length === filteredRequests.length) {
+    if (selectedRequests.length === requests.length) {
       setSelectedRequests([]);
     } else {
-      setSelectedRequests(filteredRequests.map((req) => req.id));
+      setSelectedRequests(requests.map((req) => req.id));
     }
   };
 
@@ -320,24 +529,24 @@ export default function TerminationPage() {
     );
   };
 
-  const handleViewRequest = (requestId: string) => {
-    console.log("View request:", requestId);
+  const handleEditRequest = (request: TerminationRequest) => {
+    router.push(
+      `/membership/directory/retirement?requestId=${encodeURIComponent(
+        request.id
+      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
+    );
   };
 
-  const handleEditRequest = (requestId: string) => {
-    console.log("Edit request:", requestId);
+  const handleOpenRequest = (request: TerminationRequest) => {
+    router.push(
+      `/membership/directory/retirement?requestId=${encodeURIComponent(
+        request.id
+      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+    );
   };
 
   const handleRetrieve = () => {
-    console.log("Retrieving requests with filters:", { 
-      location: selectedLocation,
-      requestType, 
-      selectedStatuses, 
-      searchQuery,
-      dateFilter,
-      fromDate,
-      toDate,
-    });
+    fetchRequests();
   };
 
   const handleViewApprovalLists = () => {
@@ -353,47 +562,42 @@ export default function TerminationPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+    <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
-        <div className="flex gap-2">
-          <Button
-            onClick={handleCreateApprovalList}
-            disabled={selectedRequests.length === 0}
-            className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Create Approval List
-          </Button>
-          <Button
-            onClick={handleViewApprovalLists}
-            variant="outline"
-            className="border-[#8B4513] text-[#8B4513] hover:bg-[#8B4513] hover:text-white"
-          >
-            View Approval Lists
-          </Button>
-        </div>
+        {requestType !== "retirement" && (
+          <div className="flex gap-2">
+            <Button
+              onClick={handleCreateApprovalList}
+              disabled={selectedRequests.length === 0}
+              className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Create Approval List
+            </Button>
+            <Button
+              onClick={handleViewApprovalLists}
+              variant="outline"
+              className="border-[#8B4513] text-[#8B4513] hover:bg-[#8B4513] hover:text-white"
+            >
+              View Approval Lists
+            </Button>
+          </div>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Search & Filter</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <h2 className="text-lg font-semibold text-[#953002] mb-4">
+          Search & Filter
+        </h2>
+       
+       
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-52">
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
-              <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {AVAILABLE_LOCATIONS.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LocationMultiSelect
+                selectedLocations={selectedLocations}
+                onLocationChange={setSelectedLocations}
+              />
             </div>
 
             <div className="w-52">
@@ -433,6 +637,7 @@ export default function TerminationPage() {
                   <Input
                     type="date"
                     value={fromDate}
+                    max={TODAY}
                     onChange={(e) => setFromDate(e.target.value)}
                     className="w-full"
                   />
@@ -442,12 +647,15 @@ export default function TerminationPage() {
                   <Input
                     type="date"
                     value={toDate}
+                    max={TODAY}
                     onChange={(e) => setToDate(e.target.value)}
                     className="w-full"
                   />
                 </div>
               </>
-            )}            <div className="w-52">
+            )}            
+            
+            <div className="w-52">
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
               <StatusMultiSelect
                 selectedStatuses={selectedStatuses}
@@ -456,7 +664,7 @@ export default function TerminationPage() {
               />
             </div>
 
-                        <div className="flex-1 min-w-45">
+            <div className="flex-1 min-w-45">
               <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
               <Input
                 type="text"
@@ -493,82 +701,118 @@ export default function TerminationPage() {
                 </SelectContent>
               </Select>
             </div>
-
-
-
             <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
           </div>
-        </CardContent>
-      </Card>
+      </div>
+      
 
       <div className="rounded-md border bg-white">
-        <Table>
+        {error && (
+          <p className="border-b px-4 py-3 text-sm text-red-600">{error}</p>
+        )}
+
+        <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="w-12">
-                <Checkbox
-                  checked={
-                    selectedRequests.length === filteredRequests.length &&
-                    filteredRequests.length > 0
-                  }
-                  onCheckedChange={handleSelectAll}
-                  disabled={filteredRequests.length === 0}
-                />
-              </TableHead>
-              <TableHead className="font-semibold">Request ID</TableHead>
-              <TableHead className="font-semibold">Date</TableHead>
-              <TableHead className="font-semibold">Member</TableHead>
-              <TableHead className="font-semibold">Reason</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="font-semibold text-center">Action</TableHead>
+              {showRowSelection && (
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      selectedRequests.length === requests.length &&
+                      requests.length > 0
+                    }
+                    onCheckedChange={handleSelectAll}
+                    disabled={requests.length === 0}
+                  />
+                </TableHead>
+              )}
+              <TableHead className="font-semibold px-6 py-3">Request ID</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Date</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Member ID</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Member Name</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Indicators</TableHead>
+              <TableHead className="font-semibold px-6 py-3">Status</TableHead>
+              <TableHead className="font-semibold text-center px-6 py-3">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredRequests.length > 0 ? (
-              filteredRequests.map((request) => (
-                <TableRow key={request.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedRequests.includes(request.id)}
-                      onCheckedChange={() => handleSelectRequest(request.id)}
-                    />
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">
+                  Loading requests...
+                </TableCell>
+              </TableRow>
+            ) : requests.length > 0 ? (
+              requests.map((request) => (
+                <TableRow className="h-12" key={request.id}>
+                  {showRowSelection && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedRequests.includes(request.id)}
+                        onCheckedChange={() => handleSelectRequest(request.id)}
+                      />
+                    </TableCell>
+                  )}
+                  <TableCell className="px-6">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRequest(request)}
+                      className="font-medium text-[#8B4513] hover:underline"
+                    >
+                      {request.requestId}
+                    </button>
                   </TableCell>
-                  <TableCell className="font-medium">{request.requestId}</TableCell>
-                  <TableCell>{request.date}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{request.member}</span>
-                      <span className="text-sm text-muted-foreground">{request.memberNumber}</span>
+                  <TableCell className="px-6">{request.date}</TableCell>
+                  <TableCell className="px-6">{request.memberNumber}</TableCell>
+                  <TableCell className="px-6">{request.member}</TableCell>
+                  <TableCell className="px-6">
+                    <div className="flex px-6 items-center gap-2">
+                      {request.hasLoanBalance && (
+                        <CircleDollarSign
+                          className="h-4 w-4 text-amber-600"
+                          aria-label="Request has loan balance"
+                        />
+                      )}
+                      {request.hasIndirectObligations && (
+                        <AlertTriangle
+                          className="h-4 w-4 text-red-600"
+                          aria-label="Request has indirect obligations"
+                        />
+                      )}
+                      {!request.hasLoanBalance &&!request.hasIndirectObligations && (
+                        <span className="text-muted-foreground"></span>
+                      )}
                     </div>
                   </TableCell>
-                  <TableCell>{request.reason}</TableCell>
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleViewRequest(request.id)} className="h-8 w-8 p-0">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleEditRequest(request.id)} className="h-8 w-8 p-0">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {!NON_EDITABLE_STATUSES.includes(request.status) && (
+                        <Button variant="ghost" size="sm" 
+                          onClick={() => handleEditRequest(request)} 
+                          className="h-8 w-8 p-0">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
               ))
             ) : (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No requests found. Try adjusting your search criteria.</TableCell>
+              <TableRow className="h-12">
+                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
 
-      {filteredRequests.length > 0 && (
+      {requests.length > 0 && (
         <div className="text-sm text-muted-foreground">
-          Showing {filteredRequests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
+          Showing {requests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
         </div>
       )}
     </div>
   );
 }
+
