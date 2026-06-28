@@ -537,13 +537,13 @@ export default function Page() {
           )}
 
           {showDeviationApprovalBtn && (
-            <Button className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
+            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
               Create University Scholarship Deviation Approval List ({selectedRequests.length})
             </Button>
           )}
 
-          <Link href="/membership/directory/university-scholarship">
-            <Button className="bg-[#D4183D] text-white hover:bg-[#a3152f]">
+          <Link href="/membership/directory">
+            <Button className="bg-[#7a2700] text-white hover:bg-[#953002]">
               + New Application
             </Button>
           </Link>
