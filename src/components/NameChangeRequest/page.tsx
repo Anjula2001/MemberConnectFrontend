@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { z } from "zod";
 import { useRouter } from 'next/navigation';
+import { getMemberById } from '@/lib/api/member';
 
 export const nameChangeSchema = z.object({
   newNameWithInitials: z.string().min(3, "Name with initials must be at least 3 characters"),
@@ -29,6 +30,8 @@ const InputGroup = ({
   onChange,
   error
 }: InputGroupProps) => (
+  // Reusable form input component used to render current and new name fields.
+  // It supports disabled display of current values and inline error styling for validation.
   <div className="flex flex-col gap-2">
     <label className={`text-[11px] font-bold tracking-wider uppercase ${error ? 'text-red-500' : 'text-gray-500'}`}>
       {label}
@@ -48,9 +51,18 @@ const InputGroup = ({
   </div>
 );
 
-export default function NameChangeRequest({ editId }: { editId?: string }) {
+export default function NameChangeRequest({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
   const isEditMode = Boolean(editId);
+
+  // memberName is used for the page header display.
+  // currentData holds the member's current name values, while formData holds the requested values.
+  const [memberName, setMemberName] = useState<string | null>(null);
+  const [currentData, setCurrentData] = useState({
+    newNameWithInitials: "J. Doe",
+    newFullName: "Johnathan Doe",
+    newNameInPayroll: "J. Doe",
+  });
 
   const INITIAL_MEMBER_DATA = {
     newNameWithInitials: "J. Doe",
@@ -58,41 +70,80 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
     newNameInPayroll: "J. Doe",
   };
 
+  const STATUS_OPTIONS = [
+    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
+    { value: 'REJECTED', label: 'Rejected' },
+    { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'PENDING', label: 'Pending' },
+  ];
+
+  const [mounted, setMounted] = useState(false);
   const [formData, setFormData] = useState({
     newNameWithInitials: "",
     newFullName: "",
     newNameInPayroll: ""
   });
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!editId) return;
+    setMounted(true);
+  }, []);
 
-    const fetchRequest = async () => {
-      setLoadingRequest(true);
-      setLoadError(null);
-      try {
-        const response = await axios.get(`http://localhost:8080/api5/namechange/getnamebyid/${editId}`);
-        const data = response.data.data || response.data;
+  // 2. Load initial form data.
+  // In edit mode, load the existing request and map it into the form.
+  // In create mode, load the member record and show current values.
+  useEffect(() => {
+    if (editId) {
+      const fetchRequest = async () => {
+        setLoadingRequest(true);
+        setLoadError(null);
+        try {
+          const response = await axios.get(`http://localhost:8080/api5/namechange/getnamebyid/${editId}`);
+          const data = response.data.data || response.data;
 
-        if (data) {
-          setFormData({
-            newNameWithInitials: data.newNameWithInitials || "",
-            newFullName: data.newFullName || "",
-            newNameInPayroll: data.newNameAsInPayroll || data.newNameInPayroll || "",
-          });
+          if (data) {
+            const requestData = {
+              newNameWithInitials: data.newNameWithInitials || "",
+              newFullName: data.newFullName || "",
+              newNameInPayroll: data.newNameAsInPayroll || data.newNameInPayroll || "",
+            };
+            setFormData(requestData);
+            setCurrentData(requestData);
+            setSelectedStatus(data.status || data.newStatus || '');
+          }
+        } catch (err: any) {
+          setLoadError("Could not load data. Check backend connection.");
+        } finally {
+          setLoadingRequest(false);
         }
-      } catch (err: any) {
-        setLoadError("Could not load data. Check backend connection.");
-      } finally {
-        setLoadingRequest(false);
-      }
-    };
-    fetchRequest();
-  }, [editId]);
+      };
+      fetchRequest();
+    } else if (memberId) {
+      const fetchMember = async () => {
+        setLoadingRequest(true);
+        setLoadError(null);
+        try {
+          const member = await getMemberById(Number(memberId));
+          const memberData = {
+            newNameWithInitials: member.nameWithInitials || member.nameAsInPayroll || member.fullName || "",
+            newFullName: member.fullName || "",
+            newNameInPayroll: member.nameAsInPayroll || member.nameWithInitials || member.fullName || "",
+          };
+          setCurrentData(memberData);
+          setMemberName(member.fullName || member.nameWithInitials || null);
+        } catch (err: any) {
+          setLoadError("Unable to load member data for name change.");
+        } finally {
+          setLoadingRequest(false);
+        }
+      };
+      fetchMember();
+    }
+  }, [editId, memberId]);
 
   const handleFieldChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -114,18 +165,26 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
     }
   };
 
+  // 4. Submit name change request
+  // The payload is mapped to the backend API fields and the route changes for update vs create.
   const handleSubmit = async () => {
     const result = nameChangeSchema.safeParse(formData);
     if (!result.success) return;
 
     setIsSubmitting(true);
 
-    const payload = {
+    const payload: any = {
       newNameWithInitials: formData.newNameWithInitials,
       newFullName: formData.newFullName,
       newNameAsInPayroll: formData.newNameInPayroll,
       newNameInPayroll: formData.newNameInPayroll,
     };
+
+    if (isEditMode) {
+      if (selectedStatus) payload.status = selectedStatus;
+    } else {
+      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
+    }
 
     try {
       if (isEditMode) {
@@ -144,6 +203,8 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
       setIsSubmitting(false);
     }
   };
+
+  if (!mounted) return null;
 
   if (loadingRequest) {
     return (
@@ -165,18 +226,37 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
               {isEditMode ? `Update Name Change Request NCR-${editId}` : "New Name Change Request"}
             </h1>
             <span className="bg-gray-200 px-2 py-0.5 rounded text-[12px] text-gray-600 font-mono inline-block mt-1">
-              Johnathan Doe (MB-2023001)
+              {memberName
+                ? `${memberName} (${memberId})`
+                : currentData.newFullName
+                  ? `${currentData.newFullName} ${isEditMode ? `(${editId})` : "(MB-2023001)"}`
+                  : "Johnathan Doe (MB-2023001)"
+              }
             </span>
           </div>
         </div>
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-          className="px-6 py-2 bg-orange-800 text-white rounded-md hover:bg-orange-900 flex items-center gap-2 font-medium transition-colors"
-        >
-          {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-          {isEditMode ? "💾 Update Request" : "💾 Submit Request"}
-        </button>
+        <div className="flex items-center gap-3">
+          {isEditMode && (
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
+            >
+              <option value="">Change status</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="px-6 py-2 bg-orange-800 text-white rounded-md hover:bg-orange-900 flex items-center gap-2 font-medium transition-colors"
+          >
+            {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+            {isEditMode ? "💾 Update Request" : "💾 Submit Request"}
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -191,7 +271,7 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
           <p className="text-gray-500 text-sm mb-8 font-medium">Update member name details (marriage, deed poll, etc.)</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-            <InputGroup label="NAME WITH INITIALS (CURRENT)" value={INITIAL_MEMBER_DATA.newNameWithInitials} disabled />
+            <InputGroup label="NAME WITH INITIALS (CURRENT)" value={currentData.newNameWithInitials} disabled />
             <InputGroup
               label="NAME WITH INITIALS (NEW) *"
               placeholder="J. Doe"
@@ -200,7 +280,7 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
               error={errors.newNameWithInitials}
             />
 
-            <InputGroup label="FULL NAME (CURRENT)" value={INITIAL_MEMBER_DATA.newFullName} disabled />
+            <InputGroup label="FULL NAME (CURRENT)" value={currentData.newFullName} disabled />
             <InputGroup
               label="FULL NAME (NEW) *"
               placeholder="Johnathan Doe"
@@ -209,7 +289,7 @@ export default function NameChangeRequest({ editId }: { editId?: string }) {
               error={errors.newFullName}
             />
 
-            <InputGroup label="NAME IN PAYROLL (CURRENT)" value={INITIAL_MEMBER_DATA.newNameInPayroll} disabled />
+            <InputGroup label="NAME IN PAYROLL (CURRENT)" value={currentData.newNameInPayroll} disabled />
             <InputGroup
               label="NAME IN PAYROLL (NEW) *"
               placeholder="J. Doe"

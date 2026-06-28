@@ -90,11 +90,10 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		const routeMap: Record<string, string> = {
-			"Basic Profile Changes": "/membership/directory/basic-profile-change-request",
-			"Change Name": "/membership/directory/change-name",
-			"Change Remittance": "/membership/directory/change-remittance",
-			"Change Nominee": "/membership/directory/change-nominee",
-			"Grade 5 Scholarship": "/membership/directory/grade-5-scholarship",
+		"Basic Profile Changes": `/membership/directory/basic-profile-change-request?memberId=${memberIdParam}`,
+		"Change Name": `/membership/directory/change-name?memberId=${memberIdParam}`,
+		"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
+		"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
 			"University Scholarship": "/membership/directory/university-scholarship",
 			"Request Termination": "/membership/directory/request-termination",
 			"Death Donation Request": "/membership/directory/death-donation-request",
