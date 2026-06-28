@@ -1,7 +1,5 @@
 "use client";
 
-"use client";
-
 import { useSearchParams } from "next/navigation";
 import NomineeChangeRequest from "@/src/components/NommineChangeRequest/page";
 

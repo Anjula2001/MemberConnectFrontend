@@ -3,8 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import BasicDetailChange from "@/src/components/BasicDetailChange/page";
 import { id } from "zod/locales";
-import BasicDetailChange from "@/src/components/BasicDetailChange/page";
-import ProfileChangeDetail from "@/src/components/basicProfileChangeRequest/ProfileChangeDetail";
 export default function NewRegistrationsPage() {
   const searchParams = useSearchParams();
   const memberId = searchParams.get("memberId") ?? undefined;

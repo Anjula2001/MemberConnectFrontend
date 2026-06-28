@@ -155,11 +155,10 @@ export default function MemberProfilePage({
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
 		const routeMap: Record<string, string> = {
-\
-		"Basic Profile Changes": `/membership/directory/basic-profile-change-request?memberId=${memberIdParam}`,
-		"Change Name": `/membership/directory/change-name?memberId=${memberIdParam}`,
-		"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
-		"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
+			"Basic Profile Changes": `/membership/directory/basic-profile-change-request?memberId=${memberIdParam}`,
+			"Change Name": `/membership/directory/change-name?memberId=${memberIdParam}`,
+			"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
+			"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
 			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
 			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
 			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
@@ -168,7 +167,6 @@ export default function MemberProfilePage({
 			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
 			"Add Documents": `/membership/directory/add-documents${memberIdQuery}`,
 			"Record Member Death": `/membership/directory/record-member-death${memberIdQuery}`,
-
 		};
 
 		const route = routeMap[action];
