@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
@@ -8,7 +8,12 @@ import { Input } from "@/src/components/ui/input";
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
+import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,X,} from "lucide-react";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  createTerminationApprovalList,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
 
 interface TerminationRequest {
   id: string;
@@ -85,6 +90,10 @@ const TODAY = new Date().toISOString().split("T")[0];
 const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
 const DEFAULT_TERMINATION_STATUSES: StatusType[] = ["new","submitted_for_approval"];
 const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
+const APPROVAL_LIST_SELECTABLE_STATUSES: TerminationRequest["status"][] = [
+  "SUBMITTED_FOR_APPROVAL",
+  "REJECTED",
+];
 
 // Status options by request type
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
@@ -354,7 +363,15 @@ export default function TerminationPage() {
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const showRowSelection = false;
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingApprovalList, setIsSavingApprovalList] = useState(false);
+  const [createdApprovalList, setCreatedApprovalList] =
+    useState<TerminationApprovalListDTO | null>(null);
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [createdListRequestCount, setCreatedListRequestCount] = useState(0);
+  const showRowSelection = requestType === "termination";
   const showRequestTypeColumn = requestType === "all";
   const tableColumnCount =
     7 + (showRequestTypeColumn ? 1 : 0) + (showRowSelection ? 1 : 0);
@@ -559,19 +576,63 @@ export default function TerminationPage() {
     }
   };
 
+  const isSelectableRequest = (request: TerminationRequest) =>
+    request.sourceType === "termination" &&
+    APPROVAL_LIST_SELECTABLE_STATUSES.includes(request.status);
+
+  const selectableRequests = useMemo(
+    () => requests.filter(isSelectableRequest),
+    [requests]
+  );
+
   const handleSelectRequest = (requestId: string) => {
+    const request = requests.find((item) => item.id === requestId);
+    if (!request || !isSelectableRequest(request)) return;
+
     setSelectedRequests((prev) =>
       prev.includes(requestId) ? prev.filter((id) => id !== requestId) : [...prev, requestId]
     );
   };
 
   const handleSelectAll = () => {
-    if (selectedRequests.length === requests.length) {
+    const selectableIds = selectableRequests.map((req) => req.id);
+    const allSelected =
+      selectableIds.length > 0 &&
+      selectableIds.every((id) => selectedRequests.includes(id));
+
+    if (allSelected) {
       setSelectedRequests([]);
     } else {
-      setSelectedRequests(requests.map((req) => req.id));
+      setSelectedRequests(selectableIds);
     }
   };
+
+  useEffect(() => {
+    if (!showBoardMeetingModal) return;
+
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        setBoardMeetings(meetings);
+      } catch (loadError) {
+        console.error("Failed to load board meetings:", loadError);
+        setError("Failed to load board meetings.");
+      }
+    };
+
+    loadBoardMeetings();
+  }, [showBoardMeetingModal]);
+
+  const boardMeetingOptions = useMemo(
+    () =>
+      boardMeetings
+        .filter((meeting) => meeting.id != null && meeting.scheduledDate)
+        .map((meeting) => ({
+          value: String(meeting.id),
+          label: `${meeting.scheduledDate}${meeting.boardMeetingId ? ` (${meeting.boardMeetingId})` : ""}`,
+        })),
+    [boardMeetings]
+  );
 
   const getStatusBadge = (status: TerminationRequest["status"]) => {
     const config: Record<string, { color: string; label: string }> = {
@@ -622,10 +683,71 @@ export default function TerminationPage() {
 
   const handleCreateApprovalList = () => {
     if (selectedRequests.length === 0) {
-      alert("Please select at least one request to create an approval list.");
+      setError("Please select at least one termination request to create an approval list.");
       return;
     }
-    console.log("Creating approval list with selected requests:", selectedRequests);
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveBoardMeeting = async () => {
+    if (!selectedBoardMeeting) return;
+
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting?.id || !meeting.scheduledDate) {
+      setError("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingApprovalList(true);
+      setError("");
+
+      const createdList = await createTerminationApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        requestNos: selectedRequests,
+      });
+
+      setCreatedApprovalList(createdList);
+      setCreatedListRequestCount(selectedRequests.length);
+      setRequests((prev) =>
+        prev.map((row) =>
+          selectedRequests.includes(row.id)
+            ? { ...row, status: "ADDED_TO_APPROVAL_LIST" as const }
+            : row
+        )
+      );
+      setSelectedRequests([]);
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+    } catch (saveError) {
+      console.error("Failed to create termination approval list:", saveError);
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to create termination approval list."
+      );
+    } finally {
+      setIsSavingApprovalList(false);
+    }
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+    setCreatedApprovalList(null);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    setCreatedApprovalList(null);
+    router.push("/membership/termination/approval-lists");
   };
 
   return (
@@ -639,14 +761,14 @@ export default function TerminationPage() {
               disabled={selectedRequests.length === 0}
               className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create Approval List
+              Create Termination Approval List
             </Button>
             <Button
               onClick={handleViewApprovalLists}
               variant="outline"
               className="border-[#8B4513] text-[#8B4513] hover:bg-[#8B4513] hover:text-white"
             >
-              View Approval Lists
+              View Termination Approval Lists
             </Button>
           </div>
         )}
@@ -785,11 +907,11 @@ export default function TerminationPage() {
                 <TableHead className="w-12">
                   <Checkbox
                     checked={
-                      selectedRequests.length === requests.length &&
-                      requests.length > 0
+                      selectableRequests.length > 0 &&
+                      selectableRequests.every((req) => selectedRequests.includes(req.id))
                     }
                     onCheckedChange={handleSelectAll}
-                    disabled={requests.length === 0}
+                    disabled={selectableRequests.length === 0}
                   />
                 </TableHead>
               )}
@@ -820,6 +942,7 @@ export default function TerminationPage() {
                       <Checkbox
                         checked={selectedRequests.includes(request.id)}
                         onCheckedChange={() => handleSelectRequest(request.id)}
+                        disabled={!isSelectableRequest(request)}
                       />
                     </TableCell>
                   )}
@@ -883,6 +1006,121 @@ export default function TerminationPage() {
       {requests.length > 0 && (
         <div className="text-sm text-muted-foreground">
           Showing {requests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
+        </div>
+      )}
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#8B4513]">
+                  Select Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Select the Board Meeting for {selectedRequests.length} termination request(s).
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-6">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">Meeting Date</label>
+                <Select value={selectedBoardMeeting} onValueChange={setSelectedBoardMeeting}>
+                  <SelectTrigger className="h-11 w-full text-base">
+                    <SelectValue placeholder="Select Meeting" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {boardMeetingOptions.length === 0 ? (
+                      <SelectItem value="no-meetings" disabled>
+                        No board meetings available
+                      </SelectItem>
+                    ) : (
+                      boardMeetingOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                  disabled={!selectedBoardMeeting || isSavingApprovalList}
+                  onClick={handleSaveBoardMeeting}
+                >
+                  {isSavingApprovalList ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-3xl font-semibold text-[#8B4513]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                The Termination Approval List for{" "}
+                {createdApprovalList?.requestNos?.length ?? createdListRequestCount} request(s)
+                has been created. Do you want to view the list?
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
