@@ -13,6 +13,7 @@ import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
 interface TerminationRequest {
   id: string;
   requestId: string;
+  sourceType: "termination" | "retirement";
   date: string;
   member: string;
   nameAsInPayroll: string;
@@ -82,6 +83,7 @@ type SortOrder = "asc" | "desc";
 const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
 const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
+const DEFAULT_TERMINATION_STATUSES: StatusType[] = ["new","submitted_for_approval"];
 const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
 
 // Status options by request type
@@ -339,7 +341,7 @@ export default function TerminationPage() {
   const router = useRouter();
 
   //Fiter state value
-  const [requestType, setRequestType] = useState<RequestType>("retirement");
+  const [requestType, setRequestType] = useState<RequestType>("all");
   const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(DEFAULT_RETIREMENT_STATUSES);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
@@ -353,22 +355,28 @@ export default function TerminationPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const showRowSelection = false;
+  const showRequestTypeColumn = requestType === "all";
+  const tableColumnCount =
+    7 + (showRequestTypeColumn ? 1 : 0) + (showRowSelection ? 1 : 0);
 
   // Get current status options based on request type
-  const currentStatusOptions = requestType === "all"
-      ? STATUS_OPTIONS_BY_TYPE.retirement
-      : STATUS_OPTIONS_BY_TYPE[requestType];
+  const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
     setRequestType(newType);
     setSelectedStatuses(
-      newType === "retirement" ? DEFAULT_RETIREMENT_STATUSES : []
+      newType === "retirement"
+        ? DEFAULT_RETIREMENT_STATUSES
+        : newType === "termination"
+          ? DEFAULT_TERMINATION_STATUSES
+          : []
     );
   };
 
   const normalizeApiRows = (
-    responseData: TerminationRequestApiResponse
+    responseData: TerminationRequestApiResponse,
+    sourceType: "termination" | "retirement"
   ): TerminationRequest[] => {
     const rows = Array.isArray(responseData)
       ? responseData
@@ -380,9 +388,12 @@ export default function TerminationPage() {
           ? row.member
           : null;
 
+      const requestId = row.requestId ?? row.requestNo ?? row.requestNumber ?? "-";
+
       return {
-        id: String(row.id ?? row.requestId ?? row.requestNo ?? row.requestNumber ?? ""),
-        requestId: row.requestId ?? row.requestNo ?? row.requestNumber ?? "-",
+        id: requestId !== "-" ? requestId : `${sourceType}-${String(row.id ?? "")}`,
+        requestId,
+        sourceType,
         date: row.requestedDate ?? row.date ?? "-",
         member:
           row.memberName ??
@@ -419,6 +430,69 @@ export default function TerminationPage() {
     });
   };
 
+  const buildQueryParams = () => {
+    const params = new URLSearchParams();
+
+    selectedStatuses.forEach((status) =>
+      params.append("statuses", status.toUpperCase())
+    );
+
+    if (searchQuery.trim()) {
+      params.append("searchKey", searchQuery.trim());
+    }
+
+    if (dateFilter === "this_month") {
+      const { from, to } = getCurrentMonthRange();
+      params.append("fromDate", from);
+      params.append("toDate", to);
+    } else if (dateFilter === "this_and_last_month") {
+      const { from, to } = getThisAndLastMonthRange();
+      params.append("fromDate", from);
+      params.append("toDate", to);
+    } else if (dateFilter === "date_period" && fromDate && toDate) {
+      params.append("fromDate", fromDate);
+      params.append("toDate", toDate);
+    }
+
+    params.append("sortBy", sortBy);
+    params.append("sortOrder", sortOrder);
+
+    return params;
+  };
+
+  const fetchRequestsFromApi = async (
+    apiPath: "termination-requests" | "retirement-requests",
+    sourceType: "termination" | "retirement"
+  ) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/${apiPath}?${buildQueryParams().toString()}`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to retrieve requests.");
+    }
+
+    const data = (await response.json()) as TerminationRequestApiResponse;
+    return normalizeApiRows(data, sourceType);
+  };
+
+  const sortMergedRequests = (requests: TerminationRequest[]) => {
+    return [...requests].sort((a, b) => {
+      let result = 0;
+
+      if (sortBy === "status") {
+        result = a.status.localeCompare(b.status);
+      } else if (sortBy === "memberId") {
+        result = a.memberNumber.localeCompare(b.memberNumber);
+      } else {
+        result = a.date.localeCompare(b.date);
+      }
+
+      return sortOrder === "desc" ? -result : result;
+    });
+  };
+
   const fetchRequests = async () => {
     try {
       setLoading(true);
@@ -441,56 +515,44 @@ export default function TerminationPage() {
         }
       }
 
-      if (requestType !== "all" && requestType !== "retirement") {
+      if (requestType !== "all" && requestType !== "retirement" && requestType !== "termination") {
         setRequests([]);
         setSelectedRequests([]);
         return;
       }
 
-      const params = new URLSearchParams();
+      let retrievedRequests: TerminationRequest[];
 
-      selectedStatuses.forEach((status) =>
-        params.append("statuses", status.toUpperCase())
-      );
-
-      if (searchQuery.trim()) {
-        params.append("searchKey", searchQuery.trim());
+      if (requestType === "all") {
+        const [terminationRequests, retirementRequests] = await Promise.all([
+          fetchRequestsFromApi("termination-requests", "termination"),
+          fetchRequestsFromApi("retirement-requests", "retirement"),
+        ]);
+        retrievedRequests = sortMergedRequests([
+          ...terminationRequests,
+          ...retirementRequests,
+        ]);
+      } else if (requestType === "termination") {
+        retrievedRequests = await fetchRequestsFromApi(
+          "termination-requests",
+          "termination"
+        );
+      } else {
+        retrievedRequests = await fetchRequestsFromApi(
+          "retirement-requests",
+          "retirement"
+        );
       }
 
-      if (dateFilter === "this_month") {
-        const { from, to } = getCurrentMonthRange();
-        params.append("fromDate", from);
-        params.append("toDate", to);
-      } else if (dateFilter === "this_and_last_month") {
-        const { from, to } = getThisAndLastMonthRange();
-        params.append("fromDate", from);
-        params.append("toDate", to);
-      } else if (dateFilter === "date_period" && fromDate && toDate) {
-        params.append("fromDate", fromDate);
-        params.append("toDate", toDate);
-      }
-
-      params.append("sortBy", sortBy);
-      params.append("sortOrder", sortOrder);
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests?${params.toString()}`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        setError(errorText || "Failed to retrieve requests.");
-        setRequests([]);
-        return;
-      }
-
-      const data = (await response.json()) as TerminationRequestApiResponse;
-      const retrievedRequests = normalizeApiRows(data);
       setRequests(retrievedRequests);
       setSelectedRequests([]);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
-      setError("Failed to retrieve requests.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to retrieve requests."
+      );
       setRequests([]);
     } finally {
       setLoading(false);
@@ -519,9 +581,13 @@ export default function TerminationPage() {
       APPROVED: { color: "bg-green-100 text-green-800", label: "APPROVED" },
       REJECTED: { color: "bg-red-100 text-red-800", label: "REJECTED" },
       INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: "INCOMPLETE" },
+      INACTIVE: { color: "bg-gray-100 text-gray-600", label: "INACTIVE" },
     };
 
-    const { color, label } = config[status];
+    const { color, label } = config[status] ?? {
+      color: "bg-gray-100 text-gray-800",
+      label: status.replaceAll("_", " "),
+    };
     return (
       <Badge variant="secondary" className={`${color} hover:${color}`}>
         {label}
@@ -529,19 +595,20 @@ export default function TerminationPage() {
     );
   };
 
+  const getRequestBasePath = (sourceType: TerminationRequest["sourceType"]) =>
+    sourceType === "termination"
+      ? "/membership/directory/termination-request"
+      : "/membership/directory/retirement";
+
   const handleEditRequest = (request: TerminationRequest) => {
     router.push(
-      `/membership/directory/retirement?requestId=${encodeURIComponent(
-        request.id
-      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
+      `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
     );
   };
 
   const handleOpenRequest = (request: TerminationRequest) => {
     router.push(
-      `/membership/directory/retirement?requestId=${encodeURIComponent(
-        request.id
-      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+      `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
     );
   };
 
@@ -727,6 +794,9 @@ export default function TerminationPage() {
                 </TableHead>
               )}
               <TableHead className="font-semibold px-6 py-3">Request ID</TableHead>
+              {showRequestTypeColumn && (
+                <TableHead className="font-semibold px-6 py-3">Type</TableHead>
+              )}
               <TableHead className="font-semibold px-6 py-3">Date</TableHead>
               <TableHead className="font-semibold px-6 py-3">Member ID</TableHead>
               <TableHead className="font-semibold px-6 py-3">Member Name</TableHead>
@@ -738,7 +808,7 @@ export default function TerminationPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">
                   Loading requests...
                 </TableCell>
               </TableRow>
@@ -762,6 +832,9 @@ export default function TerminationPage() {
                       {request.requestId}
                     </button>
                   </TableCell>
+                  {showRequestTypeColumn && (
+                    <TableCell className="px-6 capitalize">{request.sourceType}</TableCell>
+                  )}
                   <TableCell className="px-6">{request.date}</TableCell>
                   <TableCell className="px-6">{request.memberNumber}</TableCell>
                   <TableCell className="px-6">{request.member}</TableCell>
@@ -800,7 +873,7 @@ export default function TerminationPage() {
               ))
             ) : (
               <TableRow className="h-12">
-                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
               </TableRow>
             )}
           </TableBody>

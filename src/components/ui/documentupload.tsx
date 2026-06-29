@@ -37,7 +37,7 @@ interface DocumentUploadProps {
   requestNo: string | null;
   memberId: string;
   requestStatus: string;
-  requestType: "retirement-requests" | "grade5-requests";
+  requestType: "retirement-requests" | "grade5-requests" | "termination-requests";
   readOnly?: boolean;
 }
 
