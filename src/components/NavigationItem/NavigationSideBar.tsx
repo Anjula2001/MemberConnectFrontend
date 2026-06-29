@@ -90,11 +90,6 @@ export default function NavigationSideBar() {
           icon: UserMinus,
         },
         {
-          title: "Termination Approval Lists",
-          url: "/membership/termination/approval-lists",
-          icon: ClipboardList,
-        },
-        {
           title: "Dormant Members",
           url: "/membership/dormant",
           icon: UserCheck,
