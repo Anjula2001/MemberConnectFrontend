@@ -9,6 +9,8 @@ import { Input } from "../ui/input";
 import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { Eye } from "lucide-react";
 
 type FormData = {
   requestDate: string;
@@ -30,6 +32,7 @@ type FormData = {
   branch?: string;
   hasMinorAccount?: string;
   minorAccountMonths?: string;
+  specialDegree?: boolean;
 };
 
 type ScholarshipRecord = {
@@ -55,10 +58,28 @@ type ScholarshipRecord = {
   branchName?: string | null;
   hasMinorAccount?: string | null;
   minorAccountMonths?: string | null;
+  specialDegree?: boolean | null;
   incompleteReason?: string | null;
   decisionReason?: string | null;
   requestDate?: string | null;
   programName?: string | null;
+  totalScholarshipAmount?: number | null;
+  totalDisbursedAmount?: number | null;
+  lastDisbursementDate?: string | null;
+  availablePeriod?: number | null;
+  totalUniversityScholarships?: number | null;
+  fundRequests?: FundRequestRow[] | null;
+};
+
+type FundRequestRow = {
+  id?: number | string;
+  requestId?: string;
+  requestedDate?: string;
+  requestedPeriod?: string;
+  requestedAmount?: number;
+  disbursedAmount?: number;
+  disbursementDate?: string;
+  status?: string;
 };
 
 export default function StudentExamSection() {
@@ -79,6 +100,9 @@ export default function StudentExamSection() {
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [showScholarshipHistory, setShowScholarshipHistory] = useState(false);
+  const [memberScholarships, setMemberScholarships] = useState<ScholarshipRecord[]>([]);
+  const [totalUniversityScholarships, setTotalUniversityScholarships] = useState(0);
 
   const [member, setMember] = useState<any>(null);
   const [scholarshipRequestNo, setScholarshipRequestNo] = useState("");
@@ -98,6 +122,7 @@ export default function StudentExamSection() {
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
+  const [activeTab, setActiveTab] = useState("request");
 
   const whiteInputClass =
     "bg-white [&:-webkit-autofill]:shadow-[0_0_0_1000px_white_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:inherit] [&:-webkit-autofill]:[caret-color:inherit]";
@@ -107,10 +132,13 @@ export default function StudentExamSection() {
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  const isViewMode = isExistingRequest && !isEditMode;
+  const isApprovedDetailsEditMode = isExistingRequest && mode === "approved-edit" && status === "APPROVED";
+  const isViewMode = isExistingRequest && !isEditMode && !isApprovedDetailsEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
   const incomplete = status === "INCOMPLETE";
+  const canEditApprovedScholarshipDetails = true; // TODO: wire to the user privilege for approved scholarship detail edits.
+  const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
   const {
     register,
@@ -127,6 +155,7 @@ export default function StudentExamSection() {
       isSchoolApplicant: false,
       hasMinorAccount: "",
       minorAccountMonths: "",
+      specialDegree: false,
     },
   });
 
@@ -175,6 +204,36 @@ export default function StudentExamSection() {
     fetchMember();
   }, [memberId, loadedRecord?.memberId]);
 
+  useEffect(() => {
+    const targetMemberId = member?.memberId || memberId || loadedRecord?.memberId;
+    if (!targetMemberId) {
+      setTotalUniversityScholarships(loadedRecord?.totalUniversityScholarships || 0);
+      return;
+    }
+
+    const fetchMemberScholarships = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load member scholarship history");
+        }
+
+        const data = await response.json();
+        const scholarships = Array.isArray(data) ? data : [];
+        setMemberScholarships(scholarships);
+        setTotalUniversityScholarships(scholarships.length);
+      } catch (error) {
+        console.error("Failed to load member scholarship history:", error);
+        setTotalUniversityScholarships(loadedRecord?.totalUniversityScholarships || 0);
+      }
+    };
+
+    fetchMemberScholarships();
+  }, [member?.memberId, memberId, loadedRecord?.memberId, loadedRecord?.totalUniversityScholarships]);
+
   // Load an existing scholarship request for view/edit mode
   useEffect(() => {
     if (!requestKey) {
@@ -184,25 +243,16 @@ export default function StudentExamSection() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/university-scholarships");
+        const res = await fetch(
+          `http://localhost:8080/api/university-scholarships/${encodeURIComponent(requestKey)}`
+        );
 
         if (!res.ok) {
           throw new Error("Failed to load scholarship request");
         }
 
-        const data: ScholarshipRecord[] = await res.json();
-        const found = data.find((item) => {
-          const idMatches = String(item.id) === requestKey;
-          const requestMatches = item.requestId === requestKey;
-
-          return idMatches || requestMatches;
-        });
-
-        if (!found) {
-          throw new Error("Scholarship request not found");
-        }
-
-        setLoadedRecord(found);
+        const data: ScholarshipRecord = await res.json();
+        setLoadedRecord(data);
       } catch (error) {
         console.error("Failed to load scholarship request:", error);
         setLoadedRecord(null);
@@ -236,6 +286,7 @@ export default function StudentExamSection() {
       branch: "",
       hasMinorAccount: loadedRecord.hasMinorAccount || "",
       minorAccountMonths: loadedRecord.minorAccountMonths || "",
+      specialDegree: Boolean(loadedRecord.specialDegree),
     });
 
     setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
@@ -938,6 +989,69 @@ export default function StudentExamSection() {
     router.replace(`?${params.toString()}`);
   };
 
+  const handleEnterApprovedDetailsEditMode = () => {
+    if (!requestKey) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("requestId", requestKey);
+    params.set("mode", "approved-edit");
+    router.replace(`?${params.toString()}`);
+  };
+
+  const handleUpdateApprovedDetails = async () => {
+    if (!requestId || !isApprovedDetailsEditMode) return;
+
+    const currentData = getValues();
+    const updateData = {
+      academicYearStart: currentData.academicYearStart,
+      hasMinorAccount: currentData.hasMinorAccount,
+      minorAccountMonths: currentData.minorAccountMonths,
+      specialDegree: Boolean(currentData.specialDegree),
+      bank: currentData.bank,
+      branch: currentData.branch,
+      accountNo: currentData.accountNo,
+    };
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/university-scholarships/${requestId}/approved-details`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        }
+      );
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        let message = "Failed to update scholarship details";
+
+        try {
+          const errorJson = JSON.parse(errorText);
+          message = errorJson.message || message;
+        } catch { }
+
+        setExamNoPopupMessage(message);
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      const updatedRecord: ScholarshipRecord = await res.json();
+      setLoadedRecord(updatedRecord);
+      setExamNoPopupMessage("Scholarship details updated successfully");
+      setShowExamNoPopup(true);
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("requestId", String(updatedRecord.requestId || requestId));
+      params.delete("mode");
+      router.replace(`?${params.toString()}`);
+    } catch (error) {
+      console.error("Approved details update failed:", error);
+      setExamNoPopupMessage("Failed to update scholarship details");
+      setShowExamNoPopup(true);
+    }
+  };
+
   const statusLabel = status;
   const statusReason =
     status === "INCOMPLETE"
@@ -945,8 +1059,150 @@ export default function StudentExamSection() {
       : status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
-  const pageTitle = isExistingRequest ? "University Scholarship" : "New University Scholarship";
+  const pageTitle = isApprovedDetailsEditMode
+    ? "Edit University Scholarship Details"
+    : isExistingRequest
+      ? "University Scholarship"
+      : "New University Scholarship";
   const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  const isApprovedScholarship = status === "APPROVED";
+  const fundRequests = loadedRecord?.fundRequests || [];
+  const availableBalance =
+    (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
+  const canAddFundRequest = isApprovedScholarship && availableBalance > 0;
+
+  const formatCurrency = (amount?: number | null) =>
+    typeof amount === "number"
+      ? `LKR ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "LKR 0.00";
+
+  const formatDate = (date?: string | null) =>
+    date ? new Date(date).toLocaleDateString() : "-";
+
+  const getStatusColor = (value?: string | null) => {
+    if (!value) return "bg-yellow-100 border-yellow-200 text-yellow-500";
+
+    const statusLower = value.toLowerCase().replace(/[\s_]+/g, "");
+
+    if (statusLower === "new") {
+      return "bg-blue-100 border-blue-200 text-blue-500";
+    } else if (statusLower === "incomplete") {
+      return "bg-pink-100 border-pink-200 text-pink-500";
+    } else if (statusLower === "approved") {
+      return "bg-green-100 border-green-200 text-green-500";
+    } else if (statusLower === "rejected") {
+      return "bg-red-100 border-red-200 text-red-500";
+    } else if (statusLower === "submittedforcommitteeapproval") {
+      return "bg-purple-100 border-purple-200 text-purple-500";
+    } else if (statusLower === "submittedfornormalboardapproval" || statusLower === "submittedfordeviationboardapproval") {
+      return "bg-amber-100 border-amber-200 text-amber-600";
+    } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
+      return "bg-emerald-100 border-emerald-200 text-emerald-600";
+    }
+
+    return "bg-yellow-100 border-yellow-200 text-yellow-500";
+  };
+
+  const formatStatusLabel = (value?: string | null) => {
+    if (!value) return "-";
+
+    const statusUpper = value.toUpperCase().replace(/[\s_]+/g, "");
+
+    switch (statusUpper) {
+      case "NEW":
+        return "New";
+      case "INCOMPLETE":
+        return "Incomplete";
+      case "SUBMITTEDFORCOMMITTEEAPPROVAL":
+        return "Submitted for Committee Approval";
+      case "SUBMITTEDFORNORMALBOARDAPPROVAL":
+        return "Submitted for Normal Board Approval";
+      case "SUBMITTEDFORDEVIATIONBOARDAPPROVAL":
+        return "Submitted for Deviation Board Approval";
+      case "ADDEDTONORMALBOARDAPPROVALIST":
+      case "ADDEDTONORMALBOARDAPPROVALLIST":
+      case "ADDEDTONORMALAPPROVALLIST":
+        return "Added to Normal Approval List";
+      case "ADDEDTODEVIATIONBOARDAPPROVALLIST":
+        return "Added to Deviation Board Approval List";
+      case "APPROVED":
+        return "Approved";
+      case "REJECTED":
+        return "Rejected";
+      default:
+        return value.replace(/_/g, " ");
+    }
+  };
+
+  const handleNewFundRequest = () => {
+    if (!requestId) return;
+
+    const currentData = getValues();
+    const hasAcademicStartDate = Boolean(currentData.academicYearStart || loadedRecord?.academicYearStartDate);
+    const hasBankDetails = Boolean(
+      (currentData.bank || loadedRecord?.bankName) &&
+      (currentData.branch || loadedRecord?.branchName) &&
+      (currentData.accountNo || loadedRecord?.accountNumber)
+    );
+
+    if (!hasAcademicStartDate || !hasBankDetails) {
+      setExamNoPopupMessage(
+        "Academic Start Date or the Student Bank Details are not updated. This information are required to be entered before creating a Fund Requests"
+      );
+      setShowExamNoPopup(true);
+      return;
+    }
+
+    router.push(
+      `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(requestId)}`
+    );
+  };
+
+  const handleOpenFundRequest = (fundRequest: FundRequestRow) => {
+    const fundRequestId = fundRequest.requestId || fundRequest.id;
+    if (!fundRequestId || !requestId) return;
+    router.push(
+      `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(requestId)}&fundRequestId=${encodeURIComponent(String(fundRequestId))}&mode=view`
+    );
+  };
+
+  const handleViewMemberScholarships = async () => {
+    const targetMemberId = member?.memberId || loadedRecord?.memberId;
+    if (!targetMemberId) return;
+
+    if (memberScholarships.length > 0) {
+      setShowScholarshipHistory(true);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load member scholarship history");
+      }
+
+      const data = await response.json();
+      setMemberScholarships(Array.isArray(data) ? data : []);
+      setShowScholarshipHistory(true);
+    } catch (error) {
+      console.error("Failed to load member scholarship history:", error);
+      setExamNoPopupMessage("Failed to load member scholarship history");
+      setShowExamNoPopup(true);
+    }
+  };
+
+  const handleOpenScholarshipFromHistory = (scholarship: ScholarshipRecord) => {
+    const targetRequestId = scholarship.requestId || scholarship.id;
+    if (!targetRequestId) return;
+
+    setShowScholarshipHistory(false);
+    router.push(
+      `/membership/directory/university-scholarship?requestId=${encodeURIComponent(String(targetRequestId))}`
+    );
+  };
 
   return (
     <>
@@ -990,11 +1246,31 @@ export default function StudentExamSection() {
               </Button>
             )}
 
+            {isViewMode && status === "APPROVED" && canEditApprovedScholarshipDetails && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleEnterApprovedDetailsEditMode}
+              >
+                Edit Details
+              </Button>
+            )}
+
+            {isApprovedDetailsEditMode && (
+              <Button
+                type="button"
+                className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                onClick={handleUpdateApprovedDetails}
+              >
+                Update
+              </Button>
+            )}
+
             <Button
               type="button"
               className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
               onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode || incomplete}
+              disabled={!requestId || !isSaved || isSubmitted || isViewMode || incomplete || isApprovedDetailsEditMode}
             >
               Incomplete
             </Button>
@@ -1003,14 +1279,14 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || isSaved}
+              disabled={isInputsDisabled || !isValid || isSaved || isApprovedDetailsEditMode}
             >
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted}
+              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted || isApprovedDetailsEditMode}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
               Submit
@@ -1023,42 +1299,122 @@ export default function StudentExamSection() {
             Member Details
           </h2>
 
-          <div className="grid grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
-              <label className="block font-medium mb-1">Member ID</label>
-              <input
-                type="text"
+              <label htmlFor="memberId" className="mb-1 block text-sm text-gray-600">
+                Member ID
+              </label>
+              <Input
+                id="memberId"
                 value={member?.memberId || ""}
                 readOnly
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                className={whiteInputClass}
               />
             </div>
 
             <div>
-              <label className="block font-medium mb-1">
+              <label htmlFor="memberNameWithInitials" className="mb-1 block text-sm text-gray-600">
                 Surname with Initials
               </label>
-              <input
-                type="text"
+              <Input
+                id="memberNameWithInitials"
                 value={member?.nameWithInitials || ""}
                 readOnly
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                className={whiteInputClass}
               />
             </div>
 
             <div>
-              <label className="block font-medium mb-1">NIC Number</label>
-              <input
-                type="text"
+              <label htmlFor="memberNic" className="mb-1 block text-sm text-gray-600">
+                NIC Number
+              </label>
+              <Input
+                id="memberNic"
                 value={member?.nic || ""}
                 readOnly
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-700 cursor-not-allowed"
+                className={whiteInputClass}
               />
             </div>
+
+            <div>
+              <label htmlFor="totalUniversityScholarships" className="mb-1 block text-sm text-gray-600">
+                Total University Scholarships
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="totalUniversityScholarships"
+                  value={totalUniversityScholarships}
+                  readOnly
+                  className={whiteInputClass}
+                />
+                {totalUniversityScholarships > 0 && (
+                  <Button type="button" variant="outline" onClick={handleViewMemberScholarships}>
+                    View Details
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
+
+          {isApprovedScholarship && (
+            <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
+              <div>
+                <label htmlFor="totalScholarshipAmount" className="mb-1 block text-sm text-gray-600">
+                  Total Scholarship Amount
+                </label>
+                <Input
+                  id="totalScholarshipAmount"
+                  value={formatCurrency(loadedRecord?.totalScholarshipAmount)}
+                  readOnly
+                  className={whiteInputClass}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="totalDisbursedAmount" className="mb-1 block text-sm text-gray-600">
+                  Total Disbursed Amount
+                </label>
+                <Input
+                  id="totalDisbursedAmount"
+                  value={formatCurrency(loadedRecord?.totalDisbursedAmount)}
+                  readOnly
+                  className={whiteInputClass}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="lastDisbursementDate" className="mb-1 block text-sm text-gray-600">
+                  Last Disbursement Date
+                </label>
+                <Input
+                  id="lastDisbursementDate"
+                  value={formatDate(loadedRecord?.lastDisbursementDate)}
+                  readOnly
+                  className={whiteInputClass}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="flex w-full gap-2 rounded-lg border bg-white p-1">
+            <TabsTrigger
+              value="request"
+              className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white"
+            >
+              Scholarship Request Details
+            </TabsTrigger>
+            <TabsTrigger
+              value="funds"
+              disabled={!isApprovedScholarship}
+              className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Fund Requests
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="request" className="space-y-6">
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">
               Student & Exam
@@ -1225,7 +1581,20 @@ export default function StudentExamSection() {
                 <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
                   Academic Year Start Date
                 </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
+              </div>
+
+              <div className="flex items-center gap-2 md:col-span-2">
+                <input
+                  id="specialDegree"
+                  type="checkbox"
+                  {...register("specialDegree")}
+                  disabled={isApprovedDetailFieldDisabled}
+                  className="h-4 w-4 accent-[#953002]"
+                />
+                <label htmlFor="specialDegree" className="text-sm text-gray-600">
+                  Applied for Special Degree
+                </label>
               </div>
             </div>
           </section>
@@ -1240,7 +1609,7 @@ export default function StudentExamSection() {
                 variant="outline"
                 className=" text-sm  text-gray-600"
                 onClick={handleRefreshMinorAccount}
-                disabled={isInputsDisabled || cannotEdit}
+                disabled={isApprovedDetailFieldDisabled}
               >
                 Refresh
               </Button>
@@ -1251,14 +1620,22 @@ export default function StudentExamSection() {
                 <label className="mb-1 block text-sm  text-gray-600">
                   Minor Account Availability
                 </label>
-                <Input {...register("hasMinorAccount")} readOnly disabled={isInputsDisabled} className={whiteInputClass} />
+                <select
+                  {...register("hasMinorAccount")}
+                  disabled={isApprovedDetailFieldDisabled}
+                  className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+                >
+                  <option value="">Select Status</option>
+                  <option value="YES">YES</option>
+                  <option value="NO">NO</option>
+                </select>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm  text-gray-600">
                   Remitted Months
                 </label>
-                <Input {...register("minorAccountMonths")} disabled={isInputsDisabled} className={whiteInputClass} />
+                <Input {...register("minorAccountMonths")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
               </div>
             </div>
           </section>
@@ -1273,7 +1650,7 @@ export default function StudentExamSection() {
                 <label htmlFor="accountNo" className="mb-1 block text-sm  text-gray-600">
                   Bank Account Number
                 </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                <Input id="accountNo" {...register("accountNo")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
                 {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
               </div>
 
@@ -1284,7 +1661,7 @@ export default function StudentExamSection() {
                 <select
                   id="bank"
                   {...register("bank")}
-                  disabled={isInputsDisabled || cannotEdit}
+                  disabled={isApprovedDetailFieldDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm"
                 >
                   <option value="">Select Bank</option>
@@ -1303,7 +1680,7 @@ export default function StudentExamSection() {
                 <select
                   id="branch"
                   {...register("branch")}
-                  disabled={!watch("bank") || isInputsDisabled || cannotEdit}
+                  disabled={!watch("bank") || isApprovedDetailFieldDisabled}
                   className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select Branch</option>
@@ -1325,7 +1702,7 @@ export default function StudentExamSection() {
             <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
               <Document
                 requestId={requestId}
-                disabled={isInputsDisabled}
+                disabled={isInputsDisabled || isApprovedDetailsEditMode}
                 isSaved={isSaved}
                 isSubmitted={isSubmitted}
                 files={documentFiles}
@@ -1395,7 +1772,81 @@ export default function StudentExamSection() {
               </Button>
             </div>
           )}
-        </div>
+          </TabsContent>
+
+          <TabsContent value="funds" className="space-y-6">
+            <section className="rounded-lg border bg-white p-4">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-[#953002]">
+                    Fund Requests
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Available Balance: {formatCurrency(availableBalance)}
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                  onClick={handleNewFundRequest}
+                  disabled={!canAddFundRequest}
+                >
+                  Add New Request
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Fund Request ID</th>
+                      <th className="px-4 py-3 font-medium">Requested Date</th>
+                      <th className="px-4 py-3 font-medium">Requested Period</th>
+                      <th className="px-4 py-3 font-medium">Requested Amount</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fundRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
+                          No fund requests have been created for this scholarship.
+                        </td>
+                      </tr>
+                    ) : (
+                      fundRequests.map((fundRequest) => (
+                        <tr key={fundRequest.requestId || fundRequest.id} className="border-t text-gray-600">
+                          <td className="px-4 py-3 font-medium text-gray-800">
+                            {fundRequest.requestId || fundRequest.id}
+                          </td>
+                          <td className="px-4 py-3">{formatDate(fundRequest.requestedDate)}</td>
+                          <td className="px-4 py-3">{fundRequest.requestedPeriod || "-"}</td>
+                          <td className="px-4 py-3">{formatCurrency(fundRequest.requestedAmount)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(fundRequest.status)}`}>
+                              {formatStatusLabel(fundRequest.status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleOpenFundRequest(fundRequest)}
+                            >
+                              Open
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </TabsContent>
+        </Tabs>
       </form>
 
       <MarkIncompleteModal
@@ -1463,6 +1914,67 @@ export default function StudentExamSection() {
               >
                 Reject
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showScholarshipHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-4xl rounded-lg bg-white p-6 shadow-lg">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-[#953002]">
+                University Scholarships
+              </h3>
+              <Button type="button" variant="outline" onClick={() => setShowScholarshipHistory(false)}>
+                Close
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Request ID</th>
+                    <th className="px-4 py-3 font-medium">Student Name</th>
+                    <th className="px-4 py-3 font-medium">University</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {memberScholarships.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                        No university scholarships found.
+                      </td>
+                    </tr>
+                  ) : (
+                    memberScholarships.map((scholarship) => (
+                      <tr key={scholarship.requestId || scholarship.id} className="border-t">
+                        <td className="px-4 py-3 font-medium">{scholarship.requestId || "-"}</td>
+                        <td className="px-4 py-3">{scholarship.studentName || "-"}</td>
+                        <td className="px-4 py-3">{scholarship.universityName || "-"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(scholarship.status)}`}>
+                            {formatStatusLabel(scholarship.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            className="text-[#953002] transition-colors hover:text-[#c44515]"
+                            onClick={() => handleOpenScholarshipFromHistory(scholarship)}
+                            aria-label="View scholarship"
+                          >
+                            <Eye size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
