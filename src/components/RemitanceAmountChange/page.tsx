@@ -1,9 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Send, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Send, Trash2, Plus, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api/client';
+import { getMemberById } from '@/lib/api/member';
 
 // --- Type Definitions ---
+// ReadonlyAccount represents existing remittance deductions currently on the member's record.
+// MutableAccount represents the new remittance items that the user can change and submit.
 interface ReadonlyAccount {
   id: string;
   type: string;
@@ -13,7 +18,7 @@ interface ReadonlyAccount {
 interface MutableAccount {
   id: string;
   type: string;
-  amount: string; 
+  amount: string;
 }
 
 interface SectionCardProps {
@@ -46,16 +51,110 @@ const formatCurrency = (amount: number): string => {
   return `LKR ${amount.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 };
 
-export default function RemittanceChangePage() {
+export default function RemittanceChangePage({ editId, memberId }: { editId?: string; memberId?: string }) {
+  const router = useRouter();
+  const STATUS_OPTIONS = [
+    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
+    { value: 'REJECTED', label: 'Rejected' },
+    { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'PENDING', label: 'Pending' },
+  ];
+
   const [mounted, setMounted] = useState(false);
+  const [memberName, setMemberName] = useState<string | null>(null);
   const [mutableAccounts, setMutableAccounts] = useState<MutableAccount[]>(INITIAL_MUTABLE_ACCOUNTS);
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [loadingRequest, setLoadingRequest] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const isEditMode = Boolean(editId);
+
+  const normalizeAmount = (value: string) => {
+    const parsed = parseFloat(value.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  // Validation helper for the remittance request.
+// Ensures every new remittance item has a valid account type and a positive amount.
+const validateAccounts = () => {
+    return mutableAccounts.some(acc => acc.type.trim() === '' || normalizeAmount(acc.amount) <= 0);
+  };
+
+  // Submit remittance change request to the backend.
+  // Uses create or update route depending on whether editId is present.
+  const handleSubmit = async () => {
+    if (validateAccounts()) {
+      setSubmitError('Please provide valid account types and positive amounts for all remittance items.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const payload: any = {
+      newRemittanceAmount: totalNewRemittance.toString(),
+      newRemittanceCurrency: 'LKR',
+      ...(isEditMode ? (selectedStatus ? { status: selectedStatus } : {}) : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
+    };
+
+    try {
+      if (isEditMode) {
+        await apiClient.put(`/api4/remitance/updateRemitance/${editId}`, payload);
+        alert('Remittance change updated successfully.');
+      } else {
+        await apiClient.post('/api4/remitance/saveRemitance', payload);
+        alert('Remittance change submitted successfully.');
+      }
+      router.push('/membership/profile-changes');
+    } catch (error: any) {
+      setSubmitError(error instanceof Error ? error.message : 'Failed to submit remittance change.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Fix Hydration Mismatch
+  // Force the component to render only after mounting to avoid server/client markup mismatches.
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  if (!mounted) return null;
+  useEffect(() => {
+    if (!editId && !memberId) return;
+
+    const fetchRequest = async () => {
+      setLoadingRequest(true);
+      setLoadError(null);
+
+      try {
+        if (editId) {
+          const response = await apiClient.get(`/api4/remitance/getRemitanceById/${editId}`);
+          const data = response.data.data || response.data;
+
+          setMutableAccounts([
+            {
+              id: Date.now().toString(),
+              type: data.accountType || 'Share Account',
+              amount: data.newRemittanceAmount?.toString?.() || '0',
+            },
+          ]);
+          setSelectedStatus(data.status || data.newStatus || '');
+        }
+
+        if (memberId) {
+          const member = await getMemberById(Number(memberId));
+          setMemberName(member.fullName || member.nameWithInitials || null);
+        }
+      } catch (error: any) {
+        setLoadError(error?.message || 'Failed to load remittance request.');
+      } finally {
+        setLoadingRequest(false);
+      }
+    };
+
+    fetchRequest();
+  }, [editId, memberId]);
 
   // -- Calculations --
   const totalCurrentRemittance = INITIAL_READONLY_ACCOUNTS.reduce((sum, acc) => sum + acc.amount, 0);
@@ -77,27 +176,52 @@ export default function RemittanceChangePage() {
   return (
     <div className="min-h-screen bg-[#F8F9FA] p-8 text-slate-800 font-sans">
       <div className="max-w-5xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <button className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50">
+            <button onClick={() => router.back()} className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50">
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-[#8A4C27]">New Remittance Change Request</h1>
+              <h1 className="text-2xl font-bold text-[#8A4C27]">
+                {isEditMode ? 'Update Remittance Change Request' : 'New Remittance Change Request'}
+              </h1>
               <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono">
-                Johnathan Doe (MB-2023001)
+                {memberName ? `${memberName} (${memberId})` : "Johnathan Doe (MB-2023001)"}
               </span>
             </div>
           </div>
-          <div className="flex gap-3">
-            <button className="px-6 py-2 border border-slate-300 rounded-lg bg-white font-semibold">Cancel</button>
-            <button className="px-6 py-2 bg-[#8A4C27] text-white rounded-lg flex items-center gap-2 font-semibold">
-              <Send size={18} /> Submit Request
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.back()} className="px-6 py-2 border border-slate-300 rounded-lg bg-white font-semibold">Cancel</button>
+            {isEditMode && (
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
+              >
+                <option value="">Change status</option>
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400 text-slate-700 cursor-not-allowed' : 'bg-[#8A4C27] text-white hover:bg-[#733F20]'}`}
+            >
+              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+              {isSubmitting ? (isEditMode ? 'Updating...' : 'Submitting...') : (isEditMode ? 'Update Request' : 'Submit Request')}
             </button>
           </div>
         </header>
+
+        {submitError && (
+          <div className="max-w-5xl mx-auto mb-4 rounded-lg border border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700">
+            ⚠️ {submitError}
+          </div>
+        )}
 
         {/* Section 1: Current Remittance */}
         <SectionCard title="Current Monthly Remittance" subtitle="Current salary deductions on record">
@@ -116,8 +240,8 @@ export default function RemittanceChangePage() {
         </SectionCard>
 
         {/* Section 2: New Remittance */}
-        <SectionCard 
-          title="New Monthly Remittance" 
+        <SectionCard
+          title="New Monthly Remittance"
           subtitle="Configure updated salary deductions"
           action={
             <button onClick={addAccount} className="px-4 py-2 bg-[#8A4C27] text-white rounded-lg flex items-center gap-2 text-sm font-semibold">
@@ -131,7 +255,7 @@ export default function RemittanceChangePage() {
                 <div className="flex-1 grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Account Type *</label>
-                    <select 
+                    <select
                       className="border p-2 rounded-md bg-white text-sm"
                       value={account.type}
                       onChange={(e) => handleUpdate(account.id, 'type', e.target.value)}
@@ -141,8 +265,8 @@ export default function RemittanceChangePage() {
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Amount (LKR) *</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       className="border p-2 rounded-md text-sm"
                       value={account.amount}
                       onChange={(e) => handleUpdate(account.id, 'amount', e.target.value)}
