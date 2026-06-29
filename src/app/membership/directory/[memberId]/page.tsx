@@ -34,7 +34,7 @@ const actionGroups = {
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
-	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death"],
+	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death", "Member Termination"],
 };
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
@@ -162,7 +162,7 @@ export default function MemberProfilePage({
 			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
 			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
 			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
-			"Request Termination": `/membership/directory/request-termination${memberIdQuery}`,
+			"Member Termination": `/membership/directory/termination-request${memberIdQuery}`,
 			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
 			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
 			"Add Documents": `/membership/directory/add-documents${memberIdQuery}`,
@@ -243,23 +243,17 @@ export default function MemberProfilePage({
 									))}
 								</div>
 
-								<div className="border-b border-neutral-300 px-5 py-2">
-									<button
-										type="button"
-										onClick={() => handleActionClick("Request Termination")}
-										className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-									>
-										Request Termination
-									</button>
-								</div>
-
 								<div className="px-5 py-2 space-y-1">
 									{actionGroups.secondary.map((item) => (
 										<button
 											key={item}
 											onClick={() => handleActionClick(item)}
 											type="button"
-											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+											className={
+												item === "Member Termination"
+													? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
+													: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+											}
 										>
 											{item}
 										</button>
