@@ -11,6 +11,7 @@ type Grade5Request = Grade5InitialData & {
   id?: number;
   requestNo?: string;
   status?: string;
+  hasDeviation?: boolean;
   incompleteReason?: string;
   minorAccountExists?: boolean;
   minorAccountNumber?: string;
@@ -96,6 +97,7 @@ export default function Grade5ScholarshipPage() {
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(SUBMITTED_FOR_NORMAL_APPROVAL);
   const [submitError, setSubmitError] = useState("");
+  const [deviationReason, setDeviationReason] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
   const isRequestSubmitted = grade5Request?.status ? LOCKED_STATUSES.includes(grade5Request.status) : false;
@@ -401,35 +403,85 @@ export default function Grade5ScholarshipPage() {
       return;
     }
 
+    const extraRequestData = {
+      minorAccountExists,
+      minorAccountNumber,
+      eligibleMonths,
+      disbursementOption,
+      memberAmount,
+      minorAmount,
+      isDoubleAmount,
+    };
+
+    let requestToSubmit = grade5Request;
+
     if (grade5Request?.requestNo) {
-      const documentsOk = await validateMandatoryDocuments(grade5Request.requestNo);
-
-      if (!documentsOk) {
-        return;
-      }
-
-      setSubmitModalOpen(true);
-      return;
-    }
-
-    try {
-      const savedRequest = await formRef.current?.submitForm();
+      const savedRequest = await formRef.current?.submitForm(
+        extraRequestData,
+        grade5Request.requestNo
+      );
 
       if (!savedRequest?.requestNo) {
         return;
       }
 
+      requestToSubmit = savedRequest;
       setGrade5Request(savedRequest);
-      const documentsOk = await validateMandatoryDocuments(savedRequest.requestNo);
+    }
 
-      if (!documentsOk) {
+    if (!requestToSubmit?.requestNo) {
+      try {
+        const savedRequest = await formRef.current?.submitForm(extraRequestData);
+
+        if (!savedRequest?.requestNo) {
+          return;
+        }
+
+        setGrade5Request(savedRequest);
+        requestToSubmit = savedRequest;
+      } catch (error) {
+        console.error(error);
+        setFundError("Failed to save Grade 5 request before submitting.");
         return;
       }
+    }
+
+    const requestNo = requestToSubmit.requestNo;
+    if (!requestNo) {
+      setFundError("Invalid Grade 5 request number.");
+      return;
+    }
+
+    const documentsOk = await validateMandatoryDocuments(requestNo);
+    if (!documentsOk) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/check-deviation?requestedDate=${encodeURIComponent(
+          requestToSubmit.requestedDate || ""
+        )}&examYear=${encodeURIComponent(String(requestToSubmit.examYear))}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to compute deviation info");
+      }
+
+      const info = await res.json();
+      const isDeviation = info.deviation === true;
+
+      setSubmitStatus(isDeviation ? SUBMITTED_FOR_DEVIATION_APPROVAL : SUBMITTED_FOR_NORMAL_APPROVAL);
+      setDeviationReason(
+        isDeviation
+          ? "The request is not within the eligibility period and will be submitted for Deviation Approval."
+          : "The request is within the eligibility period and will be submitted for Normal Approval."
+      );
 
       setSubmitModalOpen(true);
-    } catch (error) {
-      console.error(error);
-      setFundError("Failed to save Grade 5 request before submitting.");
+    } catch (err) {
+      console.error(err);
+      setSubmitError("Failed to evaluate eligibility before submit.");
     }
   };
 
@@ -439,6 +491,17 @@ export default function Grade5ScholarshipPage() {
       setSubmitError("Please save the Grade 5 request before submitting.");
       return;
     }
+
+    const finalStatus = grade5Request?.hasDeviation
+      ? SUBMITTED_FOR_DEVIATION_APPROVAL
+      : SUBMITTED_FOR_NORMAL_APPROVAL;
+
+    setSubmitStatus(finalStatus);
+    setDeviationReason(
+      grade5Request?.hasDeviation
+        ? "The request is not within the eligibility period and will be submitted for Deviation Approval."
+        : "The request is within the eligibility period and will be submitted for Normal Approval."
+    );
 
     try {
       setSubmittingRequest(true);
@@ -451,7 +514,7 @@ export default function Grade5ScholarshipPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ status: submitStatus }),
+          body: JSON.stringify({ status: finalStatus }),
         }
       );
 
@@ -464,12 +527,12 @@ export default function Grade5ScholarshipPage() {
       const text = await res.text();
       const updatedRequest = text
         ? (JSON.parse(text) as Grade5Request)
-        : { ...grade5Request, status: submitStatus };
+        : { ...grade5Request, status: finalStatus };
 
       setGrade5Request({
         ...grade5Request,
         ...updatedRequest,
-        status: updatedRequest.status || submitStatus,
+        status: updatedRequest.status || finalStatus,
       });
       setSubmitModalOpen(false);
       setFundError("");
@@ -1000,8 +1063,20 @@ export default function Grade5ScholarshipPage() {
             </p>
 
             <p className="mt-3 text-sm text-gray-700">
-              Once submitted, the Grade 5 Scholarship Request cannot be edited.Select the approval path for this request.
+              Once submitted, the Grade 5 Scholarship Request cannot be edited. The system will choose the approval path automatically based on the eligibility rule.
             </p>
+
+            {deviationReason && (
+              <div
+                className={`mt-4 rounded-md px-3 py-2 text-sm ${
+                  grade5Request?.hasDeviation
+                    ? "border border-red-200 bg-red-50 text-red-700"
+                    : "border border-orange-200 bg-orange-50 text-orange-700"
+                }`}
+              >
+                {deviationReason}
+              </div>
+            )}
 
             {submitError && (
               <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -1009,56 +1084,18 @@ export default function Grade5ScholarshipPage() {
               </p>
             )}
 
-            {/*approval options*/}
-            <div className="mt-5 space-y-3">
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
-                  ? "border-[#953002] bg-orange-50"
-                  : "border-gray-200"
-                  }`}
-              >
-                <input
-                  type="radio"
-                  name="submitStatus"
-                  value={SUBMITTED_FOR_NORMAL_APPROVAL}
-                  checked={submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL}
-                  onChange={(e) => setSubmitStatus(e.target.value)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block font-medium">
-                    Submitted for Normal Approval
-                  </span>
-                  <span className="block text-sm text-gray-600">
-                    Use this when the request does not satisfy deviation
-                    criteria.
-                  </span>
-                </span>
-              </label>
-
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
-                  ? "border-[#953002] bg-orange-50"
-                  : "border-gray-200"
-                  }`}
-              >
-                <input
-                  type="radio"
-                  name="submitStatus"
-                  value={SUBMITTED_FOR_DEVIATION_APPROVAL}
-                  checked={submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL}
-                  onChange={(e) => setSubmitStatus(e.target.value)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block font-medium">
-                    Submitted for Deviation Approval
-                  </span>
-                  <span className="block text-sm text-gray-600">
-                    Use this when the request satisfies deviation criteria.
-                  </span>
-                </span>
-              </label>
+            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
+              {submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? (
+                <div>
+                  <p className="font-medium">The request is not within the eligibility period.</p>
+                  <p className="mt-1">It will be submitted as <span className="font-semibold text-red-700">Submitted for Deviation Approval</span>.</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-medium">The request is within the eligibility period.</p>
+                  <p className="mt-1">It will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-2">

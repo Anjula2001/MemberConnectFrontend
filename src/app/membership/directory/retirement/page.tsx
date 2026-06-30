@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "../../../../components/ui/select";
 import RetirementForm, { RetirementFormRef, } from "../../../../components/ui/retirement/retirementform";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
@@ -85,6 +86,7 @@ export default function RetirementPage() {
 
   const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
+  const [selectedViewModeStatus, setSelectedViewModeStatus] = useState<string>("");
 
   const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
@@ -97,12 +99,47 @@ export default function RetirementPage() {
   const showApprovalActions = retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
   const hideRequestEditActions = showApprovalActions;
   const isViewRequestMode = pageMode === "view" && !!requestId;
+
+  const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
+    NEW: [
+      { status: "INCOMPLETE", label: "Mark Incomplete" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INCOMPLETE: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    REJECTED: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INACTIVE: [
+      { status: "NEW", label: "Reopen" },
+    ],
+  };
+
+  const viewModeStatusActions = retirementRequest?.status
+    ? VIEW_MODE_STATUS_TRANSITIONS[retirementRequest.status] || []
+    : [];
+
+  const showViewModeStatusActions =
+    !!retirementRequest?.id &&
+    !isEditMode &&
+    !isCurrentSessionSaved &&
+    isViewRequestMode &&
+    viewModeStatusActions.length > 0;
+
   const showDisabledRequestActions =
     !!retirementRequest?.id &&
     !isEditMode &&
     !isCurrentSessionSaved &&
-    !showApprovalActions &&
-    (isViewRequestMode);
+    isViewRequestMode &&
+    viewModeStatusActions.length === 0;
+
   const showRequestEditActions =
     !hideRequestEditActions &&
     !showDisabledRequestActions &&
@@ -230,9 +267,17 @@ export default function RetirementPage() {
   // Loads the existing retirement request for the selected member.
   const fetchRetirementRequests = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
-      );
+      let response;
+
+      if (requestId) {
+        response = await fetch(
+          `${API_BASE_URL}/api/retirement-requests/request/${requestId}`
+        );
+      } else {
+        response = await fetch(
+          `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
+        );
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -240,12 +285,18 @@ export default function RetirementPage() {
         return;
       }
 
-      const requests: RetirementRequest[] = await response.json();
+      if (requestId) {
+        const request: RetirementRequest = await response.json();
+        setRetirementRequest(request);
+      } else {
+        const requests: RetirementRequest[] = await response.json();
 
-      if (requests.length > 0) {
-        setRetirementRequest(requests[0]);
-        setIsCurrentSessionSaved(false);
+        if (requests.length > 0) {
+          setRetirementRequest(requests[0]);
+        }
       }
+
+      setIsCurrentSessionSaved(false);
     } catch (error) {
       console.error("Fetch retirement request error:", error);
     }
@@ -409,6 +460,58 @@ export default function RetirementPage() {
     }
   };
 
+  const handleChangeStatus = async (newStatus: string) => {
+    if (!retirementRequest?.id) {
+      setSaveError("Please open a retirement request before changing status.");
+      return;
+    }
+
+    const statusLabel =
+      newStatus === "INACTIVE"
+        ? "Inactive"
+        : newStatus === "INCOMPLETE"
+        ? "Incomplete"
+        : newStatus === "NEW"
+        ? "New"
+        : newStatus === "SUBMITTED_FOR_APPROVAL"
+        ? "Submitted for Approval"
+        : newStatus;
+
+    const confirmed = window.confirm(
+      `Change retirement request status to ${statusLabel}? This action may update the member's profile status.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/status`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        setSaveError(errorData.message || "Failed to change retirement request status.");
+        return;
+      }
+
+      const updatedRequest: RetirementRequest = await response.json();
+
+      setRetirementRequest(updatedRequest);
+      setSaveError("");
+      await fetchMember();
+    } catch (error) {
+      console.error("Change status error:", error);
+      setSaveError("Failed to change retirement request status.");
+    }
+  };
+
   // Approves or rejects a submitted retirement request.
   const handleApprovalAction = async (
     action: "approve" | "reject",
@@ -561,6 +664,35 @@ export default function RetirementPage() {
               )}
 
               {/*  */}
+              {showViewModeStatusActions && (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={selectedViewModeStatus}
+                    onValueChange={async (value) => {
+                      setSelectedViewModeStatus(value);
+                      if (value === "INCOMPLETE") {
+                        setOpenModal(true);
+                        setSelectedViewModeStatus("");
+                      } else {
+                        await handleChangeStatus(value);
+                        setSelectedViewModeStatus("");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-52">
+                      <SelectValue placeholder="Change status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {viewModeStatusActions.map((action) => (
+                        <SelectItem key={action.status} value={action.status}>
+                          {action.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {showDisabledRequestActions && (
                 <>
                   <Button

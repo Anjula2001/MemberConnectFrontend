@@ -519,9 +519,13 @@ export default function TerminationPage() {
       APPROVED: { color: "bg-green-100 text-green-800", label: "APPROVED" },
       REJECTED: { color: "bg-red-100 text-red-800", label: "REJECTED" },
       INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: "INCOMPLETE" },
+      INACTIVE: { color: "bg-yellow-100 text-yellow-800", label: "INACTIVE" },
     };
 
-    const { color, label } = config[status];
+    const { color, label } = config[status] ?? {
+      color: "bg-gray-100 text-gray-800",
+      label: status || "UNKNOWN",
+    };
     return (
       <Badge variant="secondary" className={`${color} hover:${color}`}>
         {label}

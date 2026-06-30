@@ -27,6 +27,7 @@ export type Grade5InitialData = {
   districtCutOffMark?: number | string | null;
   marksObtained?: number;
   examinationNumber?: string;
+  hasDeviation?: boolean;
 };
 
 export type Grade5SavedRequest = Grade5InitialData & {
@@ -34,6 +35,7 @@ export type Grade5SavedRequest = Grade5InitialData & {
   requestNo?: string;
   status?: string;
   incompleteReason?: string;
+  hasDeviation?: boolean;
 };
 
 // For Validate Form
@@ -350,8 +352,6 @@ useEffect(() => {
       }
 
       const savedData = await res.json();
-      alert(isUpdate ? "Form updated successfully" : "Form saved successfully");
-
       return savedData;
       } catch (error: any) {
       console.error("Save error:", error);

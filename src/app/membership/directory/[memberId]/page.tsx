@@ -31,8 +31,10 @@ const actionGroups = {
 		"Change Remittance",
 		"Change Nominee",
 		"Member Transfer",
-		"Grade 5 Scholarship",
-		"University Scholarship",
+	],
+	scholarshipRequests: [
+		"Grade 5 Scholarships",
+		"University Scholarships",
 	],
 	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death"],
 };
@@ -75,6 +77,8 @@ export default function MemberProfilePage({
 	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
 	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
 	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	const isRetirementAvailable = profile?.status === "ACTIVE";
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -161,7 +165,9 @@ export default function MemberProfilePage({
 			"Change Nominee": `/membership/directory/change-nominee${memberIdQuery}`,
 			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
 			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
+			"Grade 5 Scholarships": `/membership/directory/grade5-scholarship${memberIdQuery}`,
 			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"University Scholarships": `/membership/directory/university-scholarship${memberIdQuery}`,
 			"Request Termination": `/membership/directory/request-termination${memberIdQuery}`,
 			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
 			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
@@ -245,6 +251,27 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2">
+									<details className="group">
+										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602] [&::-webkit-details-marker]:hidden">
+											<span>Scholarship</span>
+											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+										</summary>
+										<div className="mt-1 space-y-1 pl-3">
+											{actionGroups.scholarshipRequests.map((item) => (
+												<button
+													key={item}
+													type="button"
+													onClick={() => handleActionClick(item)}
+													className="block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+												>
+													{item}
+												</button>
+											))}
+										</div>
+									</details>
+								</div>
+
+								<div className="border-b border-neutral-300 px-5 py-2">
 									<button
 										type="button"
 										onClick={() => handleActionClick("Request Termination")}
@@ -255,16 +282,27 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="px-5 py-2 space-y-1">
-									{actionGroups.secondary.map((item) => (
-										<button
-											key={item}
-											onClick={() => handleActionClick(item)}
-											type="button"
-											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-										>
-											{item}
-										</button>
-									))}
+									{actionGroups.secondary.map((item) => {
+										const isRetirementItem = item === "Retirement";
+										const disabled = isRetirementItem && !isRetirementAvailable;
+
+										return (
+											<button
+												key={item}
+												onClick={() => {
+													if (!disabled) handleActionClick(item);
+												}}
+												type="button"
+												disabled={disabled}
+												className={`block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg transition-colors ${disabled
+													? "cursor-not-allowed text-neutral-400"
+													: "text-neutral-700 hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+												}`}
+											>
+												{item}
+											</button>
+										);
+									})}
 								</div>
 							</div>
 						</details>
