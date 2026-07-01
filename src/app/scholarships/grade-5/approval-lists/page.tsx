@@ -1,0 +1,721 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Button } from "../../../../components/ui/button";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
+import { Printer, Trash2, FileText, Search, ArrowLeft } from "lucide-react";
+
+const API_BASE_URL = "http://localhost:8080";
+
+interface ApprovalList {
+  id: number;
+  listId: string;
+  boardMeetingId: number;
+  boardMeetingDate: string;
+  actualMeetingDate?: string;
+  status: string;
+  type: string;
+  createdAt: string;
+  processedAt?: string;
+  processedBy?: string;
+  scannedReportPath?: string;
+  decision?: string;
+  boardRemarks?: string;
+  requestNos: string[];
+}
+
+interface ScholarshipRequest {
+  id: number;
+  requestNo: string;
+  memberId: string;
+  studentName: string;
+  marksObtained: number;
+  disbursementOption: string;
+  status: string;
+  incompleteReason?: string;
+}
+
+interface BoardMeeting {
+  id: number;
+  boardMeetingId: string;
+  scheduledDate: string;
+}
+
+export default function Grade5ApprovalListsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialListId = searchParams.get("listId") || "";
+
+  // Active list type tab (NORMAL vs DEVIATION)
+  const [activeTypeTab, setActiveTypeTab] = useState<"NORMAL" | "DEVIATION">("NORMAL");
+
+  // Date filters
+  const [filterType, setFilterType] = useState<"ALL" | "PERIOD">("ALL");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const [lists, setLists] = useState<ApprovalList[]>([]);
+  const [selectedListId, setSelectedListId] = useState<string>(initialListId);
+  const [selectedList, setSelectedList] = useState<ApprovalList | null>(null);
+
+  const [requests, setRequests] = useState<ScholarshipRequest[]>([]);
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeeting[]>([]);
+
+  // Processing state
+  const [decisions, setDecisions] = useState<Record<string, { status: "APPROVED" | "REJECTED"; rejectReason: string }>>({});
+
+  // Modal states
+  const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
+  const [actualMeetingDate, setActualMeetingDate] = useState("");
+  const [boardRemarks, setBoardRemarks] = useState("");
+  const [scannedFile, setScannedFile] = useState<File | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+
+  // Fetch created board meetings
+  const fetchBoardMeetings = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/board-meetings/getAllBoardMeetings`);
+      if (res.ok) {
+        const data = await res.json();
+        setBoardMeetings(data);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleTabChange = (type: "NORMAL" | "DEVIATION") => {
+    setActiveTypeTab(type);
+    setSelectedListId("");
+    setSelectedList(null);
+    setRequests([]);
+  };
+
+  // Fetch approval lists
+  const fetchApprovalLists = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/all`);
+      if (res.ok) {
+        let data: ApprovalList[] = await res.json();
+
+        // Filter by date period if selected
+        if (filterType === "PERIOD" && fromDate && toDate) {
+          const from = new Date(fromDate);
+          const to = new Date(toDate);
+          data = data.filter((item) => {
+            const listDate = new Date(item.boardMeetingDate);
+            return listDate >= from && listDate <= to;
+          });
+        }
+
+        setLists(data);
+
+        // Auto-select list from URL query parameter
+        if (initialListId) {
+          const found = data.find((l) => l.listId === initialListId);
+          if (found) {
+            setSelectedList(found);
+            setActiveTypeTab(found.type as "NORMAL" | "DEVIATION");
+            fetchRequestsForList(initialListId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch requests for a selected list
+  const fetchRequestsForList = async (listId: string) => {
+    try {
+      setRequestsLoading(true);
+      const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/${listId}/requests`);
+      if (res.ok) {
+        const data: ScholarshipRequest[] = await res.json();
+        setRequests(data);
+
+        // Initialize default decisions to APPROVED
+        const initialDecisions: Record<string, { status: "APPROVED" | "REJECTED"; rejectReason: string }> = {};
+        data.forEach((r) => {
+          if (r.status === "APPROVED" || r.status === "REJECTED") {
+            initialDecisions[r.requestNo] = {
+              status: r.status as "APPROVED" | "REJECTED",
+              rejectReason: r.incompleteReason || "",
+            };
+          } else {
+            initialDecisions[r.requestNo] = {
+              status: "APPROVED",
+              rejectReason: "",
+            };
+          }
+        });
+        setDecisions(initialDecisions);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBoardMeetings();
+    fetchApprovalLists();
+  }, []);
+
+  const handleSelectRow = (list: ApprovalList) => {
+    setSelectedListId(list.listId);
+    setSelectedList(list);
+    setRequests([]);
+  };
+
+  const handleRetrieveRequests = () => {
+    if (selectedListId) {
+      fetchRequestsForList(selectedListId);
+    }
+  };
+
+  const handleDecisionChange = (requestNo: string, val: "APPROVED" | "REJECTED") => {
+    setDecisions((prev) => ({
+      ...prev,
+      [requestNo]: { ...prev[requestNo], status: val },
+    }));
+  };
+
+  const handleRejectReasonChange = (requestNo: string, reason: string) => {
+    setDecisions((prev) => ({
+      ...prev,
+      [requestNo]: { ...prev[requestNo], rejectReason: reason },
+    }));
+  };
+
+  // Delete approval list
+  const handleDeleteList = async () => {
+    if (!selectedListId) return;
+    const confirm = window.confirm("Do you want to delete the selected Grade 5 Scholarship Approval List?");
+    if (!confirm) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/${selectedListId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        alert("Board approval list deleted successfully");
+        setSelectedListId("");
+        setSelectedList(null);
+        setRequests([]);
+        fetchApprovalLists();
+      } else {
+        alert("Failed to delete list");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  // Open processing dialog
+  const handleOpenProcessModal = () => {
+    // Validate that all rejected requests have a reason entered
+    const invalid = Object.entries(decisions).some(
+      ([_, dec]) => dec.status === "REJECTED" && !dec.rejectReason.trim()
+    );
+    if (invalid) {
+      alert("Rejection reason is mandatory for all rejected requests.");
+      return;
+    }
+
+    // Set actual date default to board meeting date
+    if (selectedList) {
+      setActualMeetingDate(selectedList.boardMeetingDate);
+    }
+    setIsProcessModalOpen(true);
+  };
+
+  // Submit list processing
+  const handleConfirmProcess = async () => {
+    if (!selectedListId) return;
+
+    // Map request details
+    const requestDetails = Object.entries(decisions).map(([reqNo, dec]) => ({
+      requestNo: reqNo,
+      status: dec.status,
+      rejectReason: dec.rejectReason,
+    }));
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/${selectedListId}/process`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actualMeetingDate,
+          boardRemarks,
+          scannedReportPath: scannedFile ? scannedFile.name : "",
+          requestDetails,
+        }),
+      });
+
+      if (res.ok) {
+        alert("Approval list processed successfully");
+        setIsProcessModalOpen(false);
+        fetchApprovalLists();
+        fetchRequestsForList(selectedListId);
+      } else {
+        alert("Failed to process approval list");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  // Print function
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Calculate summary counts
+  const totalCount = requests.length;
+  const approvedCount = Object.values(decisions).filter((d) => d.status === "APPROVED").length;
+  const rejectedCount = Object.values(decisions).filter((d) => d.status === "REJECTED").length;
+
+  // Filter lists by activeTypeTab (NORMAL vs DEVIATION)
+  const filteredLists = lists.filter((list) => list.type === activeTypeTab);
+
+  return (
+    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      {/* Title */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => router.push("/scholarships/grade-5")}
+          className="text-[#953002] hover:text-[#7a2700] transition-colors"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="h-7 w-7" />
+        </button>
+        <h1 className="text-3xl font-bold text-[#953002]">Grade 5 Scholarship Approval Lists</h1>
+      </div>
+
+      {/* Tabs */}
+      <div className="inline-flex w-fit rounded-md border bg-muted p-1">
+        <Button
+          type="button"
+          variant={activeTypeTab === "NORMAL" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTypeTab === "NORMAL"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-transparent"
+            }`}
+          onClick={() => handleTabChange("NORMAL")}
+        >
+          Normal Board Approval
+        </Button>
+        <Button
+          type="button"
+          variant={activeTypeTab === "DEVIATION" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTypeTab === "DEVIATION"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-transparent"
+            }`}
+          onClick={() => handleTabChange("DEVIATION")}
+        >
+          Deviation Board Approval
+        </Button>
+      </div>
+
+      {/* Search Approval Lists Card */}
+      <Card className="rounded-xl py-0 shadow-sm">
+        <CardHeader className="px-5 pt-5 pb-3">
+          <CardTitle className="text-lg font-bold text-[#953002]">
+            Search Approval Lists
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5">
+          <div className="flex w-full flex-col gap-1 md:max-w-md">
+            <label className="text-xs font-medium text-gray-600 uppercase tracking-wider">Date Filter</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as "ALL" | "PERIOD")}
+                className="border rounded-md px-3 py-2 flex-1 text-sm bg-white h-9"
+              >
+                <option value="ALL">All Dates</option>
+                <option value="PERIOD">Date Period</option>
+              </select>
+              <Button
+                type="button"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] h-9"
+                onClick={fetchApprovalLists}
+              >
+                <Search size={14} className="mr-1" />
+                Retrieve
+              </Button>
+            </div>
+          </div>
+
+          {filterType === "PERIOD" && (
+            <div className="grid grid-cols-2 gap-4 mt-3 max-w-md">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Split screen content layout */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[350px_1fr]">
+
+        {/* Left Panel: Approval Lists Card */}
+        <Card className="rounded-xl py-0 shadow-sm">
+          <CardHeader className="px-5 pt-5 pb-3">
+            <CardTitle className="text-lg font-bold text-[#953002]">Approval Lists</CardTitle>
+            <p className="text-xs text-muted-foreground">Select a list to view details</p>
+          </CardHeader>
+          <CardContent className="px-0 pb-4">
+            <div className="border-y text-sm">
+              <div className="grid grid-cols-[1fr_auto] px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <span>List ID</span>
+                <span>Status</span>
+              </div>
+
+              {loading ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  Loading lists...
+                </div>
+              ) : filteredLists.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No approval lists found.
+                </div>
+              ) : (
+                filteredLists.map((item) => (
+                  <button
+                    key={item.listId}
+                    type="button"
+                    onClick={() => handleSelectRow(item)}
+                    className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${selectedListId === item.listId ? "bg-[#d9d9d9]" : ""
+                      }`}
+                  >
+                    <div className="leading-tight">
+                      <p className="text-sm font-medium text-gray-800">{item.listId}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.boardMeetingDate}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.status === "PROCESSED"
+                        ? "bg-green-100 text-green-700 border border-green-200"
+                        : "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                      }`}>
+                      {item.status}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="px-3 pt-3">
+              <Button
+                type="button"
+                className="h-9 w-full bg-[#953002] text-white hover:bg-[#7a2700]"
+                disabled={!selectedListId || requestsLoading}
+                onClick={handleRetrieveRequests}
+              >
+                {requestsLoading ? "Retrieving..." : "Retrieve Applications"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Right Panel: Applications Details Card */}
+        <Card className="rounded-xl py-0 shadow-sm">
+          <CardHeader className="px-5 pt-5 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-bold text-[#953002]">Applications</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedList && requests.length > 0
+                    ? `Showing ${requests.length} applications for List ${selectedListId}`
+                    : "Click 'Retrieve Applications' to view data"}
+                </p>
+              </div>
+
+              {/* Actions at top right */}
+              {selectedList && requests.length > 0 && (
+                <div className="flex gap-2 print:hidden">
+                  {selectedList.status === "CREATED" && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={handleDeleteList}
+                        className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-3 text-xs"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete List
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handlePrint}
+                        className="border-[#953002]/20 text-[#953002] hover:bg-[#953002]/5 h-8 px-3 text-xs"
+                      >
+                        <Printer className="h-3.5 w-3.5 mr-1" />
+                        Print List
+                      </Button>
+                      <Button
+                        onClick={handleOpenProcessModal}
+                        className="bg-[#953002] text-white hover:bg-[#7a2700] h-8 px-3 text-xs"
+                      >
+                        Proceed
+                      </Button>
+                    </>
+                  )}
+                  {selectedList.status === "PROCESSED" && (
+                    <Button
+                      variant="outline"
+                      onClick={handlePrint}
+                      className="border-[#953002]/20 text-[#953002] hover:bg-[#953002]/5 h-8 px-3 text-xs"
+                    >
+                      <Printer className="h-3.5 w-3.5 mr-1" />
+                      Print List
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent className="px-5 pb-5">
+            {!selectedListId || requests.length === 0 ? (
+              <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground p-8">
+                <FileText size={36} className="text-gray-300" />
+                <p className="text-sm font-medium text-gray-500">Select a list and click Retrieve Applications</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+
+                {/* Processed Metadata Log if PROCESSED */}
+                {selectedList.status === "PROCESSED" && (
+                  <div className="text-xs text-gray-600 bg-green-50 border border-green-100 rounded-lg p-3 grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-gray-400 font-medium">Processed By</p>
+                      <p className="font-semibold text-gray-700">{selectedList.processedBy}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 font-medium">Processed At</p>
+                      <p className="font-semibold text-gray-700">{selectedList.processedAt?.replace("T", " ")}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 font-medium">Board Remarks</p>
+                      <p className="font-semibold text-gray-700 truncate" title={selectedList.boardRemarks}>{selectedList.boardRemarks || "-"}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Applications Table */}
+                <div id="printable-section" className="overflow-x-auto border rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Request No</th>
+                        <th className="px-4 py-3 text-left">Student Name</th>
+                        <th className="px-4 py-3 text-left">Member ID</th>
+                        <th className="px-4 py-3 text-left">Marks Obtained</th>
+                        <th className="px-4 py-3 text-left">Disbursement</th>
+                        <th className="px-4 py-3 text-left w-32">Decision</th>
+                        <th className="px-4 py-3 text-left">Rejection Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {requestsLoading ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                            Retrieving requests...
+                          </td>
+                        </tr>
+                      ) : (
+                        requests.map((r) => {
+                          const rowDecision = decisions[r.requestNo] || { status: "APPROVED", rejectReason: "" };
+                          const isProcessed = selectedList.status === "PROCESSED";
+
+                          return (
+                            <tr key={r.id} className="border-t hover:bg-gray-50/50 transition-colors">
+                              <td className="px-4 py-2.5 font-medium">
+                                <button
+                                  onClick={() =>
+                                    router.push(
+                                      `/membership/directory/grade5-scholarship?memberId=${r.memberId}&requestId=${r.id}&mode=view`
+                                    )
+                                  }
+                                  className="text-blue-600 hover:underline font-semibold text-left"
+                                  type="button"
+                                >
+                                  {r.requestNo}
+                                </button>
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-700">{r.studentName}</td>
+                              <td className="px-4 py-2.5 text-gray-500">{r.memberId}</td>
+                              <td className="px-4 py-2.5 text-center font-medium text-gray-800">{r.marksObtained}</td>
+                              <td className="px-4 py-2.5">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-neutral-100 text-neutral-800 border">
+                                  {r.disbursementOption?.replace(/_/g, " ")}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  disabled={isProcessed}
+                                  value={rowDecision.status}
+                                  onChange={(e) =>
+                                    handleDecisionChange(r.requestNo, e.target.value as "APPROVED" | "REJECTED")
+                                  }
+                                  className="border rounded px-2 py-1 w-full text-xs bg-white disabled:bg-gray-100 disabled:text-gray-700 font-medium"
+                                >
+                                  <option value="APPROVED">Approve</option>
+                                  <option value="REJECTED">Reject</option>
+                                </select>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                {rowDecision.status === "REJECTED" ? (
+                                  <input
+                                    type="text"
+                                    disabled={isProcessed}
+                                    placeholder="Enter reason..."
+                                    value={rowDecision.rejectReason}
+                                    onChange={(e) => handleRejectReasonChange(r.requestNo, e.target.value)}
+                                    className="border rounded px-2 py-1 w-full text-xs bg-white disabled:bg-gray-100 disabled:text-gray-700 border-red-300"
+                                  />
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+      </div>  {/* Confirmation Process Modal */}
+      {isProcessModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002] border-b pb-2">
+              Approve / Reject Grade 5 Scholarship Requests
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-gray-500">Board Meeting Date</p>
+                <p className="font-semibold text-gray-800">{selectedList?.boardMeetingDate}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">
+                  Actual Board Meeting Date
+                </label>
+                <select
+                  value={actualMeetingDate}
+                  onChange={(e) => setActualMeetingDate(e.target.value)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm w-full bg-white font-semibold"
+                >
+                  {boardMeetings.map((bm) => (
+                    <option key={bm.id} value={bm.scheduledDate}>
+                      {bm.scheduledDate}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Document Scan Upload */}
+            <div className="border border-dashed border-gray-300 rounded p-4 text-center">
+              <p className="text-xs text-gray-500 mb-2 font-medium">
+                Upload Scanned Report (Grade 5 Scholarship Report)
+              </p>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setScannedFile(e.target.files ? e.target.files[0] : null)}
+                className="text-xs text-gray-600 block mx-auto"
+              />
+              {scannedFile && (
+                <p className="text-xs text-green-600 mt-2 font-semibold">
+                  Selected: {scannedFile.name}
+                </p>
+              )}
+            </div>
+
+            {/* Decision Summary */}
+            <div className="bg-gray-50 rounded p-4 text-sm space-y-1">
+              <h4 className="font-semibold text-gray-700 mb-2">Summary</h4>
+              <p className="flex justify-between">
+                <span>Total Requests:</span>
+                <span className="font-bold">{totalCount}</span>
+              </p>
+              <p className="flex justify-between text-green-700">
+                <span>Approved Count:</span>
+                <span className="font-bold">{approvedCount}</span>
+              </p>
+              <p className="flex justify-between text-red-600">
+                <span>Rejected Count:</span>
+                <span className="font-bold">{rejectedCount}</span>
+              </p>
+            </div>
+
+            {/* Remarks comment field */}
+            <div>
+              <label className="block text-sm text-gray-600 font-medium mb-1">
+                Board Remarks / Comments
+              </label>
+              <textarea
+                placeholder="Enter remarks..."
+                value={boardRemarks}
+                onChange={(e) => setBoardRemarks(e.target.value)}
+                className="w-full border rounded p-2 text-sm"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 border-t pt-3">
+              <Button
+                onClick={() => setIsProcessModalOpen(false)}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmProcess}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                Process
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

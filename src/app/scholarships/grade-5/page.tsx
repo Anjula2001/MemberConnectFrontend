@@ -247,10 +247,40 @@ export default function Grade5ScholarshipRequestsListPage() {
 
   const [yearOptions, setYearOptions] = useState<MultiSelectOption[]>([]);
 
+  // Board list creation states
+  const [selectedRequestNos, setSelectedRequestNos] = useState<string[]>([]);
+  const [boardMeetings, setBoardMeetings] = useState<any[]>([]);
+  const [isBoardModalOpen, setIsBoardModalOpen] = useState(false);
+  const [selectedBoardMeetingId, setSelectedBoardMeetingId] = useState<string>("");
+  const [approvalListType, setApprovalListType] = useState<"NORMAL" | "DEVIATION">("NORMAL");
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [createdListId, setCreatedListId] = useState("");
+  const [createdCount, setCreatedCount] = useState(0);
+
   const today = new Date().toISOString().split("T")[0];
 
   const userHasMultipleLocations = true;
   const loggedUserCanEdit = true;
+
+  // Retrieve board meetings
+  const fetchBoardMeetings = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/board-meetings/getAllBoardMeetings`);
+      if (res.ok) {
+        const data = await res.json();
+        setBoardMeetings(data);
+        if (data.length > 0) {
+          setSelectedBoardMeetingId(String(data[0].id));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load board meetings", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchBoardMeetings();
+  }, []);
 
   useEffect(() => {
     const fetchExamYears = async () => {
@@ -349,6 +379,15 @@ export default function Grade5ScholarshipRequestsListPage() {
     fetchRequests();
   };
 
+  const isSubmitted = (status: string) =>
+    status === "SUBMITTED_FOR_NORMAL_APPROVAL" ||
+    status === "SUBMITTED_FOR_DEVIATION_APPROVAL" ||
+    status === "ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST" ||
+    status === "ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST" ||
+    status === "APPROVED" ||
+    status === "REJECTED";
+
+
   const handleView = (memberId: string, requestId: number) => {
     window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
       memberId
@@ -361,16 +400,93 @@ export default function Grade5ScholarshipRequestsListPage() {
     )}&requestId=${encodeURIComponent(String(requestId))}&mode=edit`;
   };
 
-  const isSubmitted = (status: string) =>
-    status === "SUBMITTED_FOR_NORMAL_APPROVAL" ||
-    status === "SUBMITTED_FOR_DEVIATION_APPROVAL" ||
-    status === "ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST" ||
-    status === "ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST" ||
-    status === "APPROVED" ||
-    status === "REJECTED";
+  const isSelectable = (row: Grade5RequestRow) =>
+    row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" ||
+    row.status === "SUBMITTED_FOR_DEVIATION_APPROVAL" ||
+    row.status === "REJECTED";
+
+  const selectableRequests = requests.filter(isSelectable);
+  const allSelectableSelected = selectableRequests.length > 0 && selectableRequests.every((r) => selectedRequestNos.includes(r.requestNo));
+
+  const handleSelectAllToggle = () => {
+    if (allSelectableSelected) {
+      setSelectedRequestNos((prev) => prev.filter((no) => !selectableRequests.some((r) => r.requestNo === no)));
+    } else {
+      const nosToSelect = selectableRequests.map((r) => r.requestNo);
+      setSelectedRequestNos((prev) => Array.from(new Set([...prev, ...nosToSelect])));
+    }
+  };
+
+  const handleSelectRowToggle = (requestNo: string) => {
+    setSelectedRequestNos((prev) =>
+      prev.includes(requestNo) ? prev.filter((no) => no !== requestNo) : [...prev, requestNo]
+    );
+  };
+
+  const selectedRows = requests.filter((r) => selectedRequestNos.includes(r.requestNo));
+
+  // Eligibility to show Normal list button
+  // All selected rows must be SUBMITTED_FOR_NORMAL_APPROVAL (or REJECTED with no deviation)
+  const canCreateNormalList =
+    selectedRows.length > 0 &&
+    selectedRows.every(
+      (r) => r.status === "SUBMITTED_FOR_NORMAL_APPROVAL" || (!r.hasDeviation && r.status === "REJECTED")
+    );
+
+  // Eligibility to show Deviation list button
+  // All selected rows must be SUBMITTED_FOR_DEVIATION_APPROVAL (or REJECTED with deviation)
+  const canCreateDeviationList =
+    selectedRows.length > 0 &&
+    selectedRows.every(
+      (r) => r.status === "SUBMITTED_FOR_DEVIATION_APPROVAL" || (r.hasDeviation && r.status === "REJECTED")
+    );
+
+  const handleOpenBoardModal = (type: "NORMAL" | "DEVIATION") => {
+    setApprovalListType(type);
+    setIsBoardModalOpen(true);
+  };
+
+  const handleSaveApprovalList = async () => {
+    if (!selectedBoardMeetingId) {
+      alert("Please select a board meeting");
+      return;
+    }
+
+    try {
+      const reqNos = selectedRows
+        .filter((r) => (approvalListType === "DEVIATION" ? r.hasDeviation : !r.hasDeviation))
+        .map((r) => r.requestNo);
+
+      const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          boardMeetingId: Number(selectedBoardMeetingId),
+          type: approvalListType,
+          requestNos: reqNos,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.message || "Failed to create approval list");
+        return;
+      }
+
+      const createdList = await res.json();
+      setCreatedListId(createdList.listId);
+      setCreatedCount(reqNos.length);
+      setIsBoardModalOpen(false);
+      setSelectedRequestNos([]);
+      setIsConfirmModalOpen(true);
+      fetchRequests();
+    } catch (error) {
+      console.error(error);
+      alert("Error creating board approval list");
+    }
+  };
 
   return (
-    
       <div className="max-w-7xl mx-auto px-10 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-[#953002]">
@@ -378,23 +494,31 @@ export default function Grade5ScholarshipRequestsListPage() {
           </h1>
 
           <div className="flex gap-3">
-            {/* Create Approval List */}
-            <Button
-              className="bg-[#C49A7C] text-white hover:bg-[#B0896A] px-5"
-              onClick={() => {
-                console.log("Create Approval List");
-              }}
-            >
-              Create Approval List
-            </Button>
+            {/* Create Normal List */}
+            {canCreateNormalList && (
+              <Button
+                className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+                onClick={() => handleOpenBoardModal("NORMAL")}
+              >
+                Create Grade 5 Scholarship Normal Approval List
+              </Button>
+            )}
+
+            {/* Create Deviation List */}
+            {canCreateDeviationList && (
+              <Button
+                className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+                onClick={() => handleOpenBoardModal("DEVIATION")}
+              >
+                Create Grade 5 Scholarship Deviation Approval List
+              </Button>
+            )}
 
             {/* View Approval Lists */}
             <Button
-              variant="outline"
-              className="border-[#953002] text-[#953002] hover:bg-[#953002] hover:text-white px-5"
+              className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
               onClick={() => {
-                // navigate to approval list page
-                window.location.href = "/membership/scholarships/approval-lists";
+                window.location.href = "/scholarships/grade-5/approval-lists";
               }}
             >
               View Approval Lists
@@ -552,6 +676,14 @@ export default function Grade5ScholarshipRequestsListPage() {
           <table className="w-full table-fixed text-sm">
             <thead className="bg-gray-100 text-gray-700">
               <tr>
+                <th className="px-4 py-3 text-left w-12">
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    onChange={handleSelectAllToggle}
+                    className="rounded text-[#953002]"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left">Request ID</th>
                 <th className="px-4 py-3 text-left">Requested Date</th>
                 <th className="px-4 py-3 text-left">Member ID</th>
@@ -587,9 +719,20 @@ export default function Grade5ScholarshipRequestsListPage() {
               ) : (
                 requests.map((row) => {
                   const submitted = isSubmitted(row.status);
+                  const selectable = isSelectable(row);
 
                   return (
                     <tr key={row.id} className="border-t">
+                      <td className="px-4 py-3">
+                        {selectable && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRequestNos.includes(row.requestNo)}
+                            onChange={() => handleSelectRowToggle(row.requestNo)}
+                            className="rounded text-[#953002]"
+                          />
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-medium">
                         <button
                           onClick={() => handleView(row.memberId, row.id)}
@@ -645,7 +788,7 @@ export default function Grade5ScholarshipRequestsListPage() {
 
                       <td className="px-4 py-3">
                         <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
-                          {row.status?.replaceAll("_", " ") || "-"}
+                          {row.status?.replace(/_/g, " ") || "-"}
                         </span>
                       </td>
 
@@ -670,7 +813,87 @@ export default function Grade5ScholarshipRequestsListPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Board Meeting Selection Modal */}
+        {isBoardModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+              <h3 className="text-lg font-bold text-[#953002] mb-4">
+                Select Board Meeting Record
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Choose the Board Meeting Record to attach the selected requests to.
+              </p>
+              
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Board Meeting Date
+                </label>
+                <select
+                  value={selectedBoardMeetingId}
+                  onChange={(e) => setSelectedBoardMeetingId(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                >
+                  {boardMeetings.map((bm) => (
+                    <option key={bm.id} value={bm.id}>
+                      Board Meeting - {bm.scheduledDate} ({bm.boardMeetingId})
+                    </option>
+                  ))}
+                  {boardMeetings.length === 0 && (
+                    <option value="">No board meetings available</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setIsBoardModalOpen(false)}
+                  className="bg-white text-black hover:bg-gray-100"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveApprovalList}
+                  disabled={!selectedBoardMeetingId}
+                  className="bg-[#953002] text-white hover:bg-[#7d2802]"
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* List Created Confirmation Dialog */}
+        {isConfirmModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+              <h3 className="text-lg font-bold text-[#953002] mb-3">
+                List Created Successfully
+              </h3>
+              <p className="text-sm text-gray-700 mb-6">
+                The Grade 5 Scholarship {approvalListType === "DEVIATION" ? "Deviation" : "Normal"} Approval List for {createdCount} requests has been created. Do you want to view the list?
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setIsConfirmModalOpen(false)}
+                  className="bg-white text-black hover:bg-gray-100 px-4"
+                >
+                  No
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsConfirmModalOpen(false);
+                    window.location.href = `/scholarships/grade-5/approval-lists?listId=${createdListId}`;
+                  }}
+                  className="bg-[#953002] text-white hover:bg-[#7d2802] px-4"
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-  
   );
 }

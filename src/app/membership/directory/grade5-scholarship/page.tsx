@@ -5,6 +5,7 @@ import { Button } from "../../../../components/ui/button";
 import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "../../../../components/ui/grade5schoolarship/grade5form";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Grade5Request = Grade5InitialData & {
@@ -101,6 +102,43 @@ export default function Grade5ScholarshipPage() {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
   const isRequestSubmitted = grade5Request?.status ? LOCKED_STATUSES.includes(grade5Request.status) : false;
+  const [selectedViewModeStatus, setSelectedViewModeStatus] = useState("");
+
+  // Status transitions allowed from view mode per the requirements
+  const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
+    NEW: [
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INCOMPLETE: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_NORMAL_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_DEVIATION_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    REJECTED: [
+      { status: "INACTIVE", label: "Mark Inactive" },
+      { status: "NEW", label: "Return to New" },
+    ],
+    INACTIVE: [
+      { status: "NEW", label: "Reopen" },
+    ],
+  };
+
+  const viewModeStatusActions = grade5Request?.status
+    ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
+    : [];
+
+  const showViewModeStatusDropdown =
+    !!grade5Request?.id &&
+    isViewRequestMode &&
+    !isEditMode &&
+    viewModeStatusActions.length > 0;
 
   useEffect(() => {
     let memberIdParam = searchParams.get("memberId");
@@ -485,6 +523,48 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  // Change status from view mode
+  const handleChangeStatus = async (newStatus: string) => {
+    if (!grade5Request?.requestNo) {
+      setFundError("No Grade 5 Scholarship request is loaded.");
+      return;
+    }
+
+    const statusLabel =
+      newStatus === "INACTIVE" ? "Inactive"
+      : newStatus === "NEW" ? "New"
+      : newStatus;
+
+    const confirmed = window.confirm(
+      `Change Grade 5 Scholarship request status to ${statusLabel}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/${grade5Request.requestNo}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        setFundError(err.message || "Failed to change request status.");
+        return;
+      }
+
+      const updated = await res.json();
+      setGrade5Request((prev) => prev ? { ...prev, ...updated } : updated);
+      setFundError("");
+    } catch (error) {
+      console.error("Change status error:", error);
+      setFundError("Failed to change request status.");
+    }
+  };
+
 
   const handleConfirmSubmit = async () => {
     if (!grade5Request?.id) {
@@ -695,25 +775,30 @@ export default function Grade5ScholarshipPage() {
                   </Button>
                 )}
 
-              {isViewRequestMode && grade5Request?.id && !isEditMode && (
-                <>
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
-
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#953002] text-white disabled:bg-[#953002] hover:bg-gray-100 disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Submit
-                  </Button>
-                </>
+              {/* Change Status dropdown – shown in view mode when transitions are available */}
+              {showViewModeStatusDropdown && (
+                <Select
+                  value={selectedViewModeStatus}
+                  onValueChange={async (value) => {
+                    setSelectedViewModeStatus(value);
+                    await handleChangeStatus(value);
+                    setSelectedViewModeStatus("");
+                  }}
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Change status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {viewModeStatusActions.map((action) => (
+                      <SelectItem key={action.status} value={action.status}>
+                        {action.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
+
+
 
               {(!isViewRequestMode || isEditMode) && (
                 <>
