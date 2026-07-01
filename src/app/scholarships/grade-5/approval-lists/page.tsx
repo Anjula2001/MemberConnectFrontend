@@ -512,19 +512,19 @@ export default function Grade5ApprovalListsPage() {
               <div className="space-y-4">
 
                 {/* Processed Metadata Log if PROCESSED */}
-                {selectedList.status === "PROCESSED" && (
+                {selectedList?.status === "PROCESSED" && (
                   <div className="text-xs text-gray-600 bg-green-50 border border-green-100 rounded-lg p-3 grid grid-cols-3 gap-4">
                     <div>
                       <p className="text-gray-400 font-medium">Processed By</p>
-                      <p className="font-semibold text-gray-700">{selectedList.processedBy}</p>
+                      <p className="font-semibold text-gray-700">{selectedList?.processedBy}</p>
                     </div>
                     <div>
                       <p className="text-gray-400 font-medium">Processed At</p>
-                      <p className="font-semibold text-gray-700">{selectedList.processedAt?.replace("T", " ")}</p>
+                      <p className="font-semibold text-gray-700">{selectedList?.processedAt?.replace("T", " ")}</p>
                     </div>
                     <div>
                       <p className="text-gray-400 font-medium">Board Remarks</p>
-                      <p className="font-semibold text-gray-700 truncate" title={selectedList.boardRemarks}>{selectedList.boardRemarks || "-"}</p>
+                      <p className="font-semibold text-gray-700 truncate" title={selectedList?.boardRemarks}>{selectedList?.boardRemarks || "-"}</p>
                     </div>
                   </div>
                 )}
@@ -553,7 +553,7 @@ export default function Grade5ApprovalListsPage() {
                       ) : (
                         requests.map((r) => {
                           const rowDecision = decisions[r.requestNo] || { status: "APPROVED", rejectReason: "" };
-                          const isProcessed = selectedList.status === "PROCESSED";
+                          const isProcessed = selectedList?.status === "PROCESSED";
 
                           return (
                             <tr key={r.id} className="border-t hover:bg-gray-50/50 transition-colors">

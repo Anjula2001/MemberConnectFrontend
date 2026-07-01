@@ -486,6 +486,25 @@ export default function Grade5ScholarshipRequestsListPage() {
     }
   };
 
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case "NEW":
+        return "bg-blue-100 text-blue-700 border border-blue-200";
+      case "INACTIVE":
+        return "bg-gray-100 text-gray-600 border border-gray-200";
+      case "REJECTED":
+        return "bg-red-100 text-red-700 border border-red-200";
+      case "APPROVED":
+        return "bg-green-100 text-green-700 border border-green-200";
+      case "SUBMITTED_FOR_NORMAL_APPROVAL":
+        return "bg-yellow-100 text-yellow-700 border border-yellow-200";
+      case "SUBMITTED_FOR_DEVIATION_APPROVAL":
+        return "bg-purple-100 text-purple-700 border border-purple-200";
+      default:
+        return "bg-gray-100 text-gray-600 border border-gray-200";
+    }
+  };
+
   return (
       <div className="max-w-7xl mx-auto px-10 space-y-6">
         <div className="flex items-center justify-between">
@@ -787,7 +806,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(row.status)}`}>
                           {row.status?.replace(/_/g, " ") || "-"}
                         </span>
                       </td>
