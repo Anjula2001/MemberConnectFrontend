@@ -82,7 +82,7 @@ const locationOptions = [
 const statusOptions = [
   { value: "new", label: "New" },
   { value: "incomplete", label: "Incomplete" },
-  { value: "submittedforcommitteeapproval", label: "Submitted for Committee Approval" },
+  { value: "submittedforcommitteeapproval", label: "Submitted for Approval" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
   { value: "inactive", label: "Inactive" },
@@ -114,7 +114,7 @@ function formatStatusLabel(status?: string) {
     case "INCOMPLETE":
       return "Incomplete";
     case "SUBMITTEDFORCOMMITTEEAPPROVAL":
-      return "Submitted for Committee Approval";
+      return "Submitted for Approval";
     case "APPROVED":
       return "Approved";
     case "REJECTED":
