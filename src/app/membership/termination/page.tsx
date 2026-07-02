@@ -8,7 +8,12 @@ import { Input } from "@/src/components/ui/input";
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
+import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,X,} from "lucide-react";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  createTerminationApprovalList,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
 
 interface TerminationRequest {
   id: string;
@@ -24,6 +29,7 @@ interface TerminationRequest {
   hasIndirectObligations: boolean;
   reason: string;
   status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE";
+  selectable: boolean;
 }
 
 type TerminationRequestApiRow = {
@@ -83,7 +89,24 @@ type SortOrder = "asc" | "desc";
 const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
 const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
-const DEFAULT_TERMINATION_STATUSES: StatusType[] = ["new","submitted_for_approval"];
+const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
+  "submitted_for_approval",
+  "rejected",
+  "added_to_approval_list",
+];
+const TERMINATION_STATUS_LABELS: Record<string, string> = {
+  NEW: "New",
+  SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
+  ADDED_TO_APPROVAL_LIST: "Added to Termination Approval List",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  INCOMPLETE: "Incomplete",
+  INACTIVE: "Inactive",
+};
+const SELECTABLE_TERMINATION_STATUSES: TerminationRequest["status"][] = [
+  "SUBMITTED_FOR_APPROVAL",
+  "REJECTED",
+];
 const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
 
 // Status options by request type
@@ -91,7 +114,7 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
   termination: [
     { value: "new", label: "New" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
-    { value: "added_to_approval_list", label: "Added to Approval List" },
+    { value: "added_to_approval_list", label: "Added to Termination Approval List" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "inactive", label: "Inactive" },
@@ -117,7 +140,7 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
   all: [
     { value: "new", label: "New" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
-    { value: "added_to_approval_list", label: "Added to Approval List" },
+    { value: "added_to_approval_list", label: "Added to Termination Approval List" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "incomplete", label: "Incomplete" },
@@ -353,11 +376,60 @@ export default function TerminationPage() {
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingApprovalList, setIsSavingApprovalList] = useState(false);
+  const [createdApprovalList, setCreatedApprovalList] =
+    useState<TerminationApprovalListDTO | null>(null);
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [approvalListError, setApprovalListError] = useState("");
   const showRequestTypeColumn = requestType === "all";
-  const tableColumnCount = 7 + (showRequestTypeColumn ? 1 : 0);
+  const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
+  const showApprovalListActions = requestType === "termination";
+
+  const selectableRowIds = requests
+    .filter(
+      (row) =>
+        row.sourceType === "termination" &&
+        row.selectable &&
+        SELECTABLE_TERMINATION_STATUSES.includes(row.status)
+    )
+    .map((row) => row.requestId);
+
+  const selectedTerminationCount = selectableRowIds.filter((id) =>
+    selectedRows.includes(id)
+  ).length;
+
+  const isAllSelectableSelected =
+    selectableRowIds.length > 0 &&
+    selectedTerminationCount === selectableRowIds.length;
+
+  const isSomeSelectableSelected =
+    selectedTerminationCount > 0 &&
+    selectedTerminationCount < selectableRowIds.length;
+
+  const boardMeetingOptions = boardMeetings.map((meeting) => ({
+    value: String(meeting.id ?? ""),
+    label: `${meeting.scheduledDate ?? "Unknown date"} (${meeting.boardMeetingId ?? meeting.id ?? ""})`,
+  }));
 
   // Get current status options based on request type
   const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
+
+  useEffect(() => {
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        setBoardMeetings(meetings);
+      } catch (meetingError) {
+        console.error("Failed to load board meetings:", meetingError);
+      }
+    };
+
+    loadBoardMeetings();
+  }, []);
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
@@ -423,16 +495,17 @@ export default function TerminationPage() {
           false,
         reason: row.reason ?? row.terminationReason ?? "-",
         status: row.status ?? "NEW",
+        selectable:
+          sourceType === "termination" &&
+          (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED"),
       };
     });
   };
 
-  const buildQueryParams = () => {
+  const buildQueryParams = (statuses: StatusType[] = selectedStatuses) => {
     const params = new URLSearchParams();
 
-    selectedStatuses.forEach((status) =>
-      params.append("statuses", status.toUpperCase())
-    );
+    statuses.forEach((status) => params.append("statuses", status.toUpperCase()));
 
     if (searchQuery.trim()) {
       params.append("searchKey", searchQuery.trim());
@@ -459,10 +532,11 @@ export default function TerminationPage() {
 
   const fetchRequestsFromApi = async (
     apiPath: "termination-requests" | "retirement-requests",
-    sourceType: "termination" | "retirement"
+    sourceType: "termination" | "retirement",
+    statuses: StatusType[] = selectedStatuses
   ) => {
     const response = await fetch(
-      `${API_BASE_URL}/api/${apiPath}?${buildQueryParams().toString()}`
+      `${API_BASE_URL}/api/${apiPath}?${buildQueryParams(statuses).toString()}`
     );
 
     if (!response.ok) {
@@ -490,7 +564,7 @@ export default function TerminationPage() {
     });
   };
 
-  const fetchRequests = async () => {
+  const fetchRequests = async (statuses: StatusType[] = selectedStatuses) => {
     try {
       setLoading(true);
       setError("");
@@ -519,8 +593,8 @@ export default function TerminationPage() {
 
       if (requestType === "all") {
         const [terminationRequests, retirementRequests] = await Promise.all([
-          fetchRequestsFromApi("termination-requests", "termination"),
-          fetchRequestsFromApi("retirement-requests", "retirement"),
+          fetchRequestsFromApi("termination-requests", "termination", statuses),
+          fetchRequestsFromApi("retirement-requests", "retirement", statuses),
         ]);
         retrievedRequests = sortMergedRequests([
           ...terminationRequests,
@@ -529,16 +603,19 @@ export default function TerminationPage() {
       } else if (requestType === "termination") {
         retrievedRequests = await fetchRequestsFromApi(
           "termination-requests",
-          "termination"
+          "termination",
+          statuses
         );
       } else {
         retrievedRequests = await fetchRequestsFromApi(
           "retirement-requests",
-          "retirement"
+          "retirement",
+          statuses
         );
       }
 
       setRequests(retrievedRequests);
+      setSelectedRows([]);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
       setError(
@@ -554,13 +631,19 @@ export default function TerminationPage() {
 
   const getStatusBadge = (status: TerminationRequest["status"]) => {
     const config: Record<string, { color: string; label: string }> = {
-      NEW: { color: "bg-blue-100 text-blue-800", label: "NEW" },
-      SUBMITTED_FOR_APPROVAL: { color: "bg-purple-100 text-purple-800", label: "SUBMITTED FOR APPROVAL" },
-      ADDED_TO_APPROVAL_LIST: { color: "bg-indigo-100 text-indigo-800", label: "ADDED TO APPROVAL LIST" },
-      APPROVED: { color: "bg-green-100 text-green-800", label: "APPROVED" },
-      REJECTED: { color: "bg-red-100 text-red-800", label: "REJECTED" },
-      INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: "INCOMPLETE" },
-      INACTIVE: { color: "bg-gray-100 text-gray-600", label: "INACTIVE" },
+      NEW: { color: "bg-blue-100 text-blue-800", label: TERMINATION_STATUS_LABELS.NEW },
+      SUBMITTED_FOR_APPROVAL: {
+        color: "bg-purple-100 text-purple-800",
+        label: TERMINATION_STATUS_LABELS.SUBMITTED_FOR_APPROVAL,
+      },
+      ADDED_TO_APPROVAL_LIST: {
+        color: "bg-indigo-100 text-indigo-800",
+        label: TERMINATION_STATUS_LABELS.ADDED_TO_APPROVAL_LIST,
+      },
+      APPROVED: { color: "bg-green-100 text-green-800", label: TERMINATION_STATUS_LABELS.APPROVED },
+      REJECTED: { color: "bg-red-100 text-red-800", label: TERMINATION_STATUS_LABELS.REJECTED },
+      INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: TERMINATION_STATUS_LABELS.INCOMPLETE },
+      INACTIVE: { color: "bg-gray-100 text-gray-600", label: TERMINATION_STATUS_LABELS.INACTIVE },
     };
 
     const { color, label } = config[status] ?? {
@@ -591,6 +674,112 @@ export default function TerminationPage() {
     );
   };
 
+  const handleOpenMemberRequest = (request: TerminationRequest) => {
+    if (request.sourceType !== "termination") return;
+
+    router.push(
+      `/membership/directory/termination-request?memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+    );
+  };
+
+  const toggleRow = (requestId: string) => {
+    setSelectedRows((prev) =>
+      prev.includes(requestId)
+        ? prev.filter((id) => id !== requestId)
+        : [...prev, requestId]
+    );
+  };
+
+  const toggleAllSelectableRows = (checked: boolean) => {
+    setSelectedRows((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...selectableRowIds]));
+      }
+      return prev.filter((id) => !selectableRowIds.includes(id));
+    });
+  };
+
+  const handleOpenBoardMeetingModal = () => {
+    if (selectedTerminationCount === 0) return;
+    setApprovalListError("");
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveApprovalList = async () => {
+    if (!selectedBoardMeeting) return;
+
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting?.id || !meeting.scheduledDate) {
+      setApprovalListError("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingApprovalList(true);
+      setApprovalListError("");
+
+      const createdList = await createTerminationApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        requestNos: selectedRows,
+      });
+
+      const savedRequestIds = [...selectedRows];
+      const updatedStatuses: StatusType[] = selectedStatuses.includes("added_to_approval_list")
+        ? selectedStatuses
+        : [...selectedStatuses, "added_to_approval_list"];
+
+      setCreatedApprovalList(createdList);
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+      setSelectedStatuses(updatedStatuses);
+      setSelectedRows([]);
+
+      if (requestType === "termination" || requestType === "all") {
+        await fetchRequests(updatedStatuses);
+      } else {
+        setRequests((prev) =>
+          prev.map((row) =>
+            savedRequestIds.includes(row.requestId)
+              ? { ...row, status: "ADDED_TO_APPROVAL_LIST", selectable: false }
+              : row
+          )
+        );
+      }
+    } catch (saveError) {
+      console.error("Create termination approval list error:", saveError);
+      setApprovalListError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to create termination approval list."
+      );
+    } finally {
+      setIsSavingApprovalList(false);
+    }
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+    setCreatedApprovalList(null);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    const listId = createdApprovalList?.listId;
+    router.push(
+      listId
+        ? `/membership/termination/approval-lists?listId=${encodeURIComponent(listId)}`
+        : "/membership/termination/approval-lists"
+    );
+  };
+
   const handleRetrieve = () => {
     fetchRequests();
   };
@@ -599,6 +788,25 @@ export default function TerminationPage() {
     <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
+        {showApprovalListActions && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="border-neutral-300"
+              onClick={() => router.push("/membership/termination/approval-lists")}
+            >
+              View Approval Lists
+            </Button>
+            <Button
+              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              disabled={selectedTerminationCount === 0}
+              onClick={handleOpenBoardMeetingModal}
+            >
+              Create Termination Approval List
+              {selectedTerminationCount > 0 ? ` (${selectedTerminationCount})` : ""}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -726,10 +934,24 @@ export default function TerminationPage() {
         {error && (
           <p className="border-b px-4 py-3 text-sm text-red-600">{error}</p>
         )}
+        {approvalListError && (
+          <p className="border-b px-4 py-3 text-sm text-red-600">{approvalListError}</p>
+        )}
 
         <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/50">
+              {showApprovalListActions && (
+                <TableHead className="w-12 px-4 py-3">
+                  <Checkbox
+                    checked={isAllSelectableSelected}
+                    data-state={isSomeSelectableSelected ? "indeterminate" : undefined}
+                    onCheckedChange={(checked) => toggleAllSelectableRows(checked === true)}
+                    disabled={selectableRowIds.length === 0}
+                    className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                  />
+                </TableHead>
+              )}
               <TableHead className="font-semibold px-6 py-3">Request ID</TableHead>
               {showRequestTypeColumn && (
                 <TableHead className="font-semibold px-6 py-3">Type</TableHead>
@@ -752,6 +974,17 @@ export default function TerminationPage() {
             ) : requests.length > 0 ? (
               requests.map((request) => (
                 <TableRow className="h-12" key={request.id}>
+                  {showApprovalListActions && (
+                    <TableCell className="px-4">
+                      {request.sourceType === "termination" && request.selectable ? (
+                        <Checkbox
+                          checked={selectedRows.includes(request.requestId)}
+                          onCheckedChange={() => toggleRow(request.requestId)}
+                          className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                        />
+                      ) : null}
+                    </TableCell>
+                  )}
                   <TableCell className="px-6">
                     <button
                       type="button"
@@ -765,7 +998,19 @@ export default function TerminationPage() {
                     <TableCell className="px-6 capitalize">{request.sourceType}</TableCell>
                   )}
                   <TableCell className="px-6">{request.date}</TableCell>
-                  <TableCell className="px-6">{request.memberNumber}</TableCell>
+                  <TableCell className="px-6">
+                    {request.sourceType === "termination" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMemberRequest(request)}
+                        className="font-medium text-[#8B4513] hover:underline"
+                      >
+                        {request.memberNumber}
+                      </button>
+                    ) : (
+                      request.memberNumber
+                    )}
+                  </TableCell>
                   <TableCell className="px-6">{request.member}</TableCell>
                   <TableCell className="px-6">
                     <div className="flex px-6 items-center gap-2">
@@ -812,6 +1057,109 @@ export default function TerminationPage() {
       {requests.length > 0 && (
         <div className="text-sm text-muted-foreground">
           Showing {requests.length} request(s)
+        </div>
+      )}
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-2xl font-semibold text-[#953002]">Select Board Meeting</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="mb-4 text-sm text-gray-600">
+                Select the board meeting to attach {selectedTerminationCount} termination
+                request(s).
+              </p>
+
+              <Select value={selectedBoardMeeting} onValueChange={setSelectedBoardMeeting}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select board meeting" />
+                </SelectTrigger>
+                <SelectContent>
+                  {boardMeetingOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={!selectedBoardMeeting || isSavingApprovalList}
+                  onClick={handleSaveApprovalList}
+                >
+                  {isSavingApprovalList ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-2xl font-semibold text-[#953002]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                The Termination Approval List for{" "}
+                {createdApprovalList?.requestNos?.length ?? 0} request(s) has been created. Do
+                you want to view the list?
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -152,6 +152,11 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
+
+		if (action === "Death Donation Request" && profile.status !== "ACTIVE") {
+			return;
+		}
+
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
 		const routeMap: Record<string, string> = {
@@ -244,20 +249,28 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="px-5 py-2 space-y-1">
-									{actionGroups.secondary.map((item) => (
+									{actionGroups.secondary.map((item) => {
+										const isDeathDonation = item === "Death Donation Request";
+										const isDisabled = isDeathDonation && profile.status !== "ACTIVE";
+
+										return (
 										<button
 											key={item}
 											onClick={() => handleActionClick(item)}
 											type="button"
+											disabled={isDisabled}
 											className={
 												item === "Member Termination"
 													? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
+													: isDisabled
+														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
 													: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
 											}
 										>
 											{item}
 										</button>
-									))}
+										);
+									})}
 								</div>
 							</div>
 						</details>
