@@ -7,7 +7,8 @@ export interface BoardApprovalListDTO {
   boardMeetingId?: number;
   boardMeetingDate?: string;
   actualMeetingDate?: string;
-  applicationIds: string[];
+  applicationIds?: string[];
+  nameChangeRequestIds?: number[];
   status?: string;
   createdAt?: string;
   processedAt?: string;
@@ -15,6 +16,14 @@ export interface BoardApprovalListDTO {
   decision?: string;
   rejectReason?: string;
   boardRemarks?: string;
+}
+
+export interface BoardApprovalListCreatePayload {
+  boardMeetingId: number;
+  boardMeetingDate: string;
+  applicationIds?: string[];
+  nameChangeRequestIds?: number[];
+  status?: string;
 }
 
 export interface ProcessBoardApprovalListPayload {
@@ -27,7 +36,7 @@ export interface ProcessBoardApprovalListPayload {
 
 const BASE_PATH = "/api/board-approval-lists";
 
-export async function createBoardApprovalList(payload: BoardApprovalListDTO) {
+export async function createBoardApprovalList(payload: BoardApprovalListCreatePayload) {
   const { data } = await apiClient.post<BoardApprovalListDTO>(
     `${BASE_PATH}/createBoardApprovalList`,
     payload
@@ -52,6 +61,22 @@ export async function getBoardApprovalListByListId(listId: string) {
 export async function getBoardApprovalListApplications(listId: string) {
   const { data } = await apiClient.get<MemberApplicationDTO[]>(
     `${BASE_PATH}/getApplicationsByListId/${encodeURIComponent(listId)}`
+  );
+  return data;
+}
+
+export interface NameChangeRequestDTO {
+  nameChangeRequestID?: string;
+  newTitle?: string | null;
+  newFullName?: string | null;
+  newNameAsInPayroll?: string | null;
+  newNameWithInitials?: string | null;
+  newStatus?: string | null;
+}
+
+export async function getNameChangeRequestsByListId(listId: string) {
+  const { data } = await apiClient.get<NameChangeRequestDTO[]>(
+    `${BASE_PATH}/getNameChangeRequestsByListId/${encodeURIComponent(listId)}`
   );
   return data;
 }
