@@ -113,7 +113,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
           setFormData(mapped);
           setMemberName(data.fullName ?? data.nameWithInitials ?? null);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         setLoadError("Could not load data. Check backend connection.");
       } finally {
         setLoadingRequest(false);
@@ -125,46 +125,83 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
 
   // 3. SAFE Handle Change (Prevents Crash)
   const handleFieldChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-
-    const schemaShape = (profileSchema as any).shape;
-    const fieldSchema = schemaShape ? schemaShape[field] : null;
-
-    if (fieldSchema) {
-      const result = fieldSchema.safeParse(value);
-      if (!result.success) {
-        setErrors(prev => ({ ...prev, [field]: result.error.issues[0].message }));
-      } else {
-        setErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors[field];
-          return newErrors;
-        });
-      }
-    }
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   };
 
   // 4. Submit updated request to the backend
   // Maps frontend form field names to the backend DTO and handles both create and edit flows.
+  const validateBeforeSubmit = () => {
+    const newErrors: Record<string, string> = {};
+    // If current value is missing, the new value is mandatory.
+    if (!currentData.dob && !formData.dob) newErrors.dob = 'Date of birth is required';
+    if (!currentData.nic) {
+      if (!formData.nic) newErrors.nic = 'NIC is required';
+      else if (String(formData.nic).trim().length < 10) newErrors.nic = 'NIC must be at least 10 characters';
+    }
+    if (!currentData.address && !formData.address) newErrors.address = 'Address is required';
+    if (!currentData.email) {
+      if (!formData.email) newErrors.email = 'Email is required';
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Invalid email address';
+    }
+    if (!currentData.mobile) {
+      if (!formData.mobile) newErrors.mobile = 'Mobile is required';
+      else if (!/^[0-9]{10}$/.test(String(formData.mobile))) newErrors.mobile = 'Mobile number must be 10 digits';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const formatLocalDateTime = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  };
+
   const handleSubmit = async () => {
-    const result = profileSchema.safeParse(formData);
-    if (!result.success) return;
+    if (!validateBeforeSubmit()) return;
 
     setIsSubmitting(true);
-    const payload = {
+
+    // Build payload with every new field value so the backend gets current data as new if user did not change it.
+    const payload: Record<string, unknown> = {
       newBirthDate: formData.dob,
       newNIC: formData.nic,
       newGender: formData.gender,
       newPermanentPrivateAddress: formData.address,
       newMobileNumber: formData.mobile,
       newEmailAddress: formData.email,
-      newPreferredLanguage: "English",
-      newNatureOfOccupation: "Permanent",
-      ...(isEditMode
-        ? selectedStatus ? { newStatus: selectedStatus } : {}
-        : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
-      ...(memberId ? { memberId } : {}),
+      newPreferredLanguage: formData.language,
+      newDesignation: formData.designation,
+      newNatureOfOccupation: formData.occupation,
     };
+
+    if (isEditMode) {
+      if (Object.keys(payload).length === 0) {
+        alert('No changes provided. Please update at least one field or cancel.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    // Status and memberId
+    if (isEditMode) {
+      if (selectedStatus) payload.newStatus = selectedStatus;
+    } else {
+      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
+      payload.createdDate = formatLocalDateTime(new Date());
+    }
+    if (memberId) payload.memberId = memberId;
 
     try {
       if (isEditMode) {
@@ -175,8 +212,15 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
         alert("Saved!");
       }
       router.push('/membership/profile-changes');
-    } catch (error: any) {
-      alert("Error: " + (error.response?.data?.message || "Server Error"));
+    } catch (error: unknown) {
+      // Try to extract a useful message from the error object
+      let msg: string | undefined;
+      if (typeof error === 'object' && error !== null) {
+        type ErrorResponse = { response?: { data?: { message?: string; error?: string } } };
+        const errObj = error as ErrorResponse;
+        msg = errObj.response?.data?.message || errObj.response?.data?.error;
+      }
+      alert('Error: ' + (msg || 'Server Error'));
     } finally {
       setIsSubmitting(false);
     }
@@ -234,11 +278,15 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
       )}
 
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-8 space-y-6">
-        <ComparisonRow label="DATE OF BIRTH" current={currentData.dob} value={formData.dob} isInput type="date" onChange={(v: string) => handleFieldChange("dob", v)} error={errors.dob} />
-        <ComparisonRow label="NIC NUMBER" current={currentData.nic} value={formData.nic} isInput onChange={(v: string) => handleFieldChange("nic", v)} error={errors.nic} />
-        <ComparisonRow label="MOBILE" current={currentData.mobile} value={formData.mobile} isInput onChange={(v: string) => handleFieldChange("mobile", v)} error={errors.mobile} />
-        <ComparisonRow label="ADDRESS" current={currentData.address} value={formData.address} isInput onChange={(v: string) => handleFieldChange("address", v)} error={errors.address} />
-        <ComparisonRow label="EMAIL" current={currentData.email} value={formData.email} isInput onChange={(v: string) => handleFieldChange("email", v)} error={errors.email} />
+        <ComparisonRow label="DATE OF BIRTH" current={currentData.dob} value={formData.dob} isInput type="date" onChange={(v: string) => handleFieldChange("dob", v)} error={errors.dob} required={!Boolean(currentData.dob)} />
+        <ComparisonRow label="NIC NUMBER" current={currentData.nic} value={formData.nic} isInput onChange={(v: string) => handleFieldChange("nic", v)} error={errors.nic} required={!Boolean(currentData.nic)} />
+        <ComparisonRow label="GENDER" current={currentData.gender} value={formData.gender} isInput onChange={(v: string) => handleFieldChange("gender", v)} error={errors.gender} required={!Boolean(currentData.gender)} options={["Male", "Female"]} />
+        <ComparisonRow label="PREFERRED LANGUAGE" current={currentData.language || ''} value={formData.language || ''} isInput onChange={(v: string) => handleFieldChange("language", v)} error={errors.language} required={!Boolean(currentData.language)} options={["Sinhala","Tamil","English"]} />
+        <ComparisonRow label="DESIGNATION" current={currentData.designation || ''} value={formData.designation || ''} isInput onChange={(v: string) => handleFieldChange("designation", v)} error={errors.designation} required={!Boolean(currentData.designation)} />
+        <ComparisonRow label="NATURE OF OCCUPATION" current={currentData.occupation || ''} value={formData.occupation || ''} isInput onChange={(v: string) => handleFieldChange("occupation", v)} error={errors.occupation} required={!Boolean(currentData.occupation)} options={["Permanent","Probation","Temporary","Casual"]} />
+        <ComparisonRow label="MOBILE" current={currentData.mobile} value={formData.mobile} isInput onChange={(v: string) => handleFieldChange("mobile", v)} error={errors.mobile} required={!Boolean(currentData.mobile)} />
+        <ComparisonRow label="ADDRESS" current={currentData.address} value={formData.address} isInput onChange={(v: string) => handleFieldChange("address", v)} error={errors.address} required={!Boolean(currentData.address)} />
+        <ComparisonRow label="EMAIL" current={currentData.email} value={formData.email} isInput onChange={(v: string) => handleFieldChange("email", v)} error={errors.email} required={!Boolean(currentData.email)} />
       </div>
     </div>
   );
@@ -252,26 +300,43 @@ interface ComparisonRowProps {
   isInput?: boolean;
   type?: string;
   error?: string;
+  options?: string[];
+  required?: boolean;
 }
 
 // 4. ComparisonRow Sub-component
-function ComparisonRow({ label, current, value, onChange, isInput, type = "text", error }: ComparisonRowProps) {
+function ComparisonRow({ label, current, value, onChange, isInput, type = "text", error, required = false, options }: ComparisonRowProps) {
   return (
     <div className="grid grid-cols-2 gap-12 border-b border-gray-50 pb-4">
       <div>
         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label} (CURRENT)</label>
-        <p className="text-gray-800 font-medium">{current}</p>
+        <p className="text-gray-800 font-medium">{current || <span className="text-gray-400">— no value</span>}</p>
       </div>
       <div>
         <label className={`text-[10px] font-bold uppercase tracking-wider ${error ? 'text-red-500' : 'text-blue-600'}`}>
-          {label} (NEW)
+          {label} (NEW){required && <span className="text-red-500"> *</span>}
         </label>
-        <input
-          type={type}
-          className={`w-full p-2 border rounded text-sm transition-all outline-none ${error ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:ring-1 focus:ring-blue-400'}`}
-          value={value || ""}
-          onChange={(e) => onChange?.(e.target.value)}
-        />
+        {options && options.length > 0 ? (
+          <select
+            required={required}
+            value={value || ""}
+            onChange={(e) => onChange?.(e.target.value)}
+            className={`w-full p-2 border rounded text-sm transition-all outline-none ${error ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:ring-1 focus:ring-blue-400'}`}
+          >
+            <option value="">Select</option>
+            {options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type={type}
+            required={required}
+            className={`w-full p-2 border rounded text-sm transition-all outline-none ${error ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:ring-1 focus:ring-blue-400'}`}
+            value={value || ""}
+            onChange={(e) => onChange?.(e.target.value)}
+          />
+        )}
         {error && <p className="text-[11px] text-red-600 mt-1 font-medium italic">⚠️ {error}</p>}
       </div>
     </div>

@@ -31,6 +31,8 @@ import {
   getBoardApprovalListByListId,
   deleteBoardApprovalList,
   getBoardApprovalListApplications,
+  getNameChangeRequestsByListId,
+  getNomineeChangeRequestsByListId,
   processBoardApprovalList,
   type ProcessBoardApprovalListPayload,
   type BoardApprovalListDTO,
@@ -96,6 +98,8 @@ export default function BoardApprovalsPage() {
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
   const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
+  const [selectedListNameChangeRequests, setSelectedListNameChangeRequests] = useState<any[]>([]);
+  const [selectedListNomineeChangeRequests, setSelectedListNomineeChangeRequests] = useState<any[]>([]);
   const [applicationDecisions, setApplicationDecisions] = useState<Record<number, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
@@ -374,6 +378,8 @@ export default function BoardApprovalsPage() {
       setSelectedApprovalListId("");
       setApplicationsRetrieved(false);
       setSelectedListApplications([]);
+      setSelectedListNameChangeRequests([]);
+      setSelectedListNomineeChangeRequests([]);
     } catch (error) {
       console.error("Error retrieving board approval lists:", error);
       setToastMessage("Failed to retrieve board approval lists");
@@ -390,6 +396,22 @@ export default function BoardApprovalsPage() {
       setIsRetrievingApplications(true);
       const applications = await getBoardApprovalListApplications(selectedApprovalListId);
       setSelectedListApplications(applications.map(mapApplicationToRow));
+
+      // Fetch name change requests for this list (if any)
+      try {
+        const ncrs = await getNameChangeRequestsByListId(selectedApprovalListId);
+        setSelectedListNameChangeRequests(ncrs || []);
+      } catch (err) {
+        setSelectedListNameChangeRequests([]);
+      }
+
+      // Fetch nominee change requests for this list (if any)
+      try {
+        const nmrs = await getNomineeChangeRequestsByListId(selectedApprovalListId);
+        setSelectedListNomineeChangeRequests(nmrs || []);
+      } catch (err) {
+        setSelectedListNomineeChangeRequests([]);
+      }
       
       const initialDecisions: Record<number, { decision: ApplicationDecision; rejectReason: string }> = {};
       applications.forEach(app => {
@@ -889,6 +911,48 @@ export default function BoardApprovalsPage() {
                     )}
 
                     <div className="overflow-x-auto">
+                        {selectedListNameChangeRequests.length > 0 && (
+                          <div className="mb-4">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Name Change Requests in this list</h3>
+                            <div className="space-y-2">
+                              {selectedListNameChangeRequests.map((ncr) => (
+                                <div key={ncr.nameChangeRequestID} className="flex items-center justify-between rounded border p-2">
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                      const id = ncr.nameChangeRequestID;
+                                      if (id) router.push(`/membership/name-changes/${id}`);
+                                    }}>{ncr.newFullName || `NCR-${ncr.nameChangeRequestID}`}</div>
+                                    <div className="text-xs text-muted-foreground">{ncr.newNameAsInPayroll || ncr.newNameWithInitials || ''}</div>
+                                  </div>
+                                  <div className="text-xs text-gray-500">ID: {ncr.nameChangeRequestID}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {selectedListNomineeChangeRequests.length > 0 && (
+                          <div className="mb-4">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Nominee Change Requests in this list</h3>
+                            <div className="space-y-2">
+                              {selectedListNomineeChangeRequests.map((nmr) => {
+                                const requestId = nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId;
+                                return (
+                                  <div key={requestId} className="flex items-center justify-between rounded border p-2">
+                                    <div>
+                                      <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                        if (requestId) router.push(`/membership/nommine-changes/${requestId}`);
+                                      }}>
+                                        {nmr.newnommineName || `NMR-${requestId}`}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">{nmr.newRelationship || nmr.relationship || ''}</div>
+                                    </div>
+                                    <div className="text-xs text-gray-500">ID: {requestId}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       <table className="w-full min-w-[560px] text-sm">
                         <thead>
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
