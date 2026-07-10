@@ -71,6 +71,13 @@ type MemberTransferRecord = {
   newWorkingLocationAddress?: string;
   newComputerNoInPayslip?: string;
   newSalaryPayingOffice?: string;
+
+  newDesignation?: { id?: number; name?: string };
+  newNatureOfOccupation?: { id?: number; name?: string };
+  newWorkingLocationType?: { id?: number; name?: string; usesZone?: boolean };
+  newEducationalDistrict?: { id?: number; name?: string };
+  newEducationalZone?: { id?: number; name?: string };
+  newWorkingLocation?: { id?: number; name?: string; address?: string; salaryPayingOffice?: string };
 };
 
 type OptionItem = {
@@ -389,8 +396,8 @@ export default function ChangeMemberTransferForm() {
       educationalZoneNew: String(loadedRecord.newEducationalZoneId || ""),
       workingLocationNew: String(loadedRecord.newWorkingLocationId || ""),
       workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || "",
-      computerNoNameNew: loadedRecord.newComputerNoInPayslip || "",
-      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || "",
+      computerNoNameNew: loadedRecord.newComputerNoInPayslip || loadedRecord.computerNoNameNew || "",
+      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || loadedRecord.salaryPayingOfficeNew || "",
     } as any);
 
     setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
@@ -798,6 +805,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Designation"
                 oldValue={oldValues.designation}
+                newValue={loadedRecord?.newDesignation?.name}
+                isViewMode={isViewMode}
                 register={register("designationNew")}
                 error={errors.designationNew?.message}
                 options={designationOptions}
@@ -807,6 +816,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Nature of Occupation"
                 oldValue={oldValues.natureOfOccupation}
+                newValue={loadedRecord?.newNatureOfOccupation?.name}
+                isViewMode={isViewMode}
                 register={register("natureOfOccupationNew")}
                 error={errors.natureOfOccupationNew?.message}
                 options={natureOfOccupationOptions}
@@ -816,6 +827,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Working Location Type"
                 oldValue={oldValues.workingLocationType}
+                newValue={loadedRecord?.newWorkingLocationType?.name}
+                isViewMode={isViewMode}
                 register={register("workingLocationTypeNew")}
                 error={errors.workingLocationTypeNew?.message}
                 options={workingLocationTypes}
@@ -825,6 +838,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Educational District"
                 oldValue={oldValues.educationalDistrict}
+                newValue={loadedRecord?.newEducationalDistrict?.name}
+                isViewMode={isViewMode}
                 register={register("educationalDistrictNew")}
                 error={errors.educationalDistrictNew?.message}
                 options={districts}
@@ -834,6 +849,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Educational Zone"
                 oldValue={oldValues.educationalZone}
+                newValue={loadedRecord?.newEducationalZone?.name}
+                isViewMode={isViewMode}
                 register={register("educationalZoneNew")}
                 error={errors.educationalZoneNew?.message}
                 options={isZoneEnabled ? zones : [{ id: "NA", name: "NA" }]}
@@ -843,6 +860,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Working Location"
                 oldValue={oldValues.workingLocation}
+                newValue={loadedRecord?.newWorkingLocation?.name}
+                isViewMode={isViewMode}
                 register={register("workingLocationNew")}
                 error={errors.workingLocationNew?.message}
                 options={workingLocations}
@@ -852,6 +871,8 @@ export default function ChangeMemberTransferForm() {
               <EditableInput
                 label="Working Location Address"
                 oldValue={oldValues.permanentPrivateAddress}
+                newValue={loadedRecord?.newWorkingLocationAddress}
+                isViewMode={isViewMode}
                 register={register("workingLocationAddressNew")}
                 error={errors.workingLocationAddressNew?.message}
                 value={watch("workingLocationAddressNew")}
@@ -861,6 +882,8 @@ export default function ChangeMemberTransferForm() {
               <EditableInput
                 label="Computer No"
                 oldValue={oldValues.computerNoName}
+                newValue={loadedRecord?.newComputerNoInPayslip}
+                isViewMode={isViewMode}
                 register={register("computerNoNameNew")}
                 error={errors.computerNoNameNew?.message}
                 disabled={isInputsDisabled}
@@ -869,6 +892,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Salary Paying Office"
                 oldValue={oldValues.salaryPayingOffice}
+                newValue={loadedRecord?.newSalaryPayingOffice}
+                isViewMode={isViewMode}
                 register={register("salaryPayingOfficeNew")}
                 error={errors.salaryPayingOfficeNew?.message}
                 options={(salaryOptions.length > 0 ? salaryOptions : [
@@ -907,8 +932,8 @@ export default function ChangeMemberTransferForm() {
 
                   <label
                     className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm ${selectedDocumentType
-                        ? "cursor-pointer text-gray-500 hover:bg-gray-50"
-                        : "cursor-not-allowed bg-gray-50 text-gray-400"
+                      ? "cursor-pointer text-gray-500 hover:bg-gray-50"
+                      : "cursor-not-allowed bg-gray-50 text-gray-400"
                       }`}
                   >
                     <input
@@ -1106,6 +1131,8 @@ function FieldPair({
 function EditableInput({
   label,
   oldValue,
+  newValue,
+  isViewMode,
   register,
   error,
   value,
@@ -1120,7 +1147,9 @@ function EditableInput({
 
       <div>
         <label className="mb-1 block text-sm text-gray-600">{label} (New)</label>
-        {typeof value !== "undefined" ? (
+        {isViewMode ? (
+          <Input value={formatDisplayValue(newValue) || formatDisplayValue(oldValue)} disabled />
+        ) : typeof value !== "undefined" ? (
           <Input {...register} value={value || ""} disabled={disabled} readOnly />
         ) : (
           <Input {...register} disabled={disabled} />
@@ -1134,6 +1163,8 @@ function EditableInput({
 function EditableSelect({
   label,
   oldValue,
+  newValue,
+  isViewMode,
   register,
   error,
   options = [],
@@ -1141,6 +1172,8 @@ function EditableSelect({
 }: {
   label: string;
   oldValue: string;
+  newValue?: string;
+  isViewMode?: boolean;
   register: any;
   error?: string;
   options: OptionItem[];
@@ -1163,19 +1196,23 @@ function EditableSelect({
           {label} (New)
         </label>
 
-        <select
-          id={selectId}
-          {...register}
-          disabled={disabled}
-          className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
-        >
-          <option value="">{formatDisplayValue(oldValue)}</option>
-          {options.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))}
-        </select>
+        {isViewMode ? (
+          <Input id={selectId} value={formatDisplayValue(newValue) || formatDisplayValue(oldValue)} disabled />
+        ) : (
+          <select
+            id={selectId}
+            {...register}
+            disabled={disabled}
+            className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+          >
+            <option value="">{formatDisplayValue(oldValue)}</option>
+            {options.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        )}
 
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
       </div>

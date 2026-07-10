@@ -836,8 +836,8 @@ export default function Grade5ScholarshipPage() {
                           <>
                             <label
                               className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MEMBER_AND_MINOR
-                                  ? "border-[#953002] bg-orange-50"
-                                  : ""
+                                ? "border-[#953002] bg-orange-50"
+                                : ""
                                 }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
@@ -867,8 +867,8 @@ export default function Grade5ScholarshipPage() {
 
                             <label
                               className={`flex min-h-24 cursor-pointer flex-col gap-2 rounded-md border border-gray-300 bg-white p-3 text-sm ${disbursementOption === MINOR_ONLY
-                                  ? "border-[#953002] bg-orange-50"
-                                  : ""
+                                ? "border-[#953002] bg-orange-50"
+                                : ""
                                 }`}
                             >
                               <span className="flex items-center gap-2 font-medium">
@@ -983,8 +983,8 @@ export default function Grade5ScholarshipPage() {
             <div className="mt-5 space-y-3">
               <label
                 className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
-                    ? "border-[#953002] bg-orange-50"
-                    : "border-gray-200"
+                  ? "border-[#953002] bg-orange-50"
+                  : "border-gray-200"
                   }`}
               >
                 <input
@@ -1008,8 +1008,8 @@ export default function Grade5ScholarshipPage() {
 
               <label
                 className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
-                    ? "border-[#953002] bg-orange-50"
-                    : "border-gray-200"
+                  ? "border-[#953002] bg-orange-50"
+                  : "border-gray-200"
                   }`}
               >
                 <input
