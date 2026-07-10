@@ -22,9 +22,11 @@ type RequestRow = {
   boardMeetingId?: number;
   boardMeetingName?: string;
   scheduledDate?: string;
+  approvalListId?: string;
 };
 
 type GroupedList = {
+  approvalListId: string;
   boardMeetingId: number;
   boardMeetingName: string;
   scheduledDate?: string;
@@ -58,7 +60,7 @@ function ApprovalsPageInner() {
     setAllGroupedLists([]);
     setFilteredLists([]);
     setHasRetrieved(false);
-    setSelectedMeetingId(null);
+    setSelectedListId(null);
     setRetrievedRequests([]);
     setHasRetrievedRequests(false);
   };
@@ -85,14 +87,14 @@ function ApprovalsPageInner() {
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
   // Selected list + retrieved requests
-  const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [retrievedRequests, setRetrievedRequests] = useState<RequestRow[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [hasRetrievedRequests, setHasRetrievedRequests] = useState(false);
 
   // Delete list state
   const canDelete = true; // TODO: wire to user role/privilege check
-  const [pendingDeleteMeetingId, setPendingDeleteMeetingId] = useState<number | null>(null);
+  const [pendingDeleteListId, setPendingDeleteListId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -190,7 +192,7 @@ function ApprovalsPageInner() {
 
       setIsRetrieving(true);
       setHasRetrieved(false);
-      setSelectedMeetingId(null);
+      setSelectedListId(null);
       setRetrievedRequests([]);
       setHasRetrievedRequests(false);
 
@@ -198,26 +200,26 @@ function ApprovalsPageInner() {
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
       const data: RequestRow[] = await res.json();
 
-      // Collect all requests that have ever been attached to a board meeting
-      const attached = data.filter((r) => r.boardMeetingId);
+      // Collect all requests that have been attached to an approval list
+      const attached = data.filter((r) => r.approvalListId);
 
-      // Build groups keyed by boardMeetingId
-      const groups: Record<number, GroupedList> = {};
+      // Build groups keyed by approvalListId (UUID) — each attach action creates a separate list
+      const groups: Record<string, GroupedList> = {};
       attached.forEach((req) => {
-        const mid = req.boardMeetingId!;
-        if (!groups[mid]) {
-          groups[mid] = {
-            boardMeetingId: mid,
-            boardMeetingName: req.boardMeetingName || `Meeting #${mid}`,
+        const listId = req.approvalListId!;
+        if (!groups[listId]) {
+          groups[listId] = {
+            approvalListId: listId,
+            boardMeetingId: req.boardMeetingId!,
+            boardMeetingName: req.boardMeetingName || `Meeting #${req.boardMeetingId}`,
             scheduledDate: req.scheduledDate,
             requests: [],
           };
         }
-        groups[mid].requests.push(req);
+        groups[listId].requests.push(req);
       });
 
-      // Keep only the requests relevant to the active tab, but allow the same
-      // board meeting to appear in both tabs if it contains both request types.
+      // Keep only the requests relevant to the active tab
       const groupArr = Object.values(groups)
         .map((group) => ({
           ...group,
@@ -257,8 +259,8 @@ function ApprovalsPageInner() {
 
   // ── Retrieve requests for selected list ──────────────────────────────────
   const retrieveRequestsForList = async () => {
-    if (selectedMeetingId === null) return;
-    const group = filteredLists.find((g) => g.boardMeetingId === selectedMeetingId);
+    if (selectedListId === null) return;
+    const group = filteredLists.find((g) => g.approvalListId === selectedListId);
     if (!group) return;
 
     setIsLoadingRequests(true);
@@ -272,27 +274,27 @@ function ApprovalsPageInner() {
   };
 
   // ── Delete approval list ──────────────────────────────────────────────────
-  const deleteApprovalList = async (meetingId: number) => {
+  const deleteApprovalList = async (approvalListId: string) => {
     setIsDeleting(true);
     setDeleteError(null);
     try {
       const endpoint = activeTab === "deviation"
-        ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${meetingId}`
-        : `http://localhost:8080/api/university-scholarships/approval-list/${meetingId}`;
+        ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${approvalListId}`
+        : `http://localhost:8080/api/university-scholarships/approval-list/${approvalListId}`;
 
       const res = await fetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete the approval list");
       }
-      setFilteredLists((prev) => prev.filter((g) => g.boardMeetingId !== meetingId));
-      setAllGroupedLists((prev) => prev.filter((g) => g.boardMeetingId !== meetingId));
-      if (selectedMeetingId === meetingId) {
-        setSelectedMeetingId(null);
+      setFilteredLists((prev) => prev.filter((g) => g.approvalListId !== approvalListId));
+      setAllGroupedLists((prev) => prev.filter((g) => g.approvalListId !== approvalListId));
+      if (selectedListId === approvalListId) {
+        setSelectedListId(null);
         setRetrievedRequests([]);
         setHasRetrievedRequests(false);
       }
-      setPendingDeleteMeetingId(null);
+      setPendingDeleteListId(null);
     } catch (err: any) {
       setDeleteError(err.message ?? "An error occurred");
     } finally {
@@ -327,8 +329,8 @@ function ApprovalsPageInner() {
     );
   };
 
-  // ── Selected list info for the modal ─────────────────────────────────────
-  const selectedGroup = filteredLists.find((g) => g.boardMeetingId === selectedMeetingId);
+  // ── Selected list info ────────────────────────────────────────────────────
+  const selectedGroup = filteredLists.find((g) => g.approvalListId === selectedListId);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -460,14 +462,14 @@ function ApprovalsPageInner() {
             ) : (
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                 {filteredLists.map((list) => {
-                  const isSelected = selectedMeetingId === list.boardMeetingId;
+                  const isSelected = selectedListId === list.approvalListId;
                   const status = getListStatus(list);
 
                   return (
                     <div
-                      key={list.boardMeetingId}
+                      key={list.approvalListId}
                       onClick={() => {
-                        setSelectedMeetingId(isSelected ? null : list.boardMeetingId);
+                        setSelectedListId(isSelected ? null : list.approvalListId);
                         setHasRetrievedRequests(false);
                         setRetrievedRequests([]);
                       }}
@@ -476,12 +478,9 @@ function ApprovalsPageInner() {
                         : "bg-white border-gray-100 hover:bg-gray-50/80"
                         }`}
                     >
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-gray-800">
-                          {list.boardMeetingName}
-                        </span>
-                        <span className="text-[11px] text-gray-400 font-medium mt-0.5">
-                          {list.boardMeetingId}
+                      <div className="flex flex-col min-w-0 flex-1 mr-2">
+                        <span className="text-sm font-semibold text-gray-800 font-mono truncate block max-w-[160px]" title={list.approvalListId}>
+                          {list.approvalListId}
                         </span>
                       </div>
 
@@ -507,7 +506,7 @@ function ApprovalsPageInner() {
           <div className="mt-6">
             <Button
               onClick={retrieveRequestsForList}
-              disabled={selectedMeetingId === null || isLoadingRequests}
+              disabled={selectedListId === null || isLoadingRequests}
               className="bg-[#8b3007] hover:bg-[#702604] disabled:bg-gray-100 disabled:text-gray-400 text-white font-semibold py-2.5 px-4 rounded-lg w-full transition-all duration-200 text-center text-sm shadow-sm flex items-center justify-center gap-2"
             >
               {isLoadingRequests ? "Retrieving..." : "Retrieve Applications"}
@@ -526,14 +525,14 @@ function ApprovalsPageInner() {
 
             {hasRetrievedRequests && retrievedRequests.length > 0 && (
               <div className="flex items-center gap-2">
-                {canDelete && selectedMeetingId !== null && (
+                {canDelete && selectedListId !== null && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium"
                     onClick={() => {
                       setDeleteError(null);
-                      setPendingDeleteMeetingId(selectedMeetingId);
+                      setPendingDeleteListId(selectedListId);
                     }}
                   >
                     <Trash2 size={13} />
@@ -628,7 +627,7 @@ function ApprovalsPageInner() {
 
 
       {/* ── DELETE CONFIRMATION MODAL ────────────────────────────────────── */}
-      {pendingDeleteMeetingId !== null && (
+      {pendingDeleteListId !== null && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
             <div className="flex items-start gap-3 mb-4">
@@ -667,7 +666,7 @@ function ApprovalsPageInner() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setPendingDeleteMeetingId(null);
+                  setPendingDeleteListId(null);
                   setDeleteError(null);
                 }}
                 disabled={isDeleting}
@@ -676,7 +675,7 @@ function ApprovalsPageInner() {
               </Button>
               <Button
                 className="bg-red-600 hover:bg-red-700 text-white gap-2"
-                onClick={() => deleteApprovalList(pendingDeleteMeetingId!)}
+                onClick={() => deleteApprovalList(pendingDeleteListId!)}
                 disabled={isDeleting}
               >
                 <Trash2 size={14} />
@@ -697,4 +696,3 @@ export default function ApprovalsPage() {
     </Suspense>
   );
 }
-
