@@ -80,9 +80,12 @@ function ApprovalsPageInner() {
   const getListStatus = (list: GroupedList) => {
     if (!list.requests || list.requests.length === 0) return "CREATED";
     const allProcessed = list.requests.every(
-      (r) => r.status === "APPROVED" || r.status === "REJECTED"
+      (r) => {
+        const s = (r.status || "").toUpperCase();
+        return s === "APPROVED" || s === "REJECTED";
+      }
     );
-    return allProcessed ? "PROCESSED" : "CREATED";
+    return allProcessed ? "PROCEED" : "CREATED";
   };
 
   // Filter controls
@@ -504,6 +507,8 @@ function ApprovalsPageInner() {
 
   // ── Selected list info ────────────────────────────────────────────────────
   const selectedGroup = filteredLists.find((g) => g.approvalListId === selectedListId);
+  const isProcessed = selectedGroup ? getListStatus(selectedGroup) === "PROCEED" : false;
+  const firstRequest = retrievedRequests[0];
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -695,12 +700,38 @@ function ApprovalsPageInner() {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-[#953002] text-lg font-bold">Applications</h2>
-              <p className="text-xs text-gray-400 font-medium mt-0.5">Click &apos;Retrieve University Scholarship Requests&apos; to view data</p>
+              <p className="text-xs text-gray-400 font-medium mt-0.5">
+                {isProcessed
+                  ? "This list has already been processed and is in read-only mode."
+                  : "Click 'Retrieve University Scholarship Requests' to view data"}
+              </p>
+              {isProcessed && firstRequest && (
+                <div className="mt-3 text-xs text-gray-600 bg-amber-50/60 border border-amber-200/60 rounded-xl p-3 flex flex-col gap-1 max-w-md">
+                  <p>
+                    Processed by: <span className="font-semibold text-gray-900">{firstRequest.processedBy || "user1"}</span>
+                  </p>
+                  {firstRequest.processedAt && (
+                    <p>
+                      Date/Time:{" "}
+                      <span className="font-semibold text-gray-900">
+                        {new Date(firstRequest.processedAt).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "long",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: true
+                        })}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {hasRetrievedRequests && retrievedRequests.length > 0 && (
               <div className="flex items-center gap-2">
-                {canDelete && selectedListId !== null && (
+                {!isProcessed && canDelete && selectedListId !== null && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -714,15 +745,17 @@ function ApprovalsPageInner() {
                     Delete List
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 border-[#953002] text-[#953002] hover:bg-[#fff6f2] text-xs font-medium"
-                  onClick={printRequests}
-                >
-                  <Printer size={13} />
-                  Print List
-                </Button>
+                {!isProcessed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-[#953002] text-[#953002] hover:bg-[#fff6f2] text-xs font-medium"
+                    onClick={printRequests}
+                  >
+                    <Printer size={13} />
+                    Print List
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -765,9 +798,8 @@ function ApprovalsPageInner() {
                       return (
                         <TableRow
                           key={req.id}
-                          className={`text-xs border-t transition-colors hover:bg-gray-50/60 ${
-                            dec.action === "reject" ? "bg-red-50/40" : ""
-                          }`}
+                          className={`text-xs border-t transition-colors hover:bg-gray-50/60 ${dec.action === "reject" ? "bg-red-50/40" : ""
+                            }`}
                         >
                           {/* Request ID */}
                           <TableCell className="p-3 font-semibold text-[#953002]">
@@ -798,44 +830,58 @@ function ApprovalsPageInner() {
 
                           {/* ── NEW: Approve / Reject column ── */}
                           <TableCell className="p-3">
-                            <div className="flex flex-col gap-1.5 min-w-[190px]">
-                              {/* Dropdown */}
-                              <div className="relative">
-                                <select
-                                  value={dec.action}
-                                  onChange={(e) =>
-                                    handleDecisionChange(key, e.target.value as "approve" | "reject")
-                                  }
-                                  className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${
-                                    dec.action === "approve"
-                                      ? "border-green-300 bg-green-50 text-green-700"
-                                      : "border-red-300 bg-red-50 text-red-700"
-                                  }`}
-                                >
-                                  <option value="approve">✓ Approve</option>
-                                  <option value="reject">✗ Reject</option>
-                                </select>
-                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-400" />
+                            {isProcessed ? (
+                              <div className="flex flex-col gap-1">
+                                <span className={`font-semibold px-2 py-0.5 rounded text-[11px] w-fit ${req.status === "APPROVED"
+                                    ? "bg-green-50 text-green-700 border border-green-200"
+                                    : "bg-red-50 text-red-700 border border-red-200"
+                                  }`}>
+                                  {req.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
+                                </span>
+                                {req.status === "REJECTED" && req.rejectReason && (
+                                  <p className="text-[10px] text-gray-500 font-medium italic mt-0.5">
+                                    Reason: {req.rejectReason}
+                                  </p>
+                                )}
                               </div>
-
-                              {/* Rejection reason — shown only when Reject is selected */}
-                              {dec.action === "reject" && (
-                                <div className="flex flex-col gap-0.5">
-                                  <textarea
-                                    rows={2}
-                                    placeholder="Enter rejection reason (mandatory)…"
-                                    value={dec.reason}
-                                    onChange={(e) => handleReasonChange(key, e.target.value)}
-                                    className={`w-full border rounded-md px-2 py-1.5 text-xs text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-red-400/40 placeholder:text-gray-400 shadow-sm ${
-                                      rowError ? "border-red-400 bg-red-50" : "border-red-200 bg-white"
-                                    }`}
-                                  />
-                                  {rowError && (
-                                    <p className="text-[10px] text-red-600 font-medium">{rowError}</p>
-                                  )}
+                            ) : (
+                              <div className="flex flex-col gap-1.5 min-w-[190px]">
+                                {/* Dropdown */}
+                                <div className="relative">
+                                  <select
+                                    value={dec.action}
+                                    onChange={(e) =>
+                                      handleDecisionChange(key, e.target.value as "approve" | "reject")
+                                    }
+                                    className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${dec.action === "approve"
+                                        ? "border-green-300 bg-green-50 text-green-700"
+                                        : "border-red-300 bg-red-50 text-red-700"
+                                      }`}
+                                  >
+                                    <option value="approve">✓ Approve</option>
+                                    <option value="reject">✗ Reject</option>
+                                  </select>
+                                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-400" />
                                 </div>
-                              )}
-                            </div>
+
+                                {/* Rejection reason — shown only when Reject is selected */}
+                                {dec.action === "reject" && (
+                                  <div className="flex flex-col gap-0.5">
+                                    <textarea
+                                      rows={2}
+                                      placeholder="Enter rejection reason (mandatory)…"
+                                      value={dec.reason}
+                                      onChange={(e) => handleReasonChange(key, e.target.value)}
+                                      className={`w-full border rounded-md px-2 py-1.5 text-xs text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-red-400/40 placeholder:text-gray-400 shadow-sm ${rowError ? "border-red-400 bg-red-50" : "border-red-200 bg-white"
+                                        }`}
+                                    />
+                                    {rowError && (
+                                      <p className="text-[10px] text-red-600 font-medium">{rowError}</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -845,15 +891,17 @@ function ApprovalsPageInner() {
               </div>
 
               {/* ── PROCEED BUTTON ── */}
-              <div className="mt-5 flex justify-end">
-                <Button
-                  onClick={handleProceed}
-                  className="bg-[#8b3007] hover:bg-[#702604] text-white font-semibold px-6 py-2.5 rounded-lg shadow-sm flex items-center gap-2 text-sm"
-                >
-                  <CheckCircle2 size={15} />
-                  Proceed
-                </Button>
-              </div>
+              {!isProcessed && (
+                <div className="mt-5 flex justify-end">
+                  <Button
+                    onClick={handleProceed}
+                    className="bg-[#8b3007] hover:bg-[#702604] text-white font-semibold px-6 py-2.5 rounded-lg shadow-sm flex items-center gap-2 text-sm"
+                  >
+                    <CheckCircle2 size={15} />
+                    Proceed
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </Card>
@@ -949,10 +997,10 @@ function ApprovalsPageInner() {
                   <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm text-gray-700 font-medium">
                     {selectedGroup?.scheduledDate
                       ? new Date(selectedGroup.scheduledDate + "T00:00:00").toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "long",
-                          year: "numeric",
-                        })
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                      })
                       : "—"}
                   </div>
                   <p className="text-[10px] text-gray-400">As per the setup</p>
@@ -1018,11 +1066,10 @@ function ApprovalsPageInner() {
                   Upload Scanned Report <span className="text-gray-400 font-normal normal-case">(Optional)</span>
                 </label>
                 <div
-                  className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${
-                    uploadedFile
+                  className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${uploadedFile
                       ? "border-[#953002]/40 bg-[#fff6f2]"
                       : "border-gray-200 bg-gray-50 hover:border-[#953002]/40 hover:bg-[#fff6f2]/50"
-                  }`}
+                    }`}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <input
