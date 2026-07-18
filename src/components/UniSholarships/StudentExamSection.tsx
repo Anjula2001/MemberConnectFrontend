@@ -147,7 +147,7 @@ export default function StudentExamSection() {
     getValues,
     setValue,
     reset,
-    formState: { errors, isValid },
+    formState: { errors, isValid, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
@@ -533,11 +533,132 @@ export default function StudentExamSection() {
     }
   };
 
+  // Perform save request data
+  const performSave = async (showPopup = true) => {
+    const currentData = getValues();
+
+    if (!isEditMode) {
+      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+
+      if (!isExamNoValid) {
+        return null;
+      }
+    }
+
+    let saveData: FormData & { memberId: string } = {
+      ...currentData,
+      memberId: memberId || loadedRecord?.memberId || member?.memberId || "",
+    };
+
+    if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
+      const minorData = await handleRefreshMinorAccount();
+
+      saveData = {
+        ...saveData,
+        hasMinorAccount: minorData?.hasMinorAccount,
+        minorAccountMonths: minorData?.minorAccountMonths,
+      };
+    }
+
+    try {
+      let savedRequest: any = null;
+
+      if (requestId) {
+        const res = await fetch(
+          `http://localhost:8080/api/university-scholarships/${requestId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(saveData),
+          }
+        );
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("Update failed:", res.status, text);
+          if (showPopup) {
+            setExamNoPopupMessage("Failed to update request");
+            setShowExamNoPopup(true);
+          }
+          return null;
+        }
+
+        savedRequest = await res.json();
+      } else {
+        const response = await fetch(
+          "http://localhost:8080/api/university-scholarships",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(saveData),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let message = "Failed to save request";
+
+          try {
+            const errorJson = JSON.parse(errorText);
+            message = errorJson.message || message;
+          } catch { }
+
+          if (showPopup) {
+            setExamNoPopupMessage(message);
+            setShowExamNoPopup(true);
+          }
+          return null;
+        }
+
+        savedRequest = await response.json();
+      }
+
+      setRequestId(
+        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
+      );
+      setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
+      setStatus(savedRequest.status || "NEW");
+      setIsSaved(true);
+
+      if (documentFiles.length > 0 && savedRequest.id) {
+        await uploadDocuments(savedRequest.id);
+      }
+
+      setIsExamNoDuplicate(false);
+      if (showPopup) {
+        setExamNoPopupMessage("Request is saved successfully");
+        setShowExamNoPopup(true);
+      }
+
+      // Reset form default values to clear isDirty state
+      reset(currentData);
+
+      return savedRequest;
+    } catch (error) {
+      console.error("Save failed:", error);
+      if (showPopup) {
+        setExamNoPopupMessage("Failed to save request");
+        setShowExamNoPopup(true);
+      }
+      return null;
+    }
+  };
+
   //Handle form submission
   const onSubmit = async () => {
-
     let actionId: string | number | null = requestId;
 
+    if (!isInputsDisabled) {
+      const saved = await performSave(false);
+      if (!saved) {
+        setExamNoPopupMessage("Failed to save request before submitting");
+        setShowExamNoPopup(true);
+        return;
+      }
+      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+    }
 
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
@@ -815,104 +936,7 @@ export default function StudentExamSection() {
 
   //Handle save 
   const handleSave = async () => {
-    const currentData = getValues();
-
-    if (!isEditMode) {
-      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
-
-      if (!isExamNoValid) {
-        return;
-      }
-    }
-
-    let saveData: FormData & { memberId: string } = {
-      ...currentData,
-      memberId: memberId,
-    };
-
-    if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
-      const minorData = await handleRefreshMinorAccount();
-
-      saveData = {
-        ...saveData,
-        hasMinorAccount: minorData?.hasMinorAccount,
-        minorAccountMonths: minorData?.minorAccountMonths,
-      };
-    }
-
-    try {
-      let savedRequest: any = null;
-
-      if (requestId && isEditMode) {
-        const res = await fetch(
-          `http://localhost:8080/api/university-scholarships/${requestId}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(saveData),
-          }
-        );
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("Update failed:", res.status, text);
-          setExamNoPopupMessage("Failed to update request");
-          setShowExamNoPopup(true);
-          return null;
-        }
-
-        savedRequest = await res.json();
-      } else {
-        const response = await fetch(
-          "http://localhost:8080/api/university-scholarships",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(saveData),
-          }
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let message = "Failed to save request";
-
-          try {
-            const errorJson = JSON.parse(errorText);
-            message = errorJson.message || message;
-          } catch { }
-
-          setExamNoPopupMessage(message);
-          setShowExamNoPopup(true);
-          return null;
-        }
-
-        savedRequest = await response.json();
-      }
-
-      setRequestId(
-        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
-      );
-      setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
-      setStatus(savedRequest.status || "NEW");
-      setIsSaved(true);
-
-      if (documentFiles.length > 0 && savedRequest.id) {
-        await uploadDocuments(savedRequest.id);
-      }
-
-      setIsExamNoDuplicate(false);
-      setExamNoPopupMessage("Request is saved successfully");
-      setShowExamNoPopup(true);
-
-      return savedRequest;
-    } catch (error) {
-      console.error("Save failed:", error);
-      setExamNoPopupMessage("Failed to save request");
-      setShowExamNoPopup(true);
-      return null;
-    }
+    await performSave(true);
   };
 
   // Update University scholarship
@@ -935,6 +959,14 @@ export default function StudentExamSection() {
   const handleMarkIncomplete = async (reason: string) => {
     let actionId: string | number | null = requestId;
 
+    if (!isInputsDisabled) {
+      const saved = await performSave(false);
+      if (!saved) {
+        alert("Failed to save request before marking incomplete");
+        return;
+      }
+      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+    }
 
     if (!actionId) {
       alert("Please save request first");
@@ -1279,7 +1311,7 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || isSaved || isApprovedDetailsEditMode}
+              disabled={isInputsDisabled || !isValid || (!isDirty && isSaved) || isApprovedDetailsEditMode}
             >
               Save
             </Button>
