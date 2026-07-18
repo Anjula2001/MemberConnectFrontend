@@ -90,7 +90,7 @@ export default function FundDisbursementRequest() {
     isViewMode && isSubmittedForApproval && canChangeSubmittedFundRequestStatus;
 
   const [isSaved, setIsSaved] = useState(false);
-  
+
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
   const [requiredDocumentTypes] = useState<RequiredDocType[]>([]);
   const [scholarshipSummary, setScholarshipSummary] = useState<ScholarshipSummary | null>(null);
@@ -100,7 +100,7 @@ export default function FundDisbursementRequest() {
   const availableBalance = Math.max(
     0,
     Number(scholarshipSummary?.totalScholarshipAmount || 0) -
-      Number(scholarshipSummary?.totalDisbursedAmount || 0)
+    Number(scholarshipSummary?.totalDisbursedAmount || 0)
   );
   const availablePeriod = (scholarshipSummary?.availablePeriod || 0) + (currentFundRequest ? 1 : 0);
 
@@ -460,8 +460,8 @@ export default function FundDisbursementRequest() {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl px-6 space-y-6">
-        
+      <div className="mx-auto w-full max-w-7xl px-4 space-y-6">
+
         {/* TITLE */}
         <div className="flex items-center justify-between">
           <div>
@@ -738,7 +738,7 @@ export default function FundDisbursementRequest() {
             <h3 className="mb-4 text-xl font-bold text-[#953002]">
               Supporting Documents
             </h3>
-          
+
             <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
               <Document
                 requestId={requestId}
