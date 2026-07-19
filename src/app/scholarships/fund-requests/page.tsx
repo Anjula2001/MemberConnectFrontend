@@ -238,7 +238,7 @@ export default function UniversityScholarshipFundRequestsPage() {
   const [toDate, setToDate] = useState("");
   const [dateError, setDateError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("fund-request-id");
+  const [sortBy, setSortBy] = useState("requested-date");
   const [sortAsc, setSortAsc] = useState(true);
 
   const hasMultipleLocationAccess = true;
@@ -310,16 +310,12 @@ export default function UniversityScholarshipFundRequestsPage() {
     filtered.sort((a, b) => {
       let comparison = 0;
 
-      if (sortBy === "student") {
-        comparison = (a.studentName || "").localeCompare(b.studentName || "");
-      } else if (sortBy === "member") {
-        comparison = (a.memberName || "").localeCompare(b.memberName || "");
-      } else if (sortBy === "requested-date") {
+      if (sortBy === "requested-date") {
         comparison = (a.requestedDate || "").localeCompare(b.requestedDate || "");
-      } else if (sortBy === "amount") {
-        comparison = Number(a.requestedAmount || 0) - Number(b.requestedAmount || 0);
-      } else {
-        comparison = (a.requestId || "").localeCompare(b.requestId || "");
+      } else if (sortBy === "status") {
+        comparison = (a.status || "").localeCompare(b.status || "");
+      } else if (sortBy === "scholarship-id") {
+        comparison = (a.scholarshipRequestId || "").localeCompare(b.scholarshipRequestId || "");
       }
 
       return sortAsc ? comparison : -comparison;
@@ -485,7 +481,7 @@ export default function UniversityScholarshipFundRequestsPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-4">
               <div className="flex flex-col gap-1 md:col-span-2">
                 <label className="text-xs font-medium text-gray-600">
                   Search (FundRequestID / ScholarshipRequestID / MemberName / MemberID / StudentName / StudentNIC)
@@ -504,23 +500,30 @@ export default function UniversityScholarshipFundRequestsPage() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-gray-600">Sort By</label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Fund Requested Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="requested-date">Fund Requested Date</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="scholarship-id">Scholarship ID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort Order</label>
                 <div className="flex items-center gap-2">
-                  <Select value={sortBy} onValueChange={setSortBy}>
+                  <Select value={sortAsc ? "asc" : "desc"} onValueChange={(val) => setSortAsc(val === "asc")}>
                     <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Fund Request ID" />
+                      <SelectValue placeholder="Ascending" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fund-request-id">Fund Request ID</SelectItem>
-                      <SelectItem value="requested-date">Requested Date</SelectItem>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="amount">Amount</SelectItem>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                      <SelectItem value="desc">Descending</SelectItem>
                     </SelectContent>
                   </Select>
-
-                  <Button variant="outline" size="icon" onClick={() => setSortAsc((value) => !value)}>
-                    <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
-                  </Button>
 
                   <Button className="bg-[#7a2700] text-white hover:bg-[#953002] whitespace-nowrap" onClick={handleRetrieve} disabled={isLoading}>
                     <RotateCcw size={14} className={isLoading ? "animate-spin" : ""} />
@@ -538,7 +541,7 @@ export default function UniversityScholarshipFundRequestsPage() {
               <thead>
                 <tr className="text-sm text-gray bold">
                   <th className="px-4 py-4 font-medium">Fund Request ID</th>
-                  <th className="px-4 py-4 font-medium">Scholarship Request ID</th>
+                  <th className="px-4 py-4 font-medium">Scholarship ID</th>
                   <th className="px-4 py-4 font-medium">Member</th>
                   <th className="px-4 py-4 font-medium">Requested Date</th>
                   <th className="px-4 py-4 font-medium">Requested Period</th>
