@@ -38,7 +38,6 @@ type MemberTransferOldValues = {
   natureOfOccupation: string;
   workingLocationType: string;
   workingLocation: string;
-  workingLocationAddress: string;
   educationalZone: string;
   educationalDistrict: string;
   computerNoName: string;
@@ -108,7 +107,6 @@ const emptyOldValues: MemberTransferOldValues = {
   natureOfOccupation: "",
   workingLocationType: "",
   workingLocation: "",
-  workingLocationAddress: "",
   educationalZone: "",
   educationalDistrict: "",
   computerNoName: "",
@@ -348,7 +346,6 @@ export default function ChangeMemberTransferForm() {
           natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
           workingLocationType: formatDisplayValue(data.workingLocationType),
           workingLocation: formatDisplayValue(data.workingLocation),
-          workingLocationAddress: formatDisplayValue(data.workingLocationAddress),
           educationalZone: formatDisplayValue(data.educationalZone),
           educationalDistrict: formatDisplayValue(data.educationalDistrict),
           computerNoName: formatDisplayValue(data.computerNoInPayslip),
@@ -376,7 +373,7 @@ export default function ChangeMemberTransferForm() {
       educationalDistrictNew: findOptionIdByName(districts, oldValues.educationalDistrict),
       educationalZoneNew: "",
       workingLocationNew: "",
-      workingLocationAddressNew: oldValues.workingLocationAddress || "",
+      workingLocationAddressNew: oldValues.permanentPrivateAddress || "",
       computerNoNameNew: oldValues.computerNoName || "",
       salaryPayingOfficeNew: oldValues.salaryPayingOffice || "",
     } as any);
@@ -924,7 +921,7 @@ export default function ChangeMemberTransferForm() {
 
               <EditableInput
                 label="Working Location Address"
-                oldValue={oldValues.workingLocationAddress}
+                oldValue={oldValues.permanentPrivateAddress}
                 newValue={loadedRecord?.newWorkingLocationAddress}
                 isViewMode={isViewMode}
                 register={register("workingLocationAddressNew")}
