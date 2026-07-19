@@ -77,7 +77,14 @@ type MemberTransferRecord = {
   newWorkingLocationType?: { id?: number; name?: string; usesZone?: boolean };
   newEducationalDistrict?: { id?: number; name?: string };
   newEducationalZone?: { id?: number; name?: string };
-  newWorkingLocation?: { id?: number; name?: string; address?: string; salaryPayingOffice?: string };
+  newWorkingLocation?: {
+    id?: number;
+    name?: string;
+    address?: string;
+    salaryPayingOffice?: string;
+    educationalDistrict?: { id?: number; name?: string };
+    educationalZone?: { id?: number; name?: string };
+  };
 };
 
 type OptionItem = {
@@ -194,6 +201,7 @@ export default function ChangeMemberTransferForm() {
   const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
   const [isZoneEnabled, setIsZoneEnabled] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [keepCurrentDistrict, setKeepCurrentDistrict] = useState(false);
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
@@ -228,6 +236,27 @@ export default function ChangeMemberTransferForm() {
   const selectedDistrict = watch("educationalDistrictNew");
   const selectedZone = watch("educationalZoneNew");
   const selectedWorkingLocation = watch("workingLocationNew");
+
+  const foundWorkingLocationType = useMemo(() => {
+    return workingLocationTypes.find((type) => type.id === String(selectedWorkingLocationType));
+  }, [workingLocationTypes, selectedWorkingLocationType]);
+
+  const showKeepCurrentDistrict = useMemo(() => {
+    return foundWorkingLocationType
+      ? (foundWorkingLocationType.name.toLowerCase() === "other" || foundWorkingLocationType.raw?.keepCurrentDistrict === true)
+      : false;
+  }, [foundWorkingLocationType]);
+
+  const isKeepDistrict = useMemo(() => {
+    if (!loadedRecord) return false;
+    const locDistrictId = loadedRecord.newWorkingLocation?.educationalDistrict?.id;
+    const reqDistrictId = loadedRecord.newEducationalDistrictId;
+    return Boolean(
+      locDistrictId &&
+      reqDistrictId &&
+      String(locDistrictId) !== String(reqDistrictId)
+    );
+  }, [loadedRecord]);
 
   //get mandatory Document in DB
   useEffect(() => {
@@ -388,11 +417,16 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     if (!loadedRecord) return;
 
+    setKeepCurrentDistrict(isKeepDistrict);
+
+    const locDistrictId = loadedRecord.newWorkingLocation?.educationalDistrict?.id;
     reset({
       designationNew: String(loadedRecord.newDesignationId || ""),
       natureOfOccupationNew: String(loadedRecord.newNatureOfOccupationId || ""),
       workingLocationTypeNew: String(loadedRecord.newWorkingLocationTypeId || ""),
-      educationalDistrictNew: String(loadedRecord.newEducationalDistrictId || ""),
+      educationalDistrictNew: isKeepDistrict && locDistrictId
+        ? String(locDistrictId)
+        : String(loadedRecord.newEducationalDistrictId || ""),
       educationalZoneNew: String(loadedRecord.newEducationalZoneId || ""),
       workingLocationNew: String(loadedRecord.newWorkingLocationId || ""),
       workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || "",
@@ -403,7 +437,7 @@ export default function ChangeMemberTransferForm() {
     setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
     setMemberTransferRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
-  }, [loadedRecord, reset]);
+  }, [loadedRecord, isKeepDistrict, reset]);
 
   //Fetch uploaded documents based on Request ID
   useEffect(() => {
@@ -445,6 +479,11 @@ export default function ChangeMemberTransferForm() {
     const usesZone = foundType ? Boolean(foundType.raw?.usesZone) : true;
 
     setIsZoneEnabled(usesZone);
+
+    const isOther = foundType ? (foundType.name.toLowerCase() === "other" || foundType.raw?.keepCurrentDistrict === true) : false;
+    if (!isOther) {
+      setKeepCurrentDistrict(false);
+    }
 
     setValue("educationalDistrictNew", "" as any);
     setValue("educationalZoneNew", (usesZone ? "" : "NA") as any);
@@ -588,12 +627,21 @@ export default function ChangeMemberTransferForm() {
 
     setIsSubmitting(true);
     try {
+      // Find option ID of the current district name
+      const currentDistrictName = oldValues?.educationalDistrict;
+      const currentDistrictOption = districts.find(
+        (d) => d.name === currentDistrictName || d.raw?.name === currentDistrictName
+      );
+      const currentDistrictId = currentDistrictOption ? currentDistrictOption.id : null;
+
       const payload = {
         memberId: member?.id,
         requestedDate: new Date().toISOString().slice(0, 10),
 
         newWorkingLocationTypeId: toNullableNumber((data as any).workingLocationTypeNew),
-        newEducationalDistrictId: toNullableNumber((data as any).educationalDistrictNew),
+        newEducationalDistrictId: keepCurrentDistrict && showKeepCurrentDistrict && currentDistrictId
+          ? toNullableNumber(currentDistrictId)
+          : toNullableNumber((data as any).educationalDistrictNew),
         newEducationalZoneId: toNullableNumber((data as any).educationalZoneNew),
         newWorkingLocationId: toNullableNumber((data as any).workingLocationNew),
         newDesignationId: toNullableNumber((data as any).designationNew),
@@ -838,12 +886,15 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Educational District"
                 oldValue={oldValues.educationalDistrict}
-                newValue={loadedRecord?.newEducationalDistrict?.name}
+                newValue={isKeepDistrict ? loadedRecord?.newWorkingLocation?.educationalDistrict?.name : loadedRecord?.newEducationalDistrict?.name}
                 isViewMode={isViewMode}
                 register={register("educationalDistrictNew")}
                 error={errors.educationalDistrictNew?.message}
                 options={districts}
                 disabled={!selectedWorkingLocationType || isInputsDisabled}
+                showKeepCurrentDistrict={showKeepCurrentDistrict}
+                keepCurrentDistrict={keepCurrentDistrict}
+                onKeepCurrentDistrictChange={setKeepCurrentDistrict}
               />
 
               <EditableSelect
@@ -1169,6 +1220,9 @@ function EditableSelect({
   error,
   options = [],
   disabled = false,
+  showKeepCurrentDistrict = false,
+  keepCurrentDistrict = false,
+  onKeepCurrentDistrictChange,
 }: {
   label: string;
   oldValue: string;
@@ -1178,6 +1232,9 @@ function EditableSelect({
   error?: string;
   options: OptionItem[];
   disabled?: boolean;
+  showKeepCurrentDistrict?: boolean;
+  keepCurrentDistrict?: boolean;
+  onKeepCurrentDistrictChange?: (checked: boolean) => void;
 }) {
   const selectId = label
     .toLowerCase()
@@ -1212,6 +1269,22 @@ function EditableSelect({
               </option>
             ))}
           </select>
+        )}
+
+        {showKeepCurrentDistrict && (
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="keep-current-district"
+              checked={keepCurrentDistrict}
+              disabled={isViewMode || disabled}
+              onChange={(e) => onKeepCurrentDistrictChange?.(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#953002] focus:ring-[#953002] cursor-pointer disabled:cursor-not-allowed"
+            />
+            <label htmlFor="keep-current-district" className="text-xs text-gray-600 select-none cursor-pointer disabled:cursor-not-allowed">
+              Keep the Current District on the Member Profile
+            </label>
+          </div>
         )}
 
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
