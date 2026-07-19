@@ -69,6 +69,7 @@ type ScholarshipRecord = {
   availablePeriod?: number | null;
   totalUniversityScholarships?: number | null;
   fundRequests?: FundRequestRow[] | null;
+  followDeviationProcess?: boolean | null;
 };
 
 type FundRequestRow = {
@@ -1091,6 +1092,7 @@ export default function StudentExamSection() {
       : status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
+  const isFollowingDeviation = !!(loadedRecord?.followDeviationProcess);
   const pageTitle = isApprovedDetailsEditMode
     ? "Edit University Scholarship Details"
     : isExistingRequest
@@ -1267,6 +1269,7 @@ export default function StudentExamSection() {
             </p>
           </div>
 
+
           <div className="flex gap-2">
             {isViewMode && isEditableStatus && (
               <Button
@@ -1324,6 +1327,21 @@ export default function StudentExamSection() {
               Submit
             </Button>
           </div>
+        </div>
+        <div>
+          {isFollowingDeviation && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Deviation Process</p>
+                <p className="text-sm text-amber-700 mt-0.5">
+                  This request follows the deviation process. Because The Scholarship Request Date is not within the defined eligibility period from the last exam date.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
