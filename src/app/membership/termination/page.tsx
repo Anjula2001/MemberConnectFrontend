@@ -566,7 +566,7 @@ export default function TerminationPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
+    <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
         {requestType !== "retirement" && (

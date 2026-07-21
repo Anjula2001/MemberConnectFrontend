@@ -135,11 +135,11 @@ function MultiSelectDropdown({
     selected.includes("ALL")
       ? "All"
       : selected.length === 0
-      ? "Select"
-      : selected.length === 1
-      ? options.find((option) => option.value === selected[0])?.label ||
-        "Select"
-      : `${selected.length} selected`;
+        ? "Select"
+        : selected.length === 1
+          ? options.find((option) => option.value === selected[0])?.label ||
+          "Select"
+          : `${selected.length} selected`;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -388,16 +388,16 @@ export default function Grade5ScholarshipRequestsListPage() {
     status === "REJECTED";
 
 
-  const handleView = (memberId: string, requestId: number) => {
+  const handleView = (memberId: string, requestNo: string) => {
     window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
       memberId
-    )}&requestId=${encodeURIComponent(String(requestId))}&mode=view`;
+    )}&requestId=${encodeURIComponent(requestNo)}&mode=view`;
   };
 
-  const handleEdit = (memberId: string, requestId: number) => {
+  const handleEdit = (memberId: string, requestNo: string) => {
     window.location.href = `/membership/directory/grade5-scholarship?memberId=${encodeURIComponent(
       memberId
-    )}&requestId=${encodeURIComponent(String(requestId))}&mode=edit`;
+    )}&requestId=${encodeURIComponent(requestNo)}&mode=edit`;
   };
 
   const isSelectable = (row: Grade5RequestRow) =>
@@ -506,295 +506,277 @@ export default function Grade5ScholarshipRequestsListPage() {
   };
 
   return (
-      <div className="max-w-7xl mx-auto px-10 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-[#953002]">
-            Grade 5 Scholarship Requests
-          </h1>
+    <div className="w-full px-6 py-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-[#953002]">
+          Grade 5 Scholarship Requests
+        </h1>
 
-          <div className="flex gap-3">
-            {/* Create Normal List */}
-            {canCreateNormalList && (
-              <Button
-                className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-                onClick={() => handleOpenBoardModal("NORMAL")}
-              >
-                Create Grade 5 Scholarship Normal Approval List
-              </Button>
-            )}
-
-            {/* Create Deviation List */}
-            {canCreateDeviationList && (
-              <Button
-                className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-                onClick={() => handleOpenBoardModal("DEVIATION")}
-              >
-                Create Grade 5 Scholarship Deviation Approval List
-              </Button>
-            )}
-
-            {/* View Approval Lists */}
+        <div className="flex gap-3">
+          {/* Create Normal List */}
+          {canCreateNormalList && (
             <Button
               className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-              onClick={() => {
-                window.location.href = "/scholarships/grade-5/approval-lists";
-              }}
+              onClick={() => handleOpenBoardModal("NORMAL")}
             >
-              View Approval Lists
+              Create Grade 5 Scholarship Normal Approval List
             </Button>
-          </div>
-        </div>
+          )}
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-          <h2 className="text-lg font-semibold text-[#953002] mb-4">
-            Search & Filter
-          </h2>
-
-          <div className="grid grid-cols-4 gap-4">
-            <MultiSelectDropdown
-              label="Location"
-              options={locationOptions}
-              selected={locations}
-              onChange={setLocations}
-              disabled={!userHasMultipleLocations}
-            />
-
-            <MultiSelectDropdown
-              label="Year of Examination"
-              options={yearOptions}
-              selected={years}
-              onChange={setYears}
-            />
-
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Request Received On
-              </label>
-              <select
-                value={receivedOn}
-                onChange={(e) => {
-                  setReceivedOn(e.target.value);
-                  setFieldErrors({});
-                }}
-                className="border rounded-md px-3 py-2 w-full"
-              >
-                <option value="ALL_DAYS">All Days</option>
-                <option value="THIS_MONTH">This Month</option>
-                <option value="THIS_AND_LAST_MONTH">
-                  This and Last Month
-                </option>
-                <option value="DATE_PERIOD">Date Period</option>
-              </select>
-            </div>
-
-            <MultiSelectDropdown
-              label="Status"
-              options={statusOptions}
-              selected={statuses}
-              onChange={setStatuses}
-            />
-
-            {receivedOn === "DATE_PERIOD" && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    From Date
-                  </label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    max={today}
-                    onChange={(e) => {
-                      setFromDate(e.target.value);
-                      setFieldErrors((prev) => ({ ...prev, fromDate: "" }));
-                    }}
-                    className="border rounded-md px-3 py-2 w-full"
-                  />
-                  {fieldErrors.fromDate && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {fieldErrors.fromDate}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    To Date
-                  </label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    max={today}
-                    onChange={(e) => {
-                      setToDate(e.target.value);
-                      setFieldErrors((prev) => ({ ...prev, toDate: "" }));
-                    }}
-                    className="border rounded-md px-3 py-2 w-full"
-                  />
-                  {fieldErrors.toDate && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {fieldErrors.toDate}
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-
-            <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">
-                Search Member / Exam
-              </label>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Member name, member ID, NIC, student name, examination number..."
-                className="border rounded-md px-3 py-2 w-full"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Sort By</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="border rounded-md px-3 py-2 w-full"
-              >
-                <option value="REQUESTED_DATE">Requested Date</option>
-                <option value="STATUS">Status</option>
-                <option value="MEMBER_ID">Member ID</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Order</label>
-              <select
-                value={sortDirection}
-                onChange={(e) => setSortDirection(e.target.value)}
-                className="border rounded-md px-3 py-2 w-full"
-              >
-                <option value="ASC">Ascending</option>
-                <option value="DESC">Descending</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex justify-end mt-4">
+          {/* Create Deviation List */}
+          {canCreateDeviationList && (
             <Button
-              onClick={handleRetrieve}
-              className="bg-[#953002] text-white hover:bg-[#672102] px-6"
+              className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+              onClick={() => handleOpenBoardModal("DEVIATION")}
             >
-              Retrieve
+              Create Grade 5 Scholarship Deviation Approval List
             </Button>
+          )}
+
+          {/* View Approval Lists */}
+          <Button
+            className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+            onClick={() => {
+              window.location.href = "/scholarships/grade-5/approval-lists";
+            }}
+          >
+            View Approval Lists
+          </Button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <h2 className="text-lg font-semibold text-[#953002] mb-4">
+          Search & Filter
+        </h2>
+
+        <div className="grid grid-cols-4 gap-4">
+          <MultiSelectDropdown
+            label="Location"
+            options={locationOptions}
+            selected={locations}
+            onChange={setLocations}
+            disabled={!userHasMultipleLocations}
+          />
+
+          <MultiSelectDropdown
+            label="Year of Examination"
+            options={yearOptions}
+            selected={years}
+            onChange={setYears}
+          />
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Request Received On
+            </label>
+            <select
+              value={receivedOn}
+              onChange={(e) => {
+                setReceivedOn(e.target.value);
+                setFieldErrors({});
+              }}
+              className="border rounded-md px-3 py-2 w-full"
+            >
+              <option value="ALL_DAYS">All Days</option>
+              <option value="THIS_MONTH">This Month</option>
+              <option value="THIS_AND_LAST_MONTH">
+                This and Last Month
+              </option>
+              <option value="DATE_PERIOD">Date Period</option>
+            </select>
           </div>
 
-          {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+          <MultiSelectDropdown
+            label="Status"
+            options={statusOptions}
+            selected={statuses}
+            onChange={setStatuses}
+          />
+
+          {receivedOn === "DATE_PERIOD" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  max={today}
+                  onChange={(e) => {
+                    setFromDate(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, fromDate: "" }));
+                  }}
+                  className="border rounded-md px-3 py-2 w-full"
+                />
+                {fieldErrors.fromDate && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {fieldErrors.fromDate}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  value={toDate}
+                  max={today}
+                  onChange={(e) => {
+                    setToDate(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, toDate: "" }));
+                  }}
+                  className="border rounded-md px-3 py-2 w-full"
+                />
+                {fieldErrors.toDate && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {fieldErrors.toDate}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
+          <div className="col-span-2">
+            <label className="block text-sm font-medium mb-1">
+              Search Member / Exam
+            </label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Member name, member ID, NIC, student name, examination number..."
+              className="border rounded-md px-3 py-2 w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Sort By</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="border rounded-md px-3 py-2 w-full"
+            >
+              <option value="REQUESTED_DATE">Requested Date</option>
+              <option value="STATUS">Status</option>
+              <option value="MEMBER_ID">Member ID</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Order</label>
+            <select
+              value={sortDirection}
+              onChange={(e) => setSortDirection(e.target.value)}
+              className="border rounded-md px-3 py-2 w-full"
+            >
+              <option value="ASC">Ascending</option>
+              <option value="DESC">Descending</option>
+            </select>
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <table className="w-full table-fixed text-sm">
-            <thead className="bg-gray-100 text-gray-700">
+        <div className="flex justify-end mt-4">
+          <Button
+            onClick={handleRetrieve}
+            className="bg-[#953002] text-white hover:bg-[#672102] px-6"
+          >
+            Retrieve
+          </Button>
+        </div>
+
+        {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <table className="w-full table-fixed text-sm">
+          <thead className="bg-gray-100 text-gray-700">
+            <tr>
+              <th className="px-4 py-3 text-left w-12">
+                <input
+                  type="checkbox"
+                  checked={allSelectableSelected}
+                  onChange={handleSelectAllToggle}
+                  className="rounded text-[#953002]"
+                />
+              </th>
+              <th className="px-4 py-3 text-left">Request ID</th>
+              <th className="px-4 py-3 text-left">Member ID</th>
+              <th className="px-4 py-3 text-left">Exam No</th>
+              <th className="px-4 py-3 text-left">Indicators</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-6 py-3 text-left">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
               <tr>
-                <th className="px-4 py-3 text-left w-12">
-                  <input
-                    type="checkbox"
-                    checked={allSelectableSelected}
-                    onChange={handleSelectAllToggle}
-                    className="rounded text-[#953002]"
-                  />
-                </th>
-                <th className="px-4 py-3 text-left">Request ID</th>
-                <th className="px-4 py-3 text-left">Requested Date</th>
-                <th className="px-4 py-3 text-left">Member ID</th>
-                <th className="px-4 py-3 text-left">Member Name</th>
-                <th className="px-4 py-3 text-left">NIC</th>
-                <th className="px-4 py-3 text-left">Student Name</th>
-                <th className="px-4 py-3 text-left">Exam No</th>
-                <th className="px-4 py-3 text-left">Indicators</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-6 py-3 text-left">Action</th>
+                <td
+                  colSpan={7}
+                  className="px-4 py-6 text-center text-gray-500"
+                >
+                  Loading...
+                </td>
               </tr>
-            </thead>
+            ) : requests.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-6 text-center text-gray-500"
+                >
+                  No scholarship requests found.
+                </td>
+              </tr>
+            ) : (
+              requests.map((row) => {
+                const submitted = isSubmitted(row.status);
+                const selectable = isSelectable(row);
 
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-4 py-6 text-center text-gray-500"
-                  >
-                    Loading...
-                  </td>
-                </tr>
-              ) : requests.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-4 py-6 text-center text-gray-500"
-                  >
-                    No scholarship requests found.
-                  </td>
-                </tr>
-              ) : (
-                requests.map((row) => {
-                  const submitted = isSubmitted(row.status);
-                  const selectable = isSelectable(row);
+                return (
+                  <tr key={row.id} className="border-t">
+                    <td className="px-4 py-3">
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          checked={selectedRequestNos.includes(row.requestNo)}
+                          onChange={() => handleSelectRowToggle(row.requestNo)}
+                          className="rounded text-[#953002]"
+                        />
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-medium whitespace-nowrap">
+                      <button
+                        onClick={() => handleView(row.memberId, row.requestNo)}
+                        className="text-blue-600 hover:underline font-medium"
+                      >
+                        {row.requestNo}
+                      </button>
+                    </td>
 
-                  return (
-                    <tr key={row.id} className="border-t">
-                      <td className="px-4 py-3">
-                        {selectable && (
-                          <input
-                            type="checkbox"
-                            checked={selectedRequestNos.includes(row.requestNo)}
-                            onChange={() => handleSelectRowToggle(row.requestNo)}
-                            className="rounded text-[#953002]"
-                          />
+                    <td className="px-4 py-3 whitespace-nowrap">{row.memberId}</td>
+
+                    <td className="px-4 py-3">
+                      {row.examinationNumber || "-"}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2 px-6">
+
+                        {row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" && (
+                          <span
+                            title="Submitted for normal approval"
+                            className="text-Blue-500"
+                          >
+                            N
+                          </span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 font-medium">
-                        <button
-                          onClick={() => handleView(row.memberId, row.id)}
-                          className="text-blue-600 hover:underline font-medium"
-                        >
-                          {row.requestNo}
-                        </button>
-                      </td>
 
-                      <td className="px-4 py-3">
-                        {row.requestedDate || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">{row.memberId}</td>
-
-                      <td className="px-4 py-3">
-                        {row.memberFullName || row.nameWithInitials || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">{row.nic || "-"}</td>
-
-                      <td className="px-4 py-3">
-                        {row.studentName || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {row.examinationNumber || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 px-6">
-
-                          {row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" && (
-                            <span
-                              title="Submitted for normal approval"
-                              className="text-Blue-500"
-                            >
-                              N
-                            </span>
-                          )}
-
-                          {row.status ===
-                            "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
+                        {row.status ===
+                          "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
                             <span
                               title="Submitted for deviation approval"
                               className="text-red-500"
@@ -802,117 +784,129 @@ export default function Grade5ScholarshipRequestsListPage() {
                               D
                             </span>
                           )}
-                        </div>
-                      </td>
+                      </div>
+                    </td>
 
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(row.status)}`}>
-                          {row.status?.replace(/_/g, " ") || "-"}
-                        </span>
-                      </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(row.status)}`}>
+                        {row.status?.replace(/_/g, " ") || "-"}
+                      </span>
+                    </td>
 
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 px-6">
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2 px-6">
 
-                          {!submitted && loggedUserCanEdit && (
-                            <button
-                              onClick={() => handleEdit(row.memberId, row.id)}
-                              className="text-gray-600 hover:text-[#953002]"
-                              title="Edit"
-                            >
-                              ✎
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Board Meeting Selection Modal */}
-        {isBoardModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-              <h3 className="text-lg font-bold text-[#953002] mb-4">
-                Select Board Meeting Record
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Choose the Board Meeting Record to attach the selected requests to.
-              </p>
-              
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Board Meeting Date
-                </label>
-                <select
-                  value={selectedBoardMeetingId}
-                  onChange={(e) => setSelectedBoardMeetingId(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
-                >
-                  {boardMeetings.map((bm) => (
-                    <option key={bm.id} value={bm.id}>
-                      Board Meeting - {bm.scheduledDate} ({bm.boardMeetingId})
-                    </option>
-                  ))}
-                  {boardMeetings.length === 0 && (
-                    <option value="">No board meetings available</option>
-                  )}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  onClick={() => setIsBoardModalOpen(false)}
-                  className="bg-white text-black hover:bg-gray-100"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveApprovalList}
-                  disabled={!selectedBoardMeetingId}
-                  className="bg-[#953002] text-white hover:bg-[#7d2802]"
-                >
-                  Save
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* List Created Confirmation Dialog */}
-        {isConfirmModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-              <h3 className="text-lg font-bold text-[#953002] mb-3">
-                List Created Successfully
-              </h3>
-              <p className="text-sm text-gray-700 mb-6">
-                The Grade 5 Scholarship {approvalListType === "DEVIATION" ? "Deviation" : "Normal"} Approval List for {createdCount} requests has been created. Do you want to view the list?
-              </p>
-              <div className="flex justify-end gap-2">
-                <Button
-                  onClick={() => setIsConfirmModalOpen(false)}
-                  className="bg-white text-black hover:bg-gray-100 px-4"
-                >
-                  No
-                </Button>
-                <Button
-                  onClick={() => {
-                    setIsConfirmModalOpen(false);
-                    window.location.href = `/scholarships/grade-5/approval-lists?listId=${createdListId}`;
-                  }}
-                  className="bg-[#953002] text-white hover:bg-[#7d2802] px-4"
-                >
-                  Yes
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+                        {!submitted && loggedUserCanEdit && (
+                          <button
+                            onClick={() => handleEdit(row.memberId, row.requestNo)}
+                            className="text-gray-600 hover:text-[#953002]"
+                            title="Edit"
+                          >
+                            ✎
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
+
+      {/* Manage Exam Year & Cutoff Button */}
+      <div className="flex justify-end mt-4 mb-8 pb-4">
+        <Button
+          className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+          onClick={() => {
+            window.location.href = "/scholarships/grade-5/manage-exam-cutoff";
+          }}
+        >
+          Manage Exam Year & Cutoff
+        </Button>
+      </div>
+
+      {/* Board Meeting Selection Modal */}
+      {isBoardModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-[#953002] mb-4">
+              Select Board Meeting Record
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Choose the Board Meeting Record to attach the selected requests to.
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Board Meeting Date
+              </label>
+              <select
+                value={selectedBoardMeetingId}
+                onChange={(e) => setSelectedBoardMeetingId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+              >
+                {boardMeetings.map((bm) => (
+                  <option key={bm.id} value={bm.id}>
+                    Board Meeting - {bm.scheduledDate} ({bm.boardMeetingId})
+                  </option>
+                ))}
+                {boardMeetings.length === 0 && (
+                  <option value="">No board meetings available</option>
+                )}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={() => setIsBoardModalOpen(false)}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveApprovalList}
+                disabled={!selectedBoardMeetingId}
+                className="bg-[#953002] text-white hover:bg-[#7d2802]"
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* List Created Confirmation Dialog */}
+      {isConfirmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-[#953002] mb-3">
+              List Created Successfully
+            </h3>
+            <p className="text-sm text-gray-700 mb-6">
+              The Grade 5 Scholarship {approvalListType === "DEVIATION" ? "Deviation" : "Normal"} Approval List for {createdCount} requests has been created. Do you want to view the list?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={() => setIsConfirmModalOpen(false)}
+                className="bg-white text-black hover:bg-gray-100 px-4"
+              >
+                No
+              </Button>
+              <Button
+                onClick={() => {
+                  setIsConfirmModalOpen(false);
+                  window.location.href = `/scholarships/grade-5/approval-lists?listId=${createdListId}`;
+                }}
+                className="bg-[#953002] text-white hover:bg-[#7d2802] px-4"
+              >
+                Yes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

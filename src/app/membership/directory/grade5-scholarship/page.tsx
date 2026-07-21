@@ -172,7 +172,12 @@ export default function Grade5ScholarshipPage() {
 
     if (selectedMemberId) {
       fetchMember();
-      fetchGrade5Requests();
+      // mode=new means a fresh creation form — do not load any existing request
+      if (pageMode === "new") {
+        setGrade5Request(null);
+      } else {
+        fetchGrade5Requests();
+      }
     }
   }, [pageMode, selectedMemberId, requestId]);
 
@@ -201,7 +206,14 @@ export default function Grade5ScholarshipPage() {
   //fetch selected member details
   const fetchGrade5Requests = async () => {
     try {
-      const url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
+      let url: string;
+
+      // If a specific requestId is in the URL (view mode from member profile), fetch by requestNo
+      if (requestId) {
+        url = `${API_BASE_URL}/api/grade5/request/${requestId}`;
+      } else {
+        url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
+      }
 
       console.log("Fetching:", url);
 
@@ -210,7 +222,7 @@ export default function Grade5ScholarshipPage() {
       console.log("Response status:", res.status);
 
       if (res.status === 404) {
-        console.warn(`No Grade 5 request found for member: ${selectedMemberId} (404)`);
+        console.warn(`No Grade 5 request found (404): ${url}`);
         setGrade5Request(null);
         return;
       }
@@ -224,6 +236,10 @@ export default function Grade5ScholarshipPage() {
 
       if (data) {
         setGrade5Request(data);
+        // When opened via requestId, also hydrate the member from the fetched request
+        if (requestId && data.memberId && !selectedMemberId) {
+          setSelectedMemberId(data.memberId);
+        }
       } else {
         setGrade5Request(null);
       }
@@ -722,8 +738,8 @@ export default function Grade5ScholarshipPage() {
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
-        <div className="min-h-[100vh] flex-1 rounded-xl px-14 py-10 bg-muted/50 p-6">
+      <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
+        <div className="min-h-[100vh] flex-1 rounded-xl w-full px-6 py-6 bg-muted/50">
 
           <div className="flex items-center justify-between ">
             <div>

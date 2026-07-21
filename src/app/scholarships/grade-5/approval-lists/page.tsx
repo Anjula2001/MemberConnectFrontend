@@ -287,7 +287,7 @@ export default function Grade5ApprovalListsPage() {
   const filteredLists = lists.filter((list) => list.type === activeTypeTab);
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+    <div className="w-full flex flex-1 flex-col gap-4 p-6 pt-0">
       {/* Title */}
       <div className="flex items-center gap-3">
         <button

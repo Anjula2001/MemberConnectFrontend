@@ -593,8 +593,8 @@ export default function RetirementPage() {
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
-        <div className="min-h-[100vh] flex-1 px-14 py-10 rounded-xl bg-muted/50 p-6">
+      <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
+        <div className="min-h-[100vh] flex-1 rounded-xl w-full px-6 py-6 bg-muted/50">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-2xl font-bold text-[#953002] ">
