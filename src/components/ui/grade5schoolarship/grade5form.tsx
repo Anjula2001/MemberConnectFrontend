@@ -129,6 +129,7 @@ export interface Grade5FormRef {
   ) => Promise<Grade5SavedRequest | undefined>;
   validateAndGetData: () => Promise<Grade5RequestPayload | undefined>;
   getBirthCertificateNo: () => string;
+  getExamYear: () => number | undefined;
 }
 
 const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
@@ -412,6 +413,9 @@ useEffect(() => {
     },
     getBirthCertificateNo: () => {
       return getValues("birthCertificateNo");
+    },
+    getExamYear: () => {
+      return getValues("examYear");
     },
   }));
 

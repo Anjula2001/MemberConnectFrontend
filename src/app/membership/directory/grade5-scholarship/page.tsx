@@ -697,6 +697,7 @@ export default function Grade5ScholarshipPage() {
     setFundError("");
 
     const birthCertificateNo = formRef.current?.getBirthCertificateNo?.();
+    const examYear = formRef.current?.getExamYear?.() || grade5Request?.examYear;
 
     if (!birthCertificateNo) {
       setFundError("Birth Certificate No required");
@@ -704,14 +705,20 @@ export default function Grade5ScholarshipPage() {
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/grade5/fund-details?birthCertificateNo=${encodeURIComponent(
-          birthCertificateNo
-        )}`
-      );
+      let url = `${API_BASE_URL}/api/grade5/fund-details?birthCertificateNo=${encodeURIComponent(
+        birthCertificateNo
+      )}`;
+
+      if (examYear) {
+        url += `&examYear=${encodeURIComponent(String(examYear))}`;
+      }
+
+      const res = await fetch(url);
 
       if (!res.ok) {
-        throw new Error("Failed to fetch fund details");
+        const errorText = await res.text();
+        console.error("Fund details fetch error:", errorText);
+        throw new Error(errorText || "Failed to fetch fund details");
       }
 
       const data = await res.json();
@@ -973,7 +980,8 @@ export default function Grade5ScholarshipPage() {
                         <input
                           type="number"
                           value={eligibleMonths}
-                          disabled={fundReadOnly}
+                          readOnly={!minorAccountExists || fundReadOnly}
+                          disabled={!minorAccountExists || fundReadOnly}
                           onChange={(e) => {
                             const months = Number(e.target.value);
 
@@ -984,9 +992,7 @@ export default function Grade5ScholarshipPage() {
 
                             const selectedOption =
                               disbursementOption ||
-                              (minorAccountExists
-                                ? MEMBER_AND_MINOR
-                                : MEMBER_ONLY);
+                              (minorAccountExists ? MEMBER_AND_MINOR : MEMBER_ONLY);
 
                             setEligibleMonths(months);
                             setFundError("");
@@ -996,7 +1002,11 @@ export default function Grade5ScholarshipPage() {
                               minorAccountExists
                             );
                           }}
-                          className="border rounded-md px-3 py-2 w-full"
+                          className={`border rounded-md px-3 py-2 w-full ${
+                            !minorAccountExists || fundReadOnly
+                              ? "bg-gray-100 cursor-not-allowed text-gray-600"
+                              : ""
+                          }`}
                         />
                       </div>
                     </div>
