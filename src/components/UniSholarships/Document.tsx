@@ -38,7 +38,7 @@ export default function Document({
   documentTypes,
 }: DocumentProps) {
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
-  
+
   //Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -54,7 +54,7 @@ export default function Document({
     },
     [disabled, selectedDocumentType, setFiles]
   );
-  
+
   //Initialize react-dropzone
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
@@ -118,11 +118,10 @@ export default function Document({
 
           <div
             {...getRootProps()}
-            className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-sm ${
-              selectedDocumentType
+            className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-sm ${selectedDocumentType
                 ? "cursor-pointer text-muted-foreground hover:bg-gray-50"
                 : "cursor-not-allowed bg-gray-50 text-gray-400"
-            }`}
+              }`}
           >
             <input {...getInputProps()} />
             <UploadCloud className="h-8 w-8 text-[#953002] mb-2" />

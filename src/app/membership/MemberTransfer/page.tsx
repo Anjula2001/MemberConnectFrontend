@@ -634,7 +634,9 @@ export default function Page() {
                                 ) : (
                                     displayed.map((item) => {
                                         const requestKey = item.requestId || String(item.id);
-                                        const isSubmitted = item.status === "SUBMITTEDFORAPPROVAL" || item.status === "SUBMITTED";
+                                        const statusNormalized = (item.status || "").toLowerCase().replace(/[\s_]+/g, "");
+                                        const isSubmitted = statusNormalized === "submittedforapproval" || statusNormalized === "submitted";
+                                        const isApproved = statusNormalized === "approved";
 
                                         return (
                                             <tr key={item.id} className="border-t text-sm text-gray-600 hover:bg-slate-50/50 transition-colors">
@@ -645,14 +647,18 @@ export default function Page() {
                                                     />
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    <Link
-                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                        className="text-[#953002] hover:underline font-medium"
-                                                    >
-                                                        {requestKey}
-                                                    </Link>
+                                                    {isApproved ? (
+                                                        <span className="font-medium text-gray-700">{requestKey}</span>
+                                                    ) : (
+                                                        <Link
+                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                            className="text-[#953002] hover:underline font-medium"
+                                                        >
+                                                            {requestKey}
+                                                        </Link>
+                                                    )}
                                                 </td>
-                                                <td className="py-4 px-4">
+                                                <td className="py-4 px-4 text-gray-600">
                                                     {item.memberId}
                                                 </td>
                                                 <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
@@ -671,12 +677,14 @@ export default function Page() {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    <Link
-                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                        className="text-[#953002] hover:underline font-medium"
-                                                    >
-                                                        Open
-                                                    </Link>
+                                                    {!isApproved && (
+                                                        <Link
+                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                            className="text-[#953002] hover:underline font-medium"
+                                                        >
+                                                            Open
+                                                        </Link>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
