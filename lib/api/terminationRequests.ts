@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/api/client";
 
-export interface TerminationRequestDTO {
+export interface TerminationRequestResponse {
   id?: number;
   requestNo?: string;
   memberId?: string;
@@ -20,18 +20,16 @@ export interface TerminationRequestDTO {
   hasIndirectObligations?: boolean;
 }
 
-const BASE_PATH = "/api/termination-requests";
-
 export async function approveTerminationRequest(requestNo: string) {
-  const { data } = await apiClient.put<TerminationRequestDTO>(
-    `${BASE_PATH}/${encodeURIComponent(requestNo)}/approve`
+  const { data } = await apiClient.put<TerminationRequestResponse>(
+    `/api/termination-requests/${encodeURIComponent(requestNo)}/approve`
   );
   return data;
 }
 
 export async function rejectTerminationRequest(requestNo: string, reason: string) {
-  const { data } = await apiClient.put<TerminationRequestDTO>(
-    `${BASE_PATH}/${encodeURIComponent(requestNo)}/reject`,
+  const { data } = await apiClient.put<TerminationRequestResponse>(
+    `/api/termination-requests/${encodeURIComponent(requestNo)}/reject`,
     { reason }
   );
   return data;

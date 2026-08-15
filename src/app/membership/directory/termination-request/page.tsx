@@ -67,6 +67,19 @@ const API_BASE_URL = "http://localhost:8080";
 
 const LOCKED_STATUSES = ["SUBMITTED_FOR_APPROVAL", "APPROVED", "REJECTED", "ADDED_TO_APPROVAL_LIST"];
 
+const TERMINATION_STATUS_LABELS: Record<string, string> = {
+  NEW: "New",
+  INCOMPLETE: "Incomplete",
+  SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
+  ADDED_TO_APPROVAL_LIST: "Added to Termination Approval List",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  INACTIVE: "Inactive",
+};
+
+const formatTerminationStatus = (status: string) =>
+  TERMINATION_STATUS_LABELS[status] ?? status.replaceAll("_", " ");
+
 const DEFAULT_TERMINATION_REASONS: TerminationReason[] = [
   { id: "1", name: "Resignation from Post" },
   { id: "2", name: "Disciplinary Action" },
@@ -110,14 +123,14 @@ export default function TerminationRequestPage() {
     : false;
   const isEditMode = isEditing && !isRequestLocked;
   const isIncompleteStatus = terminationRequest?.status === "INCOMPLETE";
-  const isViewRequestMode = pageMode === "view";
   const hasSavedRequest = !!terminationRequest?.id;
   const canModifyMember =
     !member.status ||
     member.status === "ACTIVE" ||
     member.status === "TERMINATION_REQUESTED";
-  const showSaveButton = !isViewRequestMode || isEditMode;
-  const showWorkflowActions = hasSavedRequest && !isRequestLocked;
+  const showEditButton = hasSavedRequest && !isRequestLocked && !isEditMode;
+  const showSaveButton = !hasSavedRequest || isEditMode;
+  const showWorkflowActions = hasSavedRequest && !isRequestLocked && !isEditMode;
   const isWorkflowBlockedByEdit = isEditMode;
   const isSubmitBlockedByLoans = validation ? !validation.canSubmit : true;
 
@@ -506,7 +519,7 @@ export default function TerminationRequestPage() {
                 </div>
 
                 <p className="text-sm font-semibold text-blue-600">
-                  Status: {requestStatus}
+                  Status: {formatTerminationStatus(requestStatus)}
                   {isIncompleteStatus &&
                     terminationRequest?.incompleteReason &&
                     ` (${terminationRequest.incompleteReason})`}
@@ -516,24 +529,22 @@ export default function TerminationRequestPage() {
               {saveError && <p className="mt-2 text-sm text-red-500">{saveError}</p>}
             </div>
 
-            <div className="flex gap-2">
-              {isViewRequestMode &&
-                hasSavedRequest &&
-                !isRequestLocked &&
-                !isEditMode && (
-                  <Button
-                    onClick={() => setIsEditing(true)}
-                    className="bg-white text-black hover:bg-gray-100"
-                  >
-                    Edit
-                  </Button>
-                )}
+            <div className="flex flex-wrap justify-end gap-2">
+              {showEditButton && (
+                <Button
+                  variant="outline"
+                  onClick={() => setIsEditing(true)}
+                  className="border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50"
+                >
+                  Edit
+                </Button>
+              )}
 
               {showSaveButton && (
                 <Button
                   onClick={handleSave}
                   disabled={!canModifyMember}
-                  className="bg-white text-black hover:bg-gray-100 disabled:cursor-not-allowed"
+                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Save
                 </Button>
@@ -544,7 +555,7 @@ export default function TerminationRequestPage() {
                   <Button
                     onClick={() => setOpenModal(true)}
                     disabled={isWorkflowBlockedByEdit || isIncompleteStatus}
-                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
+                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Mark Incomplete
                   </Button>
@@ -556,7 +567,7 @@ export default function TerminationRequestPage() {
                       isSubmitBlockedByLoans ||
                       isIncompleteStatus
                     }
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Submit for Approval
                   </Button>
@@ -780,6 +791,7 @@ export default function TerminationRequestPage() {
         title="Submit Termination Request"
         description="Please confirm that all mandatory information and supporting documents are complete before submitting this request for approval."
         confirmLabel="Submit for Approval"
+        footerNote="Once submitted, this termination request cannot be edited."
         isLoading={isSubmitting}
         onClose={() => !isSubmitting && setOpenSubmitConfirm(false)}
         onConfirm={handleConfirmSubmit}

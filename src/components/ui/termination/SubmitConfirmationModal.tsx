@@ -9,6 +9,7 @@ interface SubmitConfirmationModalProps {
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  footerNote?: string;
   isLoading?: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -20,6 +21,7 @@ export function SubmitConfirmationModal({
   description,
   confirmLabel = "Submit for Approval",
   cancelLabel = "Cancel",
+  footerNote,
   isLoading = false,
   onClose,
   onConfirm,
@@ -60,13 +62,13 @@ export function SubmitConfirmationModal({
           </button>
         </div>
 
-        <div className="rounded-b-xl bg-amber-50 px-6 py-3">
-          <p className="text-sm text-amber-900">
-            Once submitted, this termination request cannot be edited.
-          </p>
-        </div>
+        {footerNote && (
+          <div className="rounded-b-xl bg-amber-50 px-6 py-3">
+            <p className="text-sm text-amber-900">{footerNote}</p>
+          </div>
+        )}
 
-        <div className="flex justify-end gap-3 px-6 py-4">
+        <div className={`flex justify-end gap-3 px-6 py-4 ${footerNote ? "" : "border-t"}`}>
           <Button
             type="button"
             variant="outline"

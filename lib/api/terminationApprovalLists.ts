@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api/client";
-import type { TerminationRequestDTO } from "@/lib/api/terminationRequests";
+import type { TerminationRequestResponse } from "@/lib/api/terminationRequests";
 
 export interface TerminationApprovalListDTO {
   id?: number;
@@ -29,29 +29,27 @@ const BASE_PATH = "/api/termination-approval-lists";
 
 export async function createTerminationApprovalList(payload: TerminationApprovalListDTO) {
   const { data } = await apiClient.post<TerminationApprovalListDTO>(
-    `${BASE_PATH}/createTerminationApprovalList`,
+    `${BASE_PATH}/create`,
     payload
   );
   return data;
 }
 
 export async function getTerminationApprovalLists() {
-  const { data } = await apiClient.get<TerminationApprovalListDTO[]>(
-    `${BASE_PATH}/getAllTerminationApprovalLists`
-  );
+  const { data } = await apiClient.get<TerminationApprovalListDTO[]>(BASE_PATH);
   return data;
 }
 
 export async function getTerminationApprovalListByListId(listId: string) {
   const { data } = await apiClient.get<TerminationApprovalListDTO>(
-    `${BASE_PATH}/getTerminationApprovalListByListId/${encodeURIComponent(listId)}`
+    `${BASE_PATH}/${encodeURIComponent(listId)}`
   );
   return data;
 }
 
 export async function getTerminationApprovalListRequests(listId: string) {
-  const { data } = await apiClient.get<TerminationRequestDTO[]>(
-    `${BASE_PATH}/getRequestsByListId/${encodeURIComponent(listId)}`
+  const { data } = await apiClient.get<TerminationRequestResponse[]>(
+    `${BASE_PATH}/${encodeURIComponent(listId)}/requests`
   );
   return data;
 }
@@ -61,7 +59,7 @@ export async function processTerminationApprovalList(
   payload: ProcessTerminationApprovalListPayload
 ) {
   const { data } = await apiClient.patch<TerminationApprovalListDTO>(
-    `${BASE_PATH}/processTerminationApprovalList/${encodeURIComponent(listId)}`,
+    `${BASE_PATH}/${encodeURIComponent(listId)}/process`,
     payload
   );
   return data;
@@ -69,7 +67,7 @@ export async function processTerminationApprovalList(
 
 export async function deleteTerminationApprovalList(listId: string) {
   const { data } = await apiClient.delete<string>(
-    `${BASE_PATH}/deleteTerminationApprovalList/${encodeURIComponent(listId)}`
+    `${BASE_PATH}/${encodeURIComponent(listId)}`
   );
   return data;
 }
