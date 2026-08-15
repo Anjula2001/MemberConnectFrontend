@@ -1091,7 +1091,7 @@ export default function RetirementPage() {
             <p className="text-sm text-gray-700 leading-relaxed">
               Change retirement request status to{" "}
               <span className="font-semibold text-gray-900">{statusConfirmModal.statusLabel}</span>?
-              This action may update the member's profile status.
+              This action may update the member&apos;s profile status.
             </p>
 
             <div className="flex justify-end gap-2 pt-2">

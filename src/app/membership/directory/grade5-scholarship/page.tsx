@@ -152,12 +152,12 @@ export default function Grade5ScholarshipPage() {
         try {
           const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
           if (!res.ok) throw new Error("Failed to fetch members");
-          const members = await res.json();
-          const activeMember = members.find((m: any) => m.status === "ACTIVE" || m.status === "active");
+          const members: { status: string; memberId: string | number }[] = await res.json();
+          const activeMember = members.find((m) => m.status === "ACTIVE" || m.status === "active");
           if (activeMember) {
-            setSelectedMemberId(activeMember.memberId);
+            setSelectedMemberId(activeMember.memberId as string);
           } else if (members.length > 0) {
-            setSelectedMemberId(members[0].memberId);
+            setSelectedMemberId(members[0].memberId as string);
           }
         } catch (error) {
           console.error("Failed to fetch default member:", error);
@@ -356,7 +356,7 @@ export default function Grade5ScholarshipPage() {
   };
 
   //Validates that all mandatory documents are uploaded before submit a request.
-  const validateMandatoryDocuments = async (savedRequestNo: String) => {
+  const validateMandatoryDocuments = async (savedRequestNo: string) => {
     setDocumentError("");
 
     try {
