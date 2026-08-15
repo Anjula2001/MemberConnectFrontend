@@ -10,7 +10,7 @@ import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Eye } from "lucide-react";
+import { Eye, Check, AlertCircle } from "lucide-react";
 
 type FormData = {
   requestDate: string;
@@ -97,6 +97,8 @@ export default function StudentExamSection() {
   const [branches, setBranches] = useState<any[]>([]);
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -674,11 +676,19 @@ export default function StudentExamSection() {
       return;
     }
 
-    const confirmSubmit = window.confirm(
-      "After submitting, this request cannot be edited. Do you want to continue?"
-    );
+    setShowSubmitConfirmModal(true);
+  };
 
-    if (!confirmSubmit) {
+  const executeSubmit = async () => {
+    setShowSubmitConfirmModal(false);
+    let actionId: string | number | null = requestId;
+    if (!actionId && loadedRecord) {
+      actionId = loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null);
+    }
+
+    if (!actionId) {
+      setExamNoPopupMessage("Please save the request before submitting");
+      setShowExamNoPopup(true);
       return;
     }
 
@@ -817,14 +827,14 @@ export default function StudentExamSection() {
   };
 
   //Handle Approve Scholarship
-  const handleApproveScholarship = async () => {
+  const handleApproveScholarship = () => {
     if (!requestId) return;
+    setShowApproveConfirmModal(true);
+  };
 
-    const confirmApprove = window.confirm(
-      "Approve this scholarship request?"
-    );
-
-    if (!confirmApprove) return;
+  const executeApproveScholarship = async () => {
+    setShowApproveConfirmModal(false);
+    if (!requestId) return;
 
     const deviationFlag = !!loadedRecord && (
       !!(loadedRecord as any).followsDeviationProcess
@@ -1970,29 +1980,155 @@ export default function StudentExamSection() {
         onConfirm={handleMarkIncomplete}
       />
 
-      {showExamNoPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              POPUP MESSAGE
-            </h3>
+      {showExamNoPopup && (() => {
+        const msgLower = examNoPopupMessage.toLowerCase();
+        const isError =
+          msgLower.includes("failed") ||
+          msgLower.includes("error") ||
+          msgLower.includes("duplicate") ||
+          msgLower.includes("please");
 
-            <p className="mb-5 text-sm text-black">
-              {examNoPopupMessage}
-            </p>
+        let popupTitle = "Notification";
+        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+        else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
+        else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
+        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        else if (msgLower.includes("duplicate")) popupTitle = "Validation Error";
+        else if (isError) popupTitle = "Notice";
 
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setShowExamNoPopup(false)}
-                className="bg-[#953002] text-white hover:bg-[#7a2500]"
-              >
-                OK
-              </Button>
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              {isError ? (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100/80">
+                  <AlertCircle className="h-7 w-7 text-amber-600 stroke-[2.5]" />
+                </div>
+              ) : (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                  <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+                </div>
+              )}
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                {popupTitle}
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                {examNoPopupMessage}
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2">
+                <Button
+                  type="button"
+                  onClick={() => setShowExamNoPopup(false)}
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                >
+                  OK
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {showSubmitConfirmModal && (() => {
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Submit for Approval
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                The scholarship request will be submitted for approval and can no longer be edited.
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSubmitConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeSubmit}
+                >
+                  Submit
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showApproveConfirmModal && (() => {
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Approve Scholarship
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                Are you sure you want to approve this scholarship request?
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowApproveConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-emerald-600 text-white hover:bg-emerald-700 font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeApproveScholarship}
+                >
+                  Approve
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

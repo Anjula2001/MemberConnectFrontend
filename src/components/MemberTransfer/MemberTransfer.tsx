@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trash2, UploadCloud } from "lucide-react";
+import { Trash2, UploadCloud, Check, AlertCircle } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
@@ -205,6 +205,9 @@ export default function ChangeMemberTransferForm() {
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<MemberTransferFormData | null>(null);
 
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -621,9 +624,15 @@ export default function ChangeMemberTransferForm() {
   }, [selectedWorkingLocation, workingLocations, setValue]);
 
   //Handle form submission for both new and existing requests
-  const onSubmit = async (data: MemberTransferFormData) => {
-    const confirmSubmit = window.confirm("After submitting, this request cannot be edited. Do you want to continue?");
-    if (!confirmSubmit) return;
+  const onSubmit = (data: MemberTransferFormData) => {
+    setPendingFormData(data);
+    setShowSubmitConfirmModal(true);
+  };
+
+  const executeSubmit = async () => {
+    setShowSubmitConfirmModal(false);
+    if (!pendingFormData) return;
+    const data = pendingFormData;
 
     setIsSubmitting(true);
     try {
@@ -770,10 +779,14 @@ export default function ChangeMemberTransferForm() {
   };
 
   //Handle Approve transfer
-  const handleApproveTransfer = async () => {
+  const handleApproveTransfer = () => {
     if (!requestId) return;
-    const confirmApprove = window.confirm("Approve this member transfer?");
-    if (!confirmApprove) return;
+    setShowApproveConfirmModal(true);
+  };
+
+  const executeApproveTransfer = async () => {
+    setShowApproveConfirmModal(false);
+    if (!requestId) return;
 
     try {
       const res = await fetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
@@ -1181,19 +1194,155 @@ export default function ChangeMemberTransferForm() {
         </div>
       </form>
 
-      {showPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-3 text-lg font-semibold text-[#953002]">POPUP MESSAGE</h3>
-            <p className="mb-5 text-sm text-black">{popupMessage}</p>
-            <div className="flex justify-end">
-              <Button type="button" onClick={() => setShowPopup(false)} className="bg-[#953002] text-white hover:bg-[#7a2500]">
-                OK
-              </Button>
+      {showPopup && (() => {
+        const msgLower = popupMessage.toLowerCase();
+        const isError =
+          msgLower.includes("failed") ||
+          msgLower.includes("error") ||
+          msgLower.includes("duplicate") ||
+          msgLower.includes("required") ||
+          msgLower.includes("please");
+
+        let popupTitle = "Notification";
+        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+        else if (msgLower.includes("approved")) popupTitle = "Member Transfer Approved";
+        else if (msgLower.includes("rejected")) popupTitle = "Member Transfer Rejected";
+        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        else if (isError) popupTitle = "Notice";
+
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              {isError ? (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100/80">
+                  <AlertCircle className="h-7 w-7 text-amber-600 stroke-[2.5]" />
+                </div>
+              ) : (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                  <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+                </div>
+              )}
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                {popupTitle}
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                {popupMessage}
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2">
+                <Button
+                  type="button"
+                  onClick={() => setShowPopup(false)}
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                >
+                  OK
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {showSubmitConfirmModal && (() => {
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Submit for Approval
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                The member transfer request will be submitted for approval and can no longer be edited.
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSubmitConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeSubmit}
+                >
+                  Submit
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showApproveConfirmModal && (() => {
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Approve Member Transfer
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                Are you sure you want to approve this member transfer request?
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowApproveConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-emerald-600 text-white hover:bg-emerald-700 font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeApproveTransfer}
+                >
+                  Approve
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
