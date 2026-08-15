@@ -18,7 +18,7 @@ import {
 interface TerminationRequest {
   id: string;
   requestId: string;
-  sourceType: "termination" | "retirement";
+  sourceType: "termination" | "retirement" | "member_death";
   date: string;
   member: string;
   nameAsInPayroll: string;
@@ -28,7 +28,7 @@ interface TerminationRequest {
   hasLoanBalance: boolean;
   hasIndirectObligations: boolean;
   reason: string;
-  status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE";
+  status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE" | "DISTRICT_COMMITTEE" | "PD_COMMITTEE" | "INACTIVE";
   selectable: boolean;
 }
 
@@ -66,7 +66,10 @@ type TerminationRequestApiRow = {
   totalOutstandingLoanBalance?: number;
   reason?: string;
   terminationReason?: string;
-  status?: TerminationRequest["status"];
+  status?: TerminationRequest["status"] | string;
+  recordNo?: string;
+  informedDate?: string;
+  causeOfDeathName?: string;
 };
 
 type TerminationRequestApiResponse =
@@ -94,10 +97,17 @@ const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
   "rejected",
   "added_to_approval_list",
 ];
+const DEFAULT_MEMBER_DEATH_STATUSES: StatusType[] = [
+  "new",
+  "submitted_for_approval",
+  "incomplete",
+];
 const TERMINATION_STATUS_LABELS: Record<string, string> = {
   NEW: "New",
   SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
   ADDED_TO_APPROVAL_LIST: "Added to Termination Approval List",
+  DISTRICT_COMMITTEE: "District Committee",
+  PD_COMMITTEE: "P&D Committee",
   APPROVED: "Approved",
   REJECTED: "Rejected",
   INCOMPLETE: "Incomplete",
@@ -439,9 +449,41 @@ export default function TerminationPage() {
         ? DEFAULT_RETIREMENT_STATUSES
         : newType === "termination"
           ? DEFAULT_TERMINATION_STATUSES
+          : newType === "member_deaths"
+            ? DEFAULT_MEMBER_DEATH_STATUSES
           : []
     );
   };
+
+  const normalizeStatusForApi = (status: StatusType) => {
+    const normalized = status.toUpperCase().replaceAll("-", "_");
+    return normalized === "PND_COMMITTEE" ? "PD_COMMITTEE" : normalized;
+  };
+
+  const normalizeMemberDeathRows = (
+    rows: TerminationRequestApiRow[]
+  ): TerminationRequest[] =>
+    rows.map((row) => ({
+      id: row.recordNo ?? row.requestNo ?? String(row.id ?? ""),
+      requestId: row.recordNo ?? row.requestNo ?? "-",
+      sourceType: "member_death",
+      date: row.informedDate ?? row.requestedDate ?? row.date ?? "-",
+      member:
+        row.memberFullName ??
+        row.nameWithInitials ??
+        row.fullName ??
+        "-",
+      nameAsInPayroll: row.nameAsInPayroll ?? "-",
+      nameWithInitials: row.nameWithInitials ?? "-",
+      memberNumber: row.memberId ?? row.memberNumber ?? "-",
+      nicNumber: row.memberNic ?? row.nicNumber ?? row.nic ?? "-",
+      hasLoanBalance: row.hasLoanBalance ?? row.hasOutstandingLoans ?? false,
+      hasIndirectObligations:
+        row.hasIndirectObligations ?? row.hasLoanObligations ?? false,
+      reason: row.causeOfDeathName ?? row.reason ?? "-",
+      status: (row.status ?? "NEW") as TerminationRequest["status"],
+      selectable: false,
+    }));
 
   const normalizeApiRows = (
     responseData: TerminationRequestApiResponse,
@@ -494,7 +536,7 @@ export default function TerminationPage() {
           row.hasLoanObligations ??
           false,
         reason: row.reason ?? row.terminationReason ?? "-",
-        status: row.status ?? "NEW",
+        status: (row.status ?? "NEW") as TerminationRequest["status"],
         selectable:
           sourceType === "termination" &&
           (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED"),
@@ -505,7 +547,7 @@ export default function TerminationPage() {
   const buildQueryParams = (statuses: StatusType[] = selectedStatuses) => {
     const params = new URLSearchParams();
 
-    statuses.forEach((status) => params.append("statuses", status.toUpperCase()));
+    statuses.forEach((status) => params.append("statuses", normalizeStatusForApi(status)));
 
     if (searchQuery.trim()) {
       params.append("searchKey", searchQuery.trim());
@@ -528,6 +570,22 @@ export default function TerminationPage() {
     params.append("sortOrder", sortOrder);
 
     return params;
+  };
+
+  const fetchMemberDeathRequestsFromApi = async (
+    statuses: StatusType[] = selectedStatuses
+  ) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/member-death-records?${buildQueryParams(statuses).toString()}`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to retrieve member death records.");
+    }
+
+    const data = (await response.json()) as TerminationRequestApiRow[];
+    return normalizeMemberDeathRows(data);
   };
 
   const fetchRequestsFromApi = async (
@@ -584,21 +642,19 @@ export default function TerminationPage() {
         }
       }
 
-      if (requestType !== "all" && requestType !== "retirement" && requestType !== "termination") {
-        setRequests([]);
-        return;
-      }
-
       let retrievedRequests: TerminationRequest[];
 
       if (requestType === "all") {
-        const [terminationRequests, retirementRequests] = await Promise.all([
+        const [terminationRequests, retirementRequests, memberDeathRequests] =
+          await Promise.all([
           fetchRequestsFromApi("termination-requests", "termination", statuses),
           fetchRequestsFromApi("retirement-requests", "retirement", statuses),
+          fetchMemberDeathRequestsFromApi(statuses),
         ]);
         retrievedRequests = sortMergedRequests([
           ...terminationRequests,
           ...retirementRequests,
+          ...memberDeathRequests,
         ]);
       } else if (requestType === "termination") {
         retrievedRequests = await fetchRequestsFromApi(
@@ -606,12 +662,14 @@ export default function TerminationPage() {
           "termination",
           statuses
         );
-      } else {
+      } else if (requestType === "retirement") {
         retrievedRequests = await fetchRequestsFromApi(
           "retirement-requests",
           "retirement",
           statuses
         );
+      } else {
+        retrievedRequests = await fetchMemberDeathRequestsFromApi(statuses);
       }
 
       setRequests(retrievedRequests);
@@ -640,6 +698,14 @@ export default function TerminationPage() {
         color: "bg-indigo-100 text-indigo-800",
         label: TERMINATION_STATUS_LABELS.ADDED_TO_APPROVAL_LIST,
       },
+      DISTRICT_COMMITTEE: {
+        color: "bg-orange-100 text-orange-800",
+        label: TERMINATION_STATUS_LABELS.DISTRICT_COMMITTEE,
+      },
+      PD_COMMITTEE: {
+        color: "bg-orange-100 text-orange-800",
+        label: TERMINATION_STATUS_LABELS.PD_COMMITTEE,
+      },
       APPROVED: { color: "bg-green-100 text-green-800", label: TERMINATION_STATUS_LABELS.APPROVED },
       REJECTED: { color: "bg-red-100 text-red-800", label: TERMINATION_STATUS_LABELS.REJECTED },
       INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: TERMINATION_STATUS_LABELS.INCOMPLETE },
@@ -657,18 +723,37 @@ export default function TerminationPage() {
     );
   };
 
-  const getRequestBasePath = (sourceType: TerminationRequest["sourceType"]) =>
-    sourceType === "termination"
-      ? "/membership/directory/termination-request"
-      : "/membership/directory/retirement";
+  const getRequestBasePath = (sourceType: TerminationRequest["sourceType"]) => {
+    if (sourceType === "termination") {
+      return "/membership/directory/termination-request";
+    }
+    if (sourceType === "member_death") {
+      return "/membership/directory/record-member-death";
+    }
+    return "/membership/directory/retirement";
+  };
 
   const handleEditRequest = (request: TerminationRequest) => {
+    if (request.sourceType === "member_death") {
+      router.push(
+        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
+      );
+      return;
+    }
+
     router.push(
       `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
     );
   };
 
   const handleOpenRequest = (request: TerminationRequest) => {
+    if (request.sourceType === "member_death") {
+      router.push(
+        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
+      );
+      return;
+    }
+
     router.push(
       `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
     );
@@ -995,7 +1080,11 @@ export default function TerminationPage() {
                     </button>
                   </TableCell>
                   {showRequestTypeColumn && (
-                    <TableCell className="px-6 capitalize">{request.sourceType}</TableCell>
+                    <TableCell className="px-6 capitalize">
+                      {request.sourceType === "member_death"
+                        ? "Member Death"
+                        : request.sourceType}
+                    </TableCell>
                   )}
                   <TableCell className="px-6">{request.date}</TableCell>
                   <TableCell className="px-6">

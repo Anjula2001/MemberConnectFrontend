@@ -157,6 +157,14 @@ export default function MemberProfilePage({
 			return;
 		}
 
+		if (
+			action === "Record Member Death" &&
+			profile.status !== "ACTIVE" &&
+			profile.status !== "MEMBER_DEATH_RECORDED"
+		) {
+			return;
+		}
+
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
 		const routeMap: Record<string, string> = {
@@ -251,7 +259,12 @@ export default function MemberProfilePage({
 								<div className="px-5 py-2 space-y-1">
 									{actionGroups.secondary.map((item) => {
 										const isDeathDonation = item === "Death Donation Request";
-										const isDisabled = isDeathDonation && profile.status !== "ACTIVE";
+										const isRecordMemberDeath = item === "Record Member Death";
+										const isDisabled =
+											(isDeathDonation && profile.status !== "ACTIVE") ||
+											(isRecordMemberDeath &&
+												profile.status !== "ACTIVE" &&
+												profile.status !== "MEMBER_DEATH_RECORDED");
 
 										return (
 										<button
