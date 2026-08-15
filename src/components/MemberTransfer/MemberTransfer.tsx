@@ -1121,27 +1121,48 @@ export default function ChangeMemberTransferForm() {
               <h3 className="mb-4 text-xl font-bold text-[#953002]">Uploaded Documents</h3>
 
               <div className="space-y-3">
-                {uploadedDocuments.map((doc) => (
-                  <div key={doc.id} className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800">{doc.documentType || "Document"}</p>
-                      <p className="mt-1 text-xs text-gray-600">{doc.fileName || "Unnamed file"}</p>
+                {uploadedDocuments.map((doc) => {
+                  const reqDoc = requiredDocumentTypes.find(
+                    (type) => type.id === doc.requiredDocumentId || type.documentType === doc.documentType
+                  );
+                  const docTypeLabel = reqDoc?.displayName || doc.documentType || "Document";
+                  const previewUrl =
+                    doc.fileUrl ||
+                    `http://localhost:8080/api/uploaded-documents/download/${doc.id}?requestId=${encodeURIComponent(
+                      doc.requestId || String(requestId || "")
+                    )}`;
 
-                      {doc.uploadedAt && <p className="mt-1 text-xs text-gray-500">Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</p>}
+                  return (
+                    <div key={doc.id} className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-800">{docTypeLabel}</p>
+                        <p className="mt-1 text-xs text-gray-600">{doc.fileName || "Unnamed file"}</p>
+                        {doc.uploadedAt && (
+                          <p className="mt-1 text-xs text-gray-500">Uploaded: {new Date(doc.uploadedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+
+                      <div className="ml-3 flex gap-2">
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                        >
+                          Preview
+                        </a>
+                        <a
+                          href={`${previewUrl}&download=true`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-[#953002] bg-white px-3 py-1.5 text-xs font-medium text-[#953002] transition-colors hover:bg-[#953002]/10"
+                        >
+                          Download
+                        </a>
+                      </div>
                     </div>
-
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-3 inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
-                      >
-                        View
-                      </a>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
