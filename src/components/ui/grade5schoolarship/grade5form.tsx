@@ -1,6 +1,6 @@
 "use client";
 
-import {forwardRef,useImperativeHandle,useEffect,useState,} from "react";
+import {forwardRef,useImperativeHandle,useEffect,useState,useRef} from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -126,6 +126,11 @@ export interface Grade5FormRef {
 
 const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
   ({ memberId, initialData, readOnly = false  }, ref) => {
+  const memberIdRef = useRef(memberId);
+
+  useEffect(() => {
+    memberIdRef.current = memberId;
+  }, [memberId]);
   
   const {
     register,
@@ -326,7 +331,7 @@ useEffect(() => {
       const res = await fetch(
         isUpdate
           ? `http://localhost:8080/api/grade5/${requestNo}/update`
-          : `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberId)}`,
+          : `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberIdRef.current)}`,
         {
           method: isUpdate ? "PUT" : "POST",
           headers: {

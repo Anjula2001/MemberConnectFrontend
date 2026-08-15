@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Search, Eye, Loader2, Edit3, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Loader2, Edit3, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation'; // Added for navigation
 import axios from 'axios';
 
@@ -26,16 +26,23 @@ interface RequestData {
   newNomineeNIC?: string;
   address?: string;
   newNomineeAddress?: string;
+  newRemittanceAmount?: string;
+  newRemittanceCurrency?: string;
 }
 
 export default function ProfileChangeRequests() {
   const router = useRouter(); // Initialize router
+  const [mounted, setMounted] = useState(false);
   const [requestType, setRequestType] = useState('Basic Profile Changes');
   const [statusFilter, setStatusFilter] = useState('Submitted for Approval');
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<RequestData[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleRetrieve = async () => {
     setLoading(true);
@@ -59,11 +66,17 @@ export default function ProfileChangeRequests() {
         });
         setResults(response.data);
         setHasSearched(true);
+      } else if (requestType === 'Remittance Amount Changes') {
+        const response = await axios.get('http://localhost:8080/api4/remitance/getRemitance', {
+          params: { sortBy: 'id', direction: 'desc' }
+        });
+        setResults(response.data);
+        setHasSearched(true);
       } else {
         alert("This request type is not yet connected to the backend.");
         setHasSearched(false);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error:", error);
       alert("Failed to fetch data.");
     } finally {
@@ -71,7 +84,7 @@ export default function ProfileChangeRequests() {
     }
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDelete = async (id: string | number | undefined) => {
     if (!id) return;
     if (!window.confirm("Are you sure you want to delete this request?")) return;
 
@@ -82,6 +95,8 @@ export default function ProfileChangeRequests() {
         await axios.delete(`http://localhost:8080/api5/namechange/deletnameChange/${id}`);
       } else if (requestType === 'Nomminne Changes') {
         await axios.delete(`http://localhost:8080/api/v3/deleteNommine/${id}`);
+      } else if (requestType === 'Remittance Amount Changes') {
+        await axios.delete(`http://localhost:8080/api4/remitance/deleteRemitance/${id}`);
       }
 
 
@@ -90,23 +105,27 @@ export default function ProfileChangeRequests() {
         return rowId !== id;
       }));
       alert("Request deleted successfully.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error during deletion:", error);
       alert("Failed to delete the request. Please ensure the backend delete endpoints are configured correctly.");
     }
   };
 
   // Redirect function
-  const handleEdit = (id: any) => {
+  const handleEdit = (id: string | number | undefined) => {
     if (!id) return;
     if (requestType === 'Name Changes') {
       router.push(`/membership/name-changes/${id}`);
     } else if (requestType === 'Nomminne Changes') {
       router.push(`/membership/nommine-changes/${id}`);
+    } else if (requestType === 'Remittance Amount Changes') {
+      router.push(`/membership/directory/change-remittance?editId=${id}`);
     } else {
       router.push(`/membership/profile-changes/${id}`);
     }
   };
+
+  if (!mounted) return null;
 
   return (
     <div className="p-6 bg-[#F9FAFB] min-h-screen">
@@ -167,6 +186,11 @@ export default function ProfileChangeRequests() {
                     <th className="p-4">NIC</th>
                     <th className="p-4">Address</th>
                   </>
+                ) : requestType === 'Remittance Amount Changes' ? (
+                  <>
+                    <th className="p-4">Amount</th>
+                    <th className="p-4">Currency</th>
+                  </>
                 ) : (
                   <>
                     <th className="p-4">NIC Number</th>
@@ -201,6 +225,11 @@ export default function ProfileChangeRequests() {
                         <td className="p-4 text-gray-600 truncate max-w-[150px]" title={row.newNomineeAddress || row.address || ''}>
                           {row.newNomineeAddress || row.address || '-'}
                         </td>
+                      </>
+                    ) : requestType === 'Remittance Amount Changes' ? (
+                      <>
+                        <td className="p-4 font-bold">{row.newRemittanceAmount || '-'}</td>
+                        <td className="p-4 text-gray-600">{row.newRemittanceCurrency || 'LKR'}</td>
                       </>
                     ) : (
                       <>

@@ -5,8 +5,11 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { z } from "zod";
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
+import { getMemberById } from '@/lib/api/member';
 
 // 1. Schema Definition
+// This Zod schema validates the profile change request fields before submission.
+// It ensures the user enters valid personal profile data for the basic detail change form.
 export const profileSchema = z.object({
   dob: z.string().min(1, "Date of birth is required"),
   nic: z.string().min(10, "NIC must be at least 10 characters"),
@@ -15,46 +18,100 @@ export const profileSchema = z.object({
   mobile: z.string().min(10, "Mobile number must be 10 digits").regex(/^[0-9]+$/, "Only digits allowed"),
 });
 
-export default function BasicDetailChange({ editId }: { editId?: string }) {
+type ProfileData = {
+  dob: string;
+  nic: string;
+  gender: string;
+  address: string;
+  mobile: string;
+  email: string;
+  language?: string;
+  designation?: string;
+  occupation?: string;
+};
+
+export default function BasicDetailChange({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
   const isEditMode = Boolean(editId);
 
-  const INITIAL_MEMBER_DATA = {
+  const INITIAL_MEMBER_DATA: ProfileData = {
     dob: "1985-05-20",
     nic: "851401234V",
     gender: "Male",
     address: "123, Galle Road, Colombo 03",
     mobile: "0771234567",
     email: "john.doe@example.com",
+    language: 'English',
+    designation: 'Teacher',
+    occupation: 'Permanent',
   };
 
-  const [formData, setFormData] = useState({ ...INITIAL_MEMBER_DATA });
+  const STATUS_OPTIONS = [
+    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
+    { value: 'REJECTED', label: 'Rejected' },
+    { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'PENDING', label: 'Pending' },
+  ];
+
+  const [mounted, setMounted] = useState(false);
+  const [memberName, setMemberName] = useState<string | null>(null);
+  const [currentData, setCurrentData] = useState<ProfileData>(INITIAL_MEMBER_DATA);
+  const [formData, setFormData] = useState<ProfileData>({ ...INITIAL_MEMBER_DATA });
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // 2. Fetch Data if Edit Mode
   useEffect(() => {
-    if (!editId) return;
+    setMounted(true);
+  }, []);
 
-    const fetchRequest = async () => {
+  // 2. Fetch Data if Edit Mode or Member Detail Mode
+  useEffect(() => {
+    if (!editId && !memberId) return;
+
+    const fetchData = async () => {
       setLoadingRequest(true);
       setLoadError(null);
-      try {
-        const response = await axios.get(`http://localhost:8080/api/v2/getRequest/${editId}`);
-        const data = response.data.data || response.data;
 
-        if (data) {
-          // MAP BACKEND TO FRONTEND
-          setFormData({
-            dob: data.newBirthDate || INITIAL_MEMBER_DATA.dob,
-            nic: data.newNIC || INITIAL_MEMBER_DATA.nic,
-            gender: data.newGender || INITIAL_MEMBER_DATA.gender,
-            address: data.newPermanentPrivateAddress || INITIAL_MEMBER_DATA.address,
-            mobile: data.newMobileNumber || INITIAL_MEMBER_DATA.mobile,
-            email: data.newEmailAddress || INITIAL_MEMBER_DATA.email,
-          });
+      try {
+        if (editId) {
+          const response = await axios.get(`http://localhost:8080/api/v2/getRequest/${editId}`);
+          const data = response.data.data || response.data;
+
+          if (data) {
+            const mapped = {
+              dob: data.newBirthDate || INITIAL_MEMBER_DATA.dob,
+              nic: data.newNIC || INITIAL_MEMBER_DATA.nic,
+              gender: data.newGender || INITIAL_MEMBER_DATA.gender,
+              address: data.newPermanentPrivateAddress || INITIAL_MEMBER_DATA.address,
+              mobile: data.newMobileNumber || INITIAL_MEMBER_DATA.mobile,
+              email: data.newEmailAddress || INITIAL_MEMBER_DATA.email,
+              language: data.newPreferredLanguage || INITIAL_MEMBER_DATA.language,
+              designation: data.newDesignation || INITIAL_MEMBER_DATA.designation,
+              occupation: data.newNatureOfOccupation || INITIAL_MEMBER_DATA.occupation,
+            };
+            setCurrentData(mapped);
+            setFormData(mapped);
+            setSelectedStatus(data.status || data.newStatus || '');
+          }
+        } else if (memberId) {
+          const data = await getMemberById(Number(memberId));
+          const mapped = {
+            dob: data.dateOfBirth ?? INITIAL_MEMBER_DATA.dob,
+            nic: data.nic ?? data.identificationNumber ?? INITIAL_MEMBER_DATA.nic,
+            gender: data.gender ?? INITIAL_MEMBER_DATA.gender,
+            address: data.permanentPrivateAddress ?? INITIAL_MEMBER_DATA.address,
+            mobile: data.mobileNumber ?? INITIAL_MEMBER_DATA.mobile,
+            email: data.emailAddress ?? INITIAL_MEMBER_DATA.email,
+            language: data.preferredLanguage ?? INITIAL_MEMBER_DATA.language,
+            designation: data.designation ?? INITIAL_MEMBER_DATA.designation,
+            occupation: data.natureOfOccupation ?? INITIAL_MEMBER_DATA.occupation,
+          };
+          setCurrentData(mapped);
+          setFormData(mapped);
+          setMemberName(data.fullName ?? data.nameWithInitials ?? null);
         }
       } catch (err: any) {
         setLoadError("Could not load data. Check backend connection.");
@@ -62,8 +119,9 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
         setLoadingRequest(false);
       }
     };
-    fetchRequest();
-  }, [editId]);
+
+    fetchData();
+  }, [editId, memberId]);
 
   // 3. SAFE Handle Change (Prevents Crash)
   const handleFieldChange = (field: string, value: string) => {
@@ -86,6 +144,8 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
     }
   };
 
+  // 4. Submit updated request to the backend
+  // Maps frontend form field names to the backend DTO and handles both create and edit flows.
   const handleSubmit = async () => {
     const result = profileSchema.safeParse(formData);
     if (!result.success) return;
@@ -99,7 +159,11 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
       newMobileNumber: formData.mobile,
       newEmailAddress: formData.email,
       newPreferredLanguage: "English",
-      newNatureOfOccupation: "Permanent"
+      newNatureOfOccupation: "Permanent",
+      ...(isEditMode
+        ? selectedStatus ? { newStatus: selectedStatus } : {}
+        : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
+      ...(memberId ? { memberId } : {}),
     };
 
     try {
@@ -117,6 +181,8 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
       setIsSubmitting(false);
     }
   };
+
+  if (!mounted) return null;
 
   if (loadingRequest) {
     return (
@@ -137,14 +203,28 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
             {isEditMode ? `Update Request PCR-${editId}` : "New Profile Change Request"}
           </h1>
         </div>
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-          className="bg-[#8B3205] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all"
-        >
-          {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-          {isEditMode ? "💾 Update" : "💾 Submit"}
-        </button>
+        <div className="flex items-center gap-3">
+          {isEditMode && (
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
+            >
+              <option value="">Change status</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="bg-[#8B3205] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all"
+          >
+            {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+            {isEditMode ? "💾 Update" : "💾 Submit"}
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -154,11 +234,11 @@ export default function BasicDetailChange({ editId }: { editId?: string }) {
       )}
 
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-8 space-y-6">
-        <ComparisonRow label="DATE OF BIRTH" current={INITIAL_MEMBER_DATA.dob} value={formData.dob} isInput type="date" onChange={(v: string) => handleFieldChange("dob", v)} error={errors.dob} />
-        <ComparisonRow label="NIC NUMBER" current={INITIAL_MEMBER_DATA.nic} value={formData.nic} isInput onChange={(v: string) => handleFieldChange("nic", v)} error={errors.nic} />
-        <ComparisonRow label="MOBILE" current={INITIAL_MEMBER_DATA.mobile} value={formData.mobile} isInput onChange={(v: string) => handleFieldChange("mobile", v)} error={errors.mobile} />
-        <ComparisonRow label="ADDRESS" current={INITIAL_MEMBER_DATA.address} value={formData.address} isInput onChange={(v: string) => handleFieldChange("address", v)} error={errors.address} />
-        <ComparisonRow label="EMAIL" current={INITIAL_MEMBER_DATA.email} value={formData.email} isInput onChange={(v: string) => handleFieldChange("email", v)} error={errors.email} />
+        <ComparisonRow label="DATE OF BIRTH" current={currentData.dob} value={formData.dob} isInput type="date" onChange={(v: string) => handleFieldChange("dob", v)} error={errors.dob} />
+        <ComparisonRow label="NIC NUMBER" current={currentData.nic} value={formData.nic} isInput onChange={(v: string) => handleFieldChange("nic", v)} error={errors.nic} />
+        <ComparisonRow label="MOBILE" current={currentData.mobile} value={formData.mobile} isInput onChange={(v: string) => handleFieldChange("mobile", v)} error={errors.mobile} />
+        <ComparisonRow label="ADDRESS" current={currentData.address} value={formData.address} isInput onChange={(v: string) => handleFieldChange("address", v)} error={errors.address} />
+        <ComparisonRow label="EMAIL" current={currentData.email} value={formData.email} isInput onChange={(v: string) => handleFieldChange("email", v)} error={errors.email} />
       </div>
     </div>
   );

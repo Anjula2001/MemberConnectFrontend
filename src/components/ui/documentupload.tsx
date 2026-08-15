@@ -37,7 +37,7 @@ interface DocumentUploadProps {
   requestNo: string | null;
   memberId: string;
   requestStatus: string;
-  requestType: "retirement-requests" | "grade5-requests";
+  requestType: "retirement-requests" | "grade5-requests" | "termination-requests";
   readOnly?: boolean;
 }
 
@@ -247,7 +247,7 @@ export default function DocumentUpload({
       setDeletingDocumentId(uploadedDocumentId);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/documents/${uploadedDocumentId}`,
+        `${API_BASE_URL}/api/${requestType}/documents/${uploadedDocumentId}/file`,
         {
           method: "DELETE",
         }
@@ -377,6 +377,8 @@ export default function DocumentUpload({
                     <td className="px-4 py-2 border-b">
                       <a
                         href={`${API_BASE_URL}/api/${requestType}/documents/${file.id}/download`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="text-blue-600 hover:underline"
                       >
                         {file.fileName}

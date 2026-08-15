@@ -79,7 +79,11 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
             throw new Error("Failed to load banks");
           }
 
-          const bankList: Bank[] = await response.json();
+          const rawBanks = await response.json();
+          const bankList: Bank[] = rawBanks.map((b: any) => ({
+            bankId: String(b.id),
+            name: b.name,
+          }));
           setBanks(bankList);
         } catch (error) {
           console.error("Error fetching banks:", error);
@@ -114,14 +118,18 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
           setGeneralError("");
 
           const response = await fetch(
-            `${API_BASE_URL}/api/banks/${selectedBank}/branches`
+            `${API_BASE_URL}/api/branches/${selectedBank}`
           );
 
           if (!response.ok) {
             throw new Error("Failed to load branches");
           }
 
-          const branchList: Branch[] = await response.json();
+          const rawBranches = await response.json();
+          const branchList: Branch[] = rawBranches.map((b: any) => ({
+            branchId: String(b.id),
+            name: b.name,
+          }));
           setBranches(branchList);
         } catch (error) {
           console.error("Error fetching branches:", error);
