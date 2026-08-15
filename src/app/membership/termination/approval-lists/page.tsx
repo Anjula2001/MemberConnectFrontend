@@ -262,7 +262,7 @@ export default function TerminationApprovalListsPage() {
         rejectReason:
           listDecision === "Reject"
             ? Object.values(requestDecisions).find((d) => d.decision === "Reject")
-                ?.rejectReason ?? ""
+              ?.rejectReason ?? ""
             : undefined,
       });
 
@@ -399,9 +399,8 @@ export default function TerminationApprovalListsPage() {
                       setRequestDecisions({});
                       setBoardRemarks("");
                     }}
-                    className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${
-                      selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
-                    }`}
+                    className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${selectedApprovalListId === item.listId ? "bg-[#d9d9d9]" : ""
+                      }`}
                   >
                     <div className="leading-tight">
                       <p className="text-sm font-medium text-gray-800">{item.listId ?? "-"}</p>
@@ -507,11 +506,10 @@ export default function TerminationApprovalListsPage() {
                           <td className="py-3 pr-3">
                             {isSelectedListProcessed ? (
                               <span
-                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${
-                                  request.status === "REJECTED"
+                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${request.status === "REJECTED"
                                     ? "bg-rose-600"
                                     : "bg-green-600"
-                                }`}
+                                  }`}
                               >
                                 {request.status === "REJECTED" ? "Rejected" : "Approved"}
                               </span>

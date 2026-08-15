@@ -3,12 +3,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
-import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,X,} from "lucide-react";
+import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, X, } from "lucide-react";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
   createTerminationApprovalList,
@@ -75,15 +75,15 @@ type TerminationRequestApiRow = {
 type TerminationRequestApiResponse =
   | TerminationRequestApiRow[]
   | {
-      content?: TerminationRequestApiRow[];
-      data?: TerminationRequestApiRow[];
-      requests?: TerminationRequestApiRow[];
-    };
+    content?: TerminationRequestApiRow[];
+    data?: TerminationRequestApiRow[];
+    requests?: TerminationRequestApiRow[];
+  };
 
 type RequestType = "termination" | "retirement" | "member_deaths" | "all";
 type StatusType = | "new" | "submitted_for_approval" | "added_to_approval_list" | "approved" | "rejected" | "incomplete"
-                  |"pending_review"| "approved_by_board"| "disbursement_initiated"| "disbursement_completed"
-                  | "awaiting_nominee_confirmation"| "on_hold"| "district-committee"| "pnd-committee"| "inactive";
+  | "pending_review" | "approved_by_board" | "disbursement_initiated" | "disbursement_completed"
+  | "awaiting_nominee_confirmation" | "on_hold" | "district-committee" | "pnd-committee" | "inactive";
 
 type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
 type SortBy = "requestedDate" | "status" | "memberId";
@@ -91,7 +91,7 @@ type SortOrder = "asc" | "desc";
 
 const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
-const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
+const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval",];
 const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
   "submitted_for_approval",
   "rejected",
@@ -117,7 +117,7 @@ const SELECTABLE_TERMINATION_STATUSES: TerminationRequest["status"][] = [
   "SUBMITTED_FOR_APPROVAL",
   "REJECTED",
 ];
-const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
+const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL", "ADDED_TO_APPROVAL_LIST", "APPROVED", "REJECTED",];
 
 // Status options by request type
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
@@ -279,7 +279,7 @@ function LocationMultiSelect({
       ? "All Locations"
       : selectedLocations.length === 1
         ? locationOptions.find((location) => location.id === selectedLocations[0])
-            ?.name
+          ?.name
         : `${selectedLocations.length} selected`;
 
   return (
@@ -451,7 +451,7 @@ export default function TerminationPage() {
           ? DEFAULT_TERMINATION_STATUSES
           : newType === "member_deaths"
             ? DEFAULT_MEMBER_DEATH_STATUSES
-          : []
+            : []
     );
   };
 
@@ -626,7 +626,7 @@ export default function TerminationPage() {
     try {
       setLoading(true);
       setError("");
-      
+
       //Validate Dates
       if (dateFilter === "date_period") {
         if (fromDate && fromDate > TODAY) {
@@ -647,10 +647,10 @@ export default function TerminationPage() {
       if (requestType === "all") {
         const [terminationRequests, retirementRequests, memberDeathRequests] =
           await Promise.all([
-          fetchRequestsFromApi("termination-requests", "termination", statuses),
-          fetchRequestsFromApi("retirement-requests", "retirement", statuses),
-          fetchMemberDeathRequestsFromApi(statuses),
-        ]);
+            fetchRequestsFromApi("termination-requests", "termination", statuses),
+            fetchRequestsFromApi("retirement-requests", "retirement", statuses),
+            fetchMemberDeathRequestsFromApi(statuses),
+          ]);
         retrievedRequests = sortMergedRequests([
           ...terminationRequests,
           ...retirementRequests,
@@ -870,7 +870,7 @@ export default function TerminationPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
+    <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
         {showApprovalListActions && (
@@ -898,122 +898,122 @@ export default function TerminationPage() {
         <h2 className="text-lg font-semibold text-[#953002] mb-4">
           Search & Filter
         </h2>
-       
-       
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
-              <LocationMultiSelect
-                selectedLocations={selectedLocations}
-                onLocationChange={setSelectedLocations}
-              />
-            </div>
 
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
-              <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="termination">Termination</SelectItem>
-                  <SelectItem value="retirement">Retirement</SelectItem>
-                  <SelectItem value="member_deaths">Member Deaths</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
-              <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_days">All Days</SelectItem>
-                  <SelectItem value="this_month">This Month</SelectItem>
-                  <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
-                  <SelectItem value="date_period">Date Period</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {dateFilter === "date_period" && (
-              <>
-                <div className="w-40">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
-                  <Input
-                    type="date"
-                    value={fromDate}
-                    max={TODAY}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-                <div className="w-40">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
-                  <Input
-                    type="date"
-                    value={toDate}
-                    max={TODAY}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </>
-            )}            
-            
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
-              <StatusMultiSelect
-                selectedStatuses={selectedStatuses}
-                onStatusChange={setSelectedStatuses}
-                statusOptions={currentStatusOptions}
-              />
-            </div>
-
-            <div className="flex-1 min-w-45">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
-              <Input
-                type="text"
-                placeholder="Name, NIC, ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full"
-              />
-            </div>
-
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
-              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select sort option" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="requestedDate">Requested Date</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                  <SelectItem value="memberId">Member ID</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="w-40">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
-              <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                  <SelectItem value="desc">Descending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
+            <LocationMultiSelect
+              selectedLocations={selectedLocations}
+              onLocationChange={setSelectedLocations}
+            />
           </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
+            <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="termination">Termination</SelectItem>
+                <SelectItem value="retirement">Retirement</SelectItem>
+                <SelectItem value="member_deaths">Member Deaths</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
+            <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select date range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all_days">All Days</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
+                <SelectItem value="date_period">Date Period</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {dateFilter === "date_period" && (
+            <>
+              <div className="w-40">
+                <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  max={TODAY}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="w-40">
+                <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  max={TODAY}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
+            <StatusMultiSelect
+              selectedStatuses={selectedStatuses}
+              onStatusChange={setSelectedStatuses}
+              statusOptions={currentStatusOptions}
+            />
+          </div>
+
+          <div className="flex-1 min-w-45">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
+            <Input
+              type="text"
+              placeholder="Name, NIC, ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select sort option" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="requestedDate">Requested Date</SelectItem>
+                <SelectItem value="status">Status</SelectItem>
+                <SelectItem value="memberId">Member ID</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-40">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
+            <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+        </div>
       </div>
-      
+
 
       <div className="rounded-md border bg-white">
         {error && (
@@ -1115,7 +1115,7 @@ export default function TerminationPage() {
                           aria-label="Request has indirect obligations"
                         />
                       )}
-                      {!request.hasLoanBalance &&!request.hasIndirectObligations && (
+                      {!request.hasLoanBalance && !request.hasIndirectObligations && (
                         <span className="text-muted-foreground"></span>
                       )}
                     </div>
@@ -1124,8 +1124,8 @@ export default function TerminationPage() {
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
                       {!NON_EDITABLE_STATUSES.includes(request.status) && (
-                        <Button variant="ghost" size="sm" 
-                          onClick={() => handleEditRequest(request)} 
+                        <Button variant="ghost" size="sm"
+                          onClick={() => handleEditRequest(request)}
                           className="h-8 w-8 p-0">
                           <Pencil className="h-4 w-4" />
                         </Button>

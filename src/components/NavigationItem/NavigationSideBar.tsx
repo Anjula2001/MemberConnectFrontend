@@ -104,6 +104,7 @@ export default function NavigationSideBar() {
         { title: "University", url: "/scholarships/university" },
         { title: "Fund Requests", url: "/scholarships/fund-requests" },
       ],
+
     },
     { title: "Death Donation", icon: Heart, url: "/death-donation" },
     { title: "Reports", icon: BarChart, url: "/reports" },

@@ -21,14 +21,24 @@ interface Props {
   readOnly?: boolean;
 }
 
-// Get today's date in YYYY-MM-DD format.
+// Get today's date in YYYY-MM-DD format (local timezone).
 const getTodayDate = () => {
-  return new Date().toISOString().split("T")[0];
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const getEffectiveDateError = (date: string) => {
   return date && date > getTodayDate()
     ? "Effective Date cannot be a future date"
+    : "";
+};
+
+const getRequestedDateError = (date: string) => {
+  return date && date > getTodayDate()
+    ? "Requested Date cannot be a future date"
     : "";
 };
 
@@ -75,7 +85,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
       setRequestedDate(selectedDate);
       setFieldErrors((previousErrors) => ({
         ...previousErrors,
-        requestedDate: selectedDate ? "" : previousErrors.requestedDate,
+        requestedDate: getRequestedDateError(selectedDate),
       }));
     };
 
@@ -157,6 +167,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
             <input
               type="date"
               value={effectiveDate}
+              max={getTodayDate()}
               onChange={handleEffectiveDateChange}
               disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"

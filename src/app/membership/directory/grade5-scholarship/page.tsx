@@ -5,12 +5,14 @@ import { Button } from "../../../../components/ui/button";
 import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "../../../../components/ui/grade5schoolarship/grade5form";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Grade5Request = Grade5InitialData & {
   id?: number;
   requestNo?: string;
   status?: string;
+  hasDeviation?: boolean;
   incompleteReason?: string;
   minorAccountExists?: boolean;
   minorAccountNumber?: string;
@@ -96,9 +98,47 @@ export default function Grade5ScholarshipPage() {
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(SUBMITTED_FOR_NORMAL_APPROVAL);
   const [submitError, setSubmitError] = useState("");
+  const [deviationReason, setDeviationReason] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [documentError, setDocumentError] = useState("");
   const isRequestSubmitted = grade5Request?.status ? LOCKED_STATUSES.includes(grade5Request.status) : false;
+  const [selectedViewModeStatus, setSelectedViewModeStatus] = useState("");
+
+  // Status transitions allowed from view mode per the requirements
+  const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
+    NEW: [
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INCOMPLETE: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_NORMAL_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_DEVIATION_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    REJECTED: [
+      { status: "INACTIVE", label: "Mark Inactive" },
+      { status: "NEW", label: "Return to New" },
+    ],
+    INACTIVE: [
+      { status: "NEW", label: "Reopen" },
+    ],
+  };
+
+  const viewModeStatusActions = grade5Request?.status
+    ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
+    : [];
+
+  const showViewModeStatusDropdown =
+    !!grade5Request?.id &&
+    isViewRequestMode &&
+    !isEditMode &&
+    viewModeStatusActions.length > 0;
 
   useEffect(() => {
     let memberIdParam = searchParams.get("memberId");
@@ -132,7 +172,12 @@ export default function Grade5ScholarshipPage() {
 
     if (selectedMemberId) {
       fetchMember();
-      fetchGrade5Requests();
+      // mode=new means a fresh creation form — do not load any existing request
+      if (pageMode === "new") {
+        setGrade5Request(null);
+      } else {
+        fetchGrade5Requests();
+      }
     }
   }, [pageMode, selectedMemberId, requestId]);
 
@@ -161,7 +206,14 @@ export default function Grade5ScholarshipPage() {
   //fetch selected member details
   const fetchGrade5Requests = async () => {
     try {
-      const url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
+      let url: string;
+
+      // If a specific requestId is in the URL (view mode from member profile), fetch by requestNo
+      if (requestId) {
+        url = `${API_BASE_URL}/api/grade5/request/${requestId}`;
+      } else {
+        url = `${API_BASE_URL}/api/grade5/${selectedMemberId}/request`;
+      }
 
       console.log("Fetching:", url);
 
@@ -170,7 +222,7 @@ export default function Grade5ScholarshipPage() {
       console.log("Response status:", res.status);
 
       if (res.status === 404) {
-        console.warn(`No Grade 5 request found for member: ${selectedMemberId} (404)`);
+        console.warn(`No Grade 5 request found (404): ${url}`);
         setGrade5Request(null);
         return;
       }
@@ -184,6 +236,10 @@ export default function Grade5ScholarshipPage() {
 
       if (data) {
         setGrade5Request(data);
+        // When opened via requestId, also hydrate the member from the fetched request
+        if (requestId && data.memberId && !selectedMemberId) {
+          setSelectedMemberId(data.memberId);
+        }
       } else {
         setGrade5Request(null);
       }
@@ -401,35 +457,145 @@ export default function Grade5ScholarshipPage() {
       return;
     }
 
+    const extraRequestData = {
+      minorAccountExists,
+      minorAccountNumber,
+      eligibleMonths,
+      disbursementOption,
+      memberAmount,
+      minorAmount,
+      isDoubleAmount,
+    };
+
+    let requestToSubmit = grade5Request;
+
     if (grade5Request?.requestNo) {
-      const documentsOk = await validateMandatoryDocuments(grade5Request.requestNo);
-
-      if (!documentsOk) {
-        return;
-      }
-
-      setSubmitModalOpen(true);
-      return;
-    }
-
-    try {
-      const savedRequest = await formRef.current?.submitForm();
+      const savedRequest = await formRef.current?.submitForm(
+        extraRequestData,
+        grade5Request.requestNo
+      );
 
       if (!savedRequest?.requestNo) {
         return;
       }
 
+      requestToSubmit = savedRequest;
       setGrade5Request(savedRequest);
-      const documentsOk = await validateMandatoryDocuments(savedRequest.requestNo);
+    }
 
-      if (!documentsOk) {
+    if (!requestToSubmit?.requestNo) {
+      try {
+        const savedRequest = await formRef.current?.submitForm(extraRequestData);
+
+        if (!savedRequest?.requestNo) {
+          return;
+        }
+
+        setGrade5Request(savedRequest);
+        requestToSubmit = savedRequest;
+      } catch (error) {
+        console.error(error);
+        setFundError("Failed to save Grade 5 request before submitting.");
+        return;
+      }
+    }
+
+    const requestNo = requestToSubmit.requestNo;
+    if (!requestNo) {
+      setFundError("Invalid Grade 5 request number.");
+      return;
+    }
+
+    const documentsOk = await validateMandatoryDocuments(requestNo);
+    if (!documentsOk) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/check-deviation?requestedDate=${encodeURIComponent(
+          requestToSubmit.requestedDate || ""
+        )}&examYear=${encodeURIComponent(String(requestToSubmit.examYear))}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to compute deviation info");
+      }
+
+      const info = await res.json();
+      const isDeviation = info.deviation === true;
+
+      setSubmitStatus(isDeviation ? SUBMITTED_FOR_DEVIATION_APPROVAL : SUBMITTED_FOR_NORMAL_APPROVAL);
+      setDeviationReason(
+        isDeviation
+          ? "The request is not within the eligibility period and will be submitted for Deviation Approval."
+          : "The request is within the eligibility period and will be submitted for Normal Approval."
+      );
+
+      setSubmitModalOpen(true);
+    } catch (err) {
+      console.error(err);
+      setSubmitError("Failed to evaluate eligibility before submit.");
+    }
+  };
+
+  // Status change modal state
+  const [statusConfirmModal, setStatusConfirmModal] = useState<{
+    isOpen: boolean;
+    newStatus: string;
+    statusLabel: string;
+  }>({
+    isOpen: false,
+    newStatus: "",
+    statusLabel: "",
+  });
+
+  const handleChangeStatus = (newStatus: string) => {
+    if (!grade5Request?.requestNo) {
+      setFundError("No Grade 5 Scholarship request is loaded.");
+      return;
+    }
+
+    const statusLabel =
+      newStatus === "INACTIVE" ? "Inactive"
+      : newStatus === "NEW" ? "New"
+      : newStatus;
+
+    setStatusConfirmModal({
+      isOpen: true,
+      newStatus,
+      statusLabel,
+    });
+  };
+
+  const confirmChangeStatus = async () => {
+    const { newStatus } = statusConfirmModal;
+    setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
+
+    if (!grade5Request?.requestNo) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/${grade5Request.requestNo}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        setFundError(err.message || "Failed to change request status.");
         return;
       }
 
-      setSubmitModalOpen(true);
+      const updated = await res.json();
+      setGrade5Request((prev) => prev ? { ...prev, ...updated } : updated);
+      setFundError("");
     } catch (error) {
-      console.error(error);
-      setFundError("Failed to save Grade 5 request before submitting.");
+      console.error("Change status error:", error);
+      setFundError("Failed to change request status.");
     }
   };
 
@@ -439,6 +605,17 @@ export default function Grade5ScholarshipPage() {
       setSubmitError("Please save the Grade 5 request before submitting.");
       return;
     }
+
+    const finalStatus = grade5Request?.hasDeviation
+      ? SUBMITTED_FOR_DEVIATION_APPROVAL
+      : SUBMITTED_FOR_NORMAL_APPROVAL;
+
+    setSubmitStatus(finalStatus);
+    setDeviationReason(
+      grade5Request?.hasDeviation
+        ? "The request is not within the eligibility period and will be submitted for Deviation Approval."
+        : "The request is within the eligibility period and will be submitted for Normal Approval."
+    );
 
     try {
       setSubmittingRequest(true);
@@ -451,7 +628,7 @@ export default function Grade5ScholarshipPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ status: submitStatus }),
+          body: JSON.stringify({ status: finalStatus }),
         }
       );
 
@@ -464,12 +641,12 @@ export default function Grade5ScholarshipPage() {
       const text = await res.text();
       const updatedRequest = text
         ? (JSON.parse(text) as Grade5Request)
-        : { ...grade5Request, status: submitStatus };
+        : { ...grade5Request, status: finalStatus };
 
       setGrade5Request({
         ...grade5Request,
         ...updatedRequest,
-        status: updatedRequest.status || submitStatus,
+        status: updatedRequest.status || finalStatus,
       });
       setSubmitModalOpen(false);
       setFundError("");
@@ -538,6 +715,7 @@ export default function Grade5ScholarshipPage() {
     setFundError("");
 
     const birthCertificateNo = formRef.current?.getBirthCertificateNo?.();
+    const examYear = formRef.current?.getExamYear?.() || grade5Request?.examYear;
 
     if (!birthCertificateNo) {
       setFundError("Birth Certificate No required");
@@ -545,14 +723,20 @@ export default function Grade5ScholarshipPage() {
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/grade5/fund-details?birthCertificateNo=${encodeURIComponent(
-          birthCertificateNo
-        )}`
-      );
+      let url = `${API_BASE_URL}/api/grade5/fund-details?birthCertificateNo=${encodeURIComponent(
+        birthCertificateNo
+      )}`;
+
+      if (examYear) {
+        url += `&examYear=${encodeURIComponent(String(examYear))}`;
+      }
+
+      const res = await fetch(url);
 
       if (!res.ok) {
-        throw new Error("Failed to fetch fund details");
+        const errorText = await res.text();
+        console.error("Fund details fetch error:", errorText);
+        throw new Error(errorText || "Failed to fetch fund details");
       }
 
       const data = await res.json();
@@ -579,8 +763,8 @@ export default function Grade5ScholarshipPage() {
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
-        <div className="min-h-[100vh] flex-1 rounded-xl px-14 py-10 bg-muted/50 p-6">
+      <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
+        <div className="min-h-[100vh] flex-1 rounded-xl w-full px-6 py-6 bg-muted/50">
 
           <div className="flex items-center justify-between ">
             <div>
@@ -632,25 +816,30 @@ export default function Grade5ScholarshipPage() {
                   </Button>
                 )}
 
-              {isViewRequestMode && grade5Request?.id && !isEditMode && (
-                <>
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
-
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#953002] text-white disabled:bg-[#953002] hover:bg-gray-100 disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Submit
-                  </Button>
-                </>
+              {/* Change Status dropdown – shown in view mode when transitions are available */}
+              {showViewModeStatusDropdown && (
+                <Select
+                  value={selectedViewModeStatus}
+                  onValueChange={async (value) => {
+                    setSelectedViewModeStatus(value);
+                    await handleChangeStatus(value);
+                    setSelectedViewModeStatus("");
+                  }}
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Change status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {viewModeStatusActions.map((action) => (
+                      <SelectItem key={action.status} value={action.status}>
+                        {action.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
+
+
 
               {(!isViewRequestMode || isEditMode) && (
                 <>
@@ -809,7 +998,8 @@ export default function Grade5ScholarshipPage() {
                         <input
                           type="number"
                           value={eligibleMonths}
-                          disabled={fundReadOnly}
+                          readOnly={!minorAccountExists || fundReadOnly}
+                          disabled={!minorAccountExists || fundReadOnly}
                           onChange={(e) => {
                             const months = Number(e.target.value);
 
@@ -820,9 +1010,7 @@ export default function Grade5ScholarshipPage() {
 
                             const selectedOption =
                               disbursementOption ||
-                              (minorAccountExists
-                                ? MEMBER_AND_MINOR
-                                : MEMBER_ONLY);
+                              (minorAccountExists ? MEMBER_AND_MINOR : MEMBER_ONLY);
 
                             setEligibleMonths(months);
                             setFundError("");
@@ -832,7 +1020,11 @@ export default function Grade5ScholarshipPage() {
                               minorAccountExists
                             );
                           }}
-                          className="border rounded-md px-3 py-2 w-full"
+                          className={`border rounded-md px-3 py-2 w-full ${
+                            !minorAccountExists || fundReadOnly
+                              ? "bg-gray-100 cursor-not-allowed text-gray-600"
+                              : ""
+                          }`}
                         />
                       </div>
                     </div>
@@ -1000,8 +1192,20 @@ export default function Grade5ScholarshipPage() {
             </p>
 
             <p className="mt-3 text-sm text-gray-700">
-              Once submitted, the Grade 5 Scholarship Request cannot be edited.Select the approval path for this request.
+              Once submitted, the Grade 5 Scholarship Request cannot be edited. The system will choose the approval path automatically based on the eligibility rule.
             </p>
+
+            {deviationReason && (
+              <div
+                className={`mt-4 rounded-md px-3 py-2 text-sm ${
+                  grade5Request?.hasDeviation
+                    ? "border border-red-200 bg-red-50 text-red-700"
+                    : "border border-orange-200 bg-orange-50 text-orange-700"
+                }`}
+              >
+                {deviationReason}
+              </div>
+            )}
 
             {submitError && (
               <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -1009,56 +1213,18 @@ export default function Grade5ScholarshipPage() {
               </p>
             )}
 
-            {/*approval options*/}
-            <div className="mt-5 space-y-3">
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL
-                  ? "border-[#953002] bg-orange-50"
-                  : "border-gray-200"
-                  }`}
-              >
-                <input
-                  type="radio"
-                  name="submitStatus"
-                  value={SUBMITTED_FOR_NORMAL_APPROVAL}
-                  checked={submitStatus === SUBMITTED_FOR_NORMAL_APPROVAL}
-                  onChange={(e) => setSubmitStatus(e.target.value)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block font-medium">
-                    Submitted for Normal Approval
-                  </span>
-                  <span className="block text-sm text-gray-600">
-                    Use this when the request does not satisfy deviation
-                    criteria.
-                  </span>
-                </span>
-              </label>
-
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL
-                  ? "border-[#953002] bg-orange-50"
-                  : "border-gray-200"
-                  }`}
-              >
-                <input
-                  type="radio"
-                  name="submitStatus"
-                  value={SUBMITTED_FOR_DEVIATION_APPROVAL}
-                  checked={submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL}
-                  onChange={(e) => setSubmitStatus(e.target.value)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block font-medium">
-                    Submitted for Deviation Approval
-                  </span>
-                  <span className="block text-sm text-gray-600">
-                    Use this when the request satisfies deviation criteria.
-                  </span>
-                </span>
-              </label>
+            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
+              {submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? (
+                <div>
+                  <p className="font-medium">The request is not within the eligibility period.</p>
+                  <p className="mt-1">It will be submitted as <span className="font-semibold text-red-700">Submitted for Deviation Approval</span>.</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-medium">The request is within the eligibility period.</p>
+                  <p className="mt-1">It will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
@@ -1076,6 +1242,38 @@ export default function Grade5ScholarshipPage() {
                 className="bg-[#953002] text-white hover:bg-[#672102]"
               >
                 {submittingRequest ? "Submitting..." : "Submit"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              Change Grade 5 Scholarship Status
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Change Grade 5 Scholarship request status to{" "}
+              <span className="font-semibold text-gray-900">{statusConfirmModal.statusLabel}</span>?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" })}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmChangeStatus}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
               </Button>
             </div>
           </div>
