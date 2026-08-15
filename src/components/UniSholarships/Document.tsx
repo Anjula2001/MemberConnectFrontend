@@ -20,7 +20,7 @@ export type RequiredDocType = {
 };
 
 type DocumentProps = {
-  requestId: number | null;
+  requestId: number | string | null;
   disabled: boolean;
   isSaved: boolean;
   isSubmitted?: boolean;
@@ -30,6 +30,7 @@ type DocumentProps = {
 };
 
 export default function Document({
+  requestId,
   disabled,
   isSaved,
   isSubmitted,
@@ -170,8 +171,10 @@ export default function Document({
                   <td className="px-3 py-2">
                     {item.id ? (
                       <a
-                        href={`http://localhost:8080/api/documents/download/${item.id}`}
-                        className="font-medium text-blue-600 underline"
+                        href={`http://localhost:8080/api/uploaded-documents/download/${item.id}?requestId=${encodeURIComponent(requestId ? String(requestId) : "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-600 underline hover:text-blue-800"
                       >
                         {item.file.name}
                       </a>

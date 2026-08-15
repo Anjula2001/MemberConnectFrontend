@@ -538,7 +538,7 @@ export default function StudentExamSection() {
   const performSave = async (showPopup = true) => {
     const currentData = getValues();
 
-    if (!isEditMode) {
+    if (!requestId && !isSaved && !isEditMode) {
       const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
 
       if (!isExamNoValid) {
@@ -616,9 +616,9 @@ export default function StudentExamSection() {
         savedRequest = await response.json();
       }
 
-      setRequestId(
-        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
-      );
+      const newRequestId =
+        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null);
+      setRequestId(newRequestId);
       setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
       setStatus(savedRequest.status || "NEW");
       setIsSaved(true);
@@ -635,6 +635,13 @@ export default function StudentExamSection() {
 
       // Reset form default values to clear isDirty state
       reset(currentData);
+
+      if (!requestKey && savedRequest.universityScholarshipRequestID) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("requestId", savedRequest.universityScholarshipRequestID);
+        params.set("mode", "edit");
+        router.replace(`?${params.toString()}`);
+      }
 
       return savedRequest;
     } catch (error) {
@@ -694,6 +701,7 @@ export default function StudentExamSection() {
       const submittedRequest = await response.json();
 
       setStatus(submittedRequest.status);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: submittedRequest.status } : prev));
       setExamNoPopupMessage("Request submitted for committee approval");
       setShowExamNoPopup(true);
     } catch (error) {
@@ -968,7 +976,7 @@ export default function StudentExamSection() {
     await performSave(true);
   };
 
-  // Update University scholarship
+  // Perform update request
   const updateScholarship = async (id: string | number, data: any) => {
     try {
       const res = await fetch(`http://localhost:8080/api/university-scholarships/${id}`, {
@@ -991,14 +999,16 @@ export default function StudentExamSection() {
     if (!isInputsDisabled) {
       const saved = await performSave(false);
       if (!saved) {
-        alert("Failed to save request before marking incomplete");
+        setExamNoPopupMessage("Failed to save request before marking incomplete");
+        setShowExamNoPopup(true);
         return;
       }
       actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
     }
 
     if (!actionId) {
-      alert("Please save request first");
+      setExamNoPopupMessage("Please save request first");
+      setShowExamNoPopup(true);
       return;
     }
 
@@ -1021,12 +1031,15 @@ export default function StudentExamSection() {
       const updated = await res.json();
 
       setStatus(updated.status);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: updated.status, incompleteReason: reason } : prev));
       setShowIncompleteModal(false);
 
-      alert("Request marked as INCOMPLETE");
+      setExamNoPopupMessage("Request marked as INCOMPLETE");
+      setShowExamNoPopup(true);
     } catch (error) {
       console.error(error);
-      alert("Failed to mark incomplete");
+      setExamNoPopupMessage("Failed to mark incomplete");
+      setShowExamNoPopup(true);
     }
   };
 
@@ -1797,36 +1810,60 @@ export default function StudentExamSection() {
                 </h3>
 
                 <div className="space-y-3">
-                  {uploadedDocuments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3"
-                    >
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-800">
-                          {doc.documentType || "Document"}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {doc.fileName || "Unnamed file"}
-                        </p>
-                        {doc.uploadedAt && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}
+                  {uploadedDocuments.map((doc) => {
+                    const reqDoc = requiredDocumentTypes.find(
+                      (type) =>
+                        type.id === doc.requiredDocumentId ||
+                        type.documentType === doc.documentType
+                    );
+                    const docTypeLabel =
+                      reqDoc?.displayName || doc.documentType || "Document";
+                    const previewUrl =
+                      doc.fileUrl ||
+                      `http://localhost:8080/api/uploaded-documents/download/${doc.id}?requestId=${encodeURIComponent(
+                        doc.requestId || requestId || ""
+                      )}`;
+
+                    return (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-3"
+                      >
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">
+                            {docTypeLabel}
                           </p>
-                        )}
+                          <p className="text-xs text-gray-600 mt-1">
+                            {doc.fileName || "Unnamed file"}
+                          </p>
+                          {doc.uploadedAt && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Uploaded: {new Date(doc.uploadedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="ml-3 flex gap-2">
+                          <a
+                            href={previewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                          >
+                            Preview
+                          </a>
+                          <a
+                            href={`${previewUrl}&download=true`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center rounded-md border border-[#953002] bg-white px-3 py-1.5 text-xs font-medium text-[#953002] transition-colors hover:bg-[#953002]/10"
+                          >
+                            Download
+                          </a>
+                        </div>
                       </div>
-                      {doc.fileUrl && (
-                        <a
-                          href={doc.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-3 inline-flex items-center justify-center rounded-md bg-[#953002] text-white px-3 py-1 text-xs font-medium hover:bg-[#7a2500] transition-colors"
-                        >
-                          View
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
