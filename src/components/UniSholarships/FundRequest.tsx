@@ -103,7 +103,25 @@ export default function FundDisbursementRequest() {
     Number(scholarshipSummary?.totalScholarshipAmount || 0) -
     Number(scholarshipSummary?.totalDisbursedAmount || 0)
   );
-  const availablePeriod = (scholarshipSummary?.availablePeriod || 0) + (currentFundRequest ? 1 : 0);
+
+  const isCurrentRequestCountedInSummary = Boolean(
+    currentFundRequest &&
+    scholarshipSummary?.fundRequests?.some(
+      (req) =>
+        (req.id && String(req.id) === String(currentFundRequest.id)) ||
+        (req.requestId && req.requestId === currentFundRequest.requestId)
+    ) &&
+    currentFundRequest.status !== "REJECTED" &&
+    currentFundRequest.status !== "INACTIVE"
+  );
+
+  const availablePeriod =
+    (scholarshipSummary?.availablePeriod || 0) +
+    (isCurrentRequestCountedInSummary ? 1 : 0);
+
+  const durationYears = parseInt((scholarshipSummary?.duration || "").replace(/[^0-9]/g, "")) || 0;
+  const totalSemesters = durationYears > 0 ? durationYears * 2 : 10;
+  const currentTargetId = fundRequestNo || fundRequestId || requestId;
 
   const {
     register,
@@ -112,7 +130,14 @@ export default function FundDisbursementRequest() {
     formState: { errors },
     reset,
   } = useForm<FundRequestFormInput, unknown, FundRequestFormOutput>({
-    resolver: zodResolver(fundRequestSchema(availableBalance, availablePeriod)),
+    resolver: zodResolver(
+      fundRequestSchema(
+        availableBalance,
+        totalSemesters,
+        scholarshipSummary?.fundRequests,
+        currentTargetId
+      )
+    ),
     mode: "onChange",
   });
 
@@ -267,6 +292,8 @@ export default function FundDisbursementRequest() {
         await uploadDocuments(savedFundRequestId);
       }
 
+      await fetchScholarshipSummary();
+
       setPopupMessage("Fund Request is saved successfully");
       setShowPopup(true);
 
@@ -328,27 +355,27 @@ export default function FundDisbursementRequest() {
     fetchUploadedDocuments();
   }, [fundRequestNo, fundRequestId]);
 
-  useEffect(() => {
+  const fetchScholarshipSummary = async () => {
     if (!scholarshipRequestId) return;
 
-    const fetchScholarshipSummary = async () => {
-      try {
-        const response = await fetch(
-          `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}`
-        );
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}`
+      );
 
-        if (!response.ok) {
-          throw new Error("Failed to load scholarship details");
-        }
-
-        const data = await response.json();
-        setScholarshipSummary(data);
-      } catch (error) {
-        console.error("Failed to load scholarship details:", error);
-        setScholarshipSummary(null);
+      if (!response.ok) {
+        throw new Error("Failed to load scholarship details");
       }
-    };
 
+      const data = await response.json();
+      setScholarshipSummary(data);
+    } catch (error) {
+      console.error("Failed to load scholarship details:", error);
+      setScholarshipSummary(null);
+    }
+  };
+
+  useEffect(() => {
     fetchScholarshipSummary();
   }, [scholarshipRequestId]);
 
@@ -535,6 +562,7 @@ export default function FundDisbursementRequest() {
       const updatedRequest: ScholarshipFundRequest = await response.json();
       setStatus(updatedRequest.status || nextStatus);
       setCurrentFundRequest(updatedRequest);
+      await fetchScholarshipSummary();
       setShowRejectModal(false);
       setRejectReason("");
       setPopupMessage(
@@ -782,7 +810,7 @@ export default function FundDisbursementRequest() {
                   Requested Period <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  placeholder="e.g. Year 1 Semester 1"
+                  placeholder="e.g. Semester 1"
                   {...register("requestedPeriod")}
                   disabled={!canEditRequest}
                 />
