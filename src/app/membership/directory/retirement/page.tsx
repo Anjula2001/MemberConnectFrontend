@@ -460,8 +460,19 @@ export default function RetirementPage() {
     }
   };
 
-  const handleChangeStatus = async (newStatus: string) => {
-    if (!retirementRequest?.id) {
+  // Status change modal state
+  const [statusConfirmModal, setStatusConfirmModal] = useState<{
+    isOpen: boolean;
+    newStatus: string;
+    statusLabel: string;
+  }>({
+    isOpen: false,
+    newStatus: "",
+    statusLabel: "",
+  });
+
+  const handleChangeStatus = (newStatus: string) => {
+    if (!retirementRequest?.requestNo) {
       setSaveError("Please open a retirement request before changing status.");
       return;
     }
@@ -470,18 +481,25 @@ export default function RetirementPage() {
       newStatus === "INACTIVE"
         ? "Inactive"
         : newStatus === "INCOMPLETE"
-        ? "Incomplete"
-        : newStatus === "NEW"
-        ? "New"
-        : newStatus === "SUBMITTED_FOR_APPROVAL"
-        ? "Submitted for Approval"
-        : newStatus;
+          ? "Incomplete"
+          : newStatus === "NEW"
+            ? "New"
+            : newStatus === "SUBMITTED_FOR_APPROVAL"
+              ? "Submitted for Approval"
+              : newStatus;
 
-    const confirmed = window.confirm(
-      `Change retirement request status to ${statusLabel}? This action may update the member's profile status.`
-    );
+    setStatusConfirmModal({
+      isOpen: true,
+      newStatus,
+      statusLabel,
+    });
+  };
 
-    if (!confirmed) return;
+  const confirmChangeStatus = async () => {
+    const { newStatus } = statusConfirmModal;
+    setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
+
+    if (!retirementRequest?.requestNo) return;
 
     try {
       const response = await fetch(
@@ -950,6 +968,7 @@ export default function RetirementPage() {
                                     <Button
                                       type="button"
                                       size="sm"
+                                      className="bg-[#953002] text-white hover:bg-gray-100"
                                       onClick={() => {
                                         setEditingBankAccount(account);
                                         setOpenBankModal(true);
@@ -1057,6 +1076,39 @@ export default function RetirementPage() {
                 setEditingBankAccount(null);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {statusConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              Change Retirement Request Status
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Change retirement request status to{" "}
+              <span className="font-semibold text-gray-900">{statusConfirmModal.statusLabel}</span>?
+              This action may update the member's profile status.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" })}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmChangeStatus}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
+              </Button>
+            </div>
           </div>
         </div>
       )}

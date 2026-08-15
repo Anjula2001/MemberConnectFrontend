@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "../../../../components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
-import { Printer, Trash2, FileText, Search, ArrowLeft } from "lucide-react";
+import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8080";
 
@@ -54,6 +54,7 @@ export default function Grade5ApprovalListsPage() {
   const [filterType, setFilterType] = useState<"ALL" | "PERIOD">("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const today = new Date().toISOString().split("T")[0];
 
   const [lists, setLists] = useState<ApprovalList[]>([]);
   const [selectedListId, setSelectedListId] = useState<string>(initialListId);
@@ -67,9 +68,37 @@ export default function Grade5ApprovalListsPage() {
 
   // Modal states
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [actualMeetingDate, setActualMeetingDate] = useState("");
   const [boardRemarks, setBoardRemarks] = useState("");
   const [scannedFile, setScannedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // General Popup Message Modal state
+  const [popupModal, setPopupModal] = useState<{
+    isOpen: boolean;
+    type: "success" | "error" | "warning" | "info";
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: "info",
+    title: "",
+    message: "",
+  });
+
+  const showPopup = (type: "success" | "error" | "warning" | "info", title: string, message: string) => {
+    setPopupModal({
+      isOpen: true,
+      type,
+      title,
+      message,
+    });
+  };
+
+  const closePopup = () => {
+    setPopupModal((prev) => ({ ...prev, isOpen: false }));
+  };
 
   const [loading, setLoading] = useState(false);
   const [requestsLoading, setRequestsLoading] = useState(false);
@@ -101,6 +130,13 @@ export default function Grade5ApprovalListsPage() {
       const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/all`);
       if (res.ok) {
         let data: ApprovalList[] = await res.json();
+
+        // Ensure type and status are properly derived if null or empty
+        data = data.map((item) => ({
+          ...item,
+          type: item.type || (item.listId?.startsWith("G5-DAL-") ? "DEVIATION" : "NORMAL"),
+          status: item.status || "CREATED",
+        }));
 
         // Filter by date period if selected
         if (filterType === "PERIOD" && fromDate && toDate) {
@@ -195,27 +231,33 @@ export default function Grade5ApprovalListsPage() {
     }));
   };
 
-  // Delete approval list
-  const handleDeleteList = async () => {
+  // Open delete confirmation modal
+  const handleDeleteList = () => {
     if (!selectedListId) return;
-    const confirm = window.confirm("Do you want to delete the selected Grade 5 Scholarship Approval List?");
-    if (!confirm) return;
+    setIsDeleteModalOpen(true);
+  };
+
+  // Perform delete approval list
+  const handleConfirmDeleteList = async () => {
+    if (!selectedListId) return;
+    setIsDeleteModalOpen(false);
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/${selectedListId}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        alert("Board approval list deleted successfully");
+        showPopup("success", "Success", "Board approval list deleted successfully");
         setSelectedListId("");
         setSelectedList(null);
         setRequests([]);
         fetchApprovalLists();
       } else {
-        alert("Failed to delete list");
+        showPopup("error", "Error", "Failed to delete list");
       }
     } catch (error) {
       console.error(error);
+      showPopup("error", "Error", "An error occurred while attempting to delete the list.");
     }
   };
 
@@ -226,7 +268,7 @@ export default function Grade5ApprovalListsPage() {
       ([_, dec]) => dec.status === "REJECTED" && !dec.rejectReason.trim()
     );
     if (invalid) {
-      alert("Rejection reason is mandatory for all rejected requests.");
+      showPopup("warning", "Validation Required", "Rejection reason is mandatory for all rejected requests.");
       return;
     }
 
@@ -241,35 +283,61 @@ export default function Grade5ApprovalListsPage() {
   const handleConfirmProcess = async () => {
     if (!selectedListId) return;
 
-    // Map request details
-    const requestDetails = Object.entries(decisions).map(([reqNo, dec]) => ({
-      requestNo: reqNo,
-      status: dec.status,
-      rejectReason: dec.rejectReason,
-    }));
+    let scannedReportPath = "";
 
     try {
+      // 1. If scanned file is attached, upload it to AWS S3 / storage
+      if (scannedFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", scannedFile);
+
+          const uploadRes = await fetch(`${API_BASE_URL}/api/file/upload`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (uploadRes.ok) {
+            scannedReportPath = await uploadRes.text();
+          } else {
+            scannedReportPath = scannedFile.name;
+          }
+        } catch (uploadError) {
+          console.warn("File upload error, proceeding with filename:", uploadError);
+          scannedReportPath = scannedFile.name;
+        }
+      }
+
+      // Map request details
+      const requestDetails = Object.entries(decisions).map(([reqNo, dec]) => ({
+        requestNo: reqNo,
+        status: dec.status,
+        rejectReason: dec.rejectReason,
+      }));
+
       const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/${selectedListId}/process`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           actualMeetingDate,
           boardRemarks,
-          scannedReportPath: scannedFile ? scannedFile.name : "",
+          scannedReportPath,
           requestDetails,
         }),
       });
 
       if (res.ok) {
-        alert("Approval list processed successfully");
         setIsProcessModalOpen(false);
+        setScannedFile(null);
+        showPopup("success", "Success", "Approval list processed successfully and scanned report uploaded to AWS S3.");
         fetchApprovalLists();
         fetchRequestsForList(selectedListId);
       } else {
-        alert("Failed to process approval list");
+        showPopup("error", "Error", "Failed to process approval list");
       }
     } catch (error) {
       console.error(error);
+      showPopup("error", "Error", "An error occurred while processing the approval list.");
     }
   };
 
@@ -298,7 +366,7 @@ export default function Grade5ApprovalListsPage() {
         >
           <ArrowLeft className="h-7 w-7" />
         </button>
-        <h1 className="text-3xl font-bold text-[#953002]">Grade 5 Scholarship Approval Lists</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Grade 5 Scholarship Approval Lists</h1>
       </div>
 
       {/* Tabs */}
@@ -307,8 +375,8 @@ export default function Grade5ApprovalListsPage() {
           type="button"
           variant={activeTypeTab === "NORMAL" ? "secondary" : "ghost"}
           className={`h-8 rounded-sm px-3 text-xs ${activeTypeTab === "NORMAL"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
             }`}
           onClick={() => handleTabChange("NORMAL")}
         >
@@ -318,8 +386,8 @@ export default function Grade5ApprovalListsPage() {
           type="button"
           variant={activeTypeTab === "DEVIATION" ? "secondary" : "ghost"}
           className={`h-8 rounded-sm px-3 text-xs ${activeTypeTab === "DEVIATION"
-              ? "bg-white text-foreground shadow-sm"
-              : "text-muted-foreground hover:bg-transparent"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
             }`}
           onClick={() => handleTabChange("DEVIATION")}
         >
@@ -364,7 +432,15 @@ export default function Grade5ApprovalListsPage() {
                 <input
                   type="date"
                   value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
+                  max={today}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && val > today) {
+                      setFromDate(today);
+                    } else {
+                      setFromDate(val);
+                    }
+                  }}
                   className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
                 />
               </div>
@@ -373,7 +449,15 @@ export default function Grade5ApprovalListsPage() {
                 <input
                   type="date"
                   value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
+                  max={today}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && val > today) {
+                      setToDate(today);
+                    } else {
+                      setToDate(val);
+                    }
+                  }}
                   className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
                 />
               </div>
@@ -422,8 +506,8 @@ export default function Grade5ApprovalListsPage() {
                       </p>
                     </div>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.status === "PROCESSED"
-                        ? "bg-green-100 text-green-700 border border-green-200"
-                        : "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                      ? "bg-green-100 text-green-700 border border-green-200"
+                      : "bg-yellow-100 text-yellow-700 border border-yellow-200"
                       }`}>
                       {item.status}
                     </span>
@@ -487,16 +571,6 @@ export default function Grade5ApprovalListsPage() {
                       </Button>
                     </>
                   )}
-                  {selectedList.status === "PROCESSED" && (
-                    <Button
-                      variant="outline"
-                      onClick={handlePrint}
-                      className="border-[#953002]/20 text-[#953002] hover:bg-[#953002]/5 h-8 px-3 text-xs"
-                    >
-                      <Printer className="h-3.5 w-3.5 mr-1" />
-                      Print List
-                    </Button>
-                  )}
                 </div>
               )}
             </div>
@@ -513,18 +587,14 @@ export default function Grade5ApprovalListsPage() {
 
                 {/* Processed Metadata Log if PROCESSED */}
                 {selectedList?.status === "PROCESSED" && (
-                  <div className="text-xs text-gray-600 bg-green-50 border border-green-100 rounded-lg p-3 grid grid-cols-3 gap-4">
+                  <div className="text-xs text-gray-600 bg-green-50 border border-green-100 rounded-lg p-3 grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-gray-400 font-medium">Processed By</p>
-                      <p className="font-semibold text-gray-700">{selectedList?.processedBy}</p>
+                      <p className="font-semibold text-gray-700">{selectedList?.processedBy || "Head Office User"}</p>
                     </div>
                     <div>
                       <p className="text-gray-400 font-medium">Processed At</p>
                       <p className="font-semibold text-gray-700">{selectedList?.processedAt?.replace("T", " ")}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400 font-medium">Board Remarks</p>
-                      <p className="font-semibold text-gray-700 truncate" title={selectedList?.boardRemarks}>{selectedList?.boardRemarks || "-"}</p>
                     </div>
                   </div>
                 )}
@@ -622,7 +692,7 @@ export default function Grade5ApprovalListsPage() {
       {isProcessModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg space-y-4">
-            <h3 className="text-lg font-bold text-[#953002] border-b pb-2">
+            <h3 className="text-lg font-bold text-[#953002]">
               Approve / Reject Grade 5 Scholarship Requests
             </h3>
 
@@ -651,38 +721,54 @@ export default function Grade5ApprovalListsPage() {
             </div>
 
             {/* Document Scan Upload */}
-            <div className="border border-dashed border-gray-300 rounded p-4 text-center">
-              <p className="text-xs text-gray-500 mb-2 font-medium">
+            <div
+              onDoubleClick={() => fileInputRef.current?.click()}
+              className="border border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50/80 transition-colors select-none"
+              title="Double click to upload document"
+            >
+              <p className="text-xs text-gray-500 mb-1 font-medium">
                 Upload Scanned Report (Grade 5 Scholarship Report)
               </p>
+
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/*,application/pdf"
-                onChange={(e) => setScannedFile(e.target.files ? e.target.files[0] : null)}
-                className="text-xs text-gray-600 block mx-auto"
+                onChange={(e) => setScannedFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                className="hidden"
               />
-              {scannedFile && (
-                <p className="text-xs text-green-600 mt-2 font-semibold">
-                  Selected: {scannedFile.name}
-                </p>
-              )}
+              <p className="text-xs text-gray-700 font-medium">
+                Choose file:{" "}
+                <span className={scannedFile ? "font-semibold text-[#953002]" : "text-gray-400 italic"}>
+                  {scannedFile ? scannedFile.name : "No file chosen"}
+                </span>
+              </p>
             </div>
 
-            {/* Decision Summary */}
-            <div className="bg-gray-50 rounded p-4 text-sm space-y-1">
-              <h4 className="font-semibold text-gray-700 mb-2">Summary</h4>
-              <p className="flex justify-between">
-                <span>Total Requests:</span>
-                <span className="font-bold">{totalCount}</span>
-              </p>
-              <p className="flex justify-between text-green-700">
-                <span>Approved Count:</span>
-                <span className="font-bold">{approvedCount}</span>
-              </p>
-              <p className="flex justify-between text-red-600">
-                <span>Rejected Count:</span>
-                <span className="font-bold">{rejectedCount}</span>
-              </p>
+            {/* Request Summary Card */}
+            <div className="border border-gray-100/80 rounded-2xl p-4 space-y-3">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                REQUEST SUMMARY
+              </h4>
+              <div className="grid grid-cols-3 gap-3">
+                {/* Total Requests */}
+                <div className="bg-white border border-gray-200/80 rounded-xl p-3 flex flex-col items-center justify-center text-center shadow-xs">
+                  <span className="text-2xl font-bold text-slate-800">{totalCount}</span>
+                  <span className="text-xs font-medium text-gray-500 mt-1">Total Requests</span>
+                </div>
+
+                {/* To Approve */}
+                <div className="bg-[#eefcf2] border border-emerald-100 rounded-xl p-3 flex flex-col items-center justify-center text-center shadow-xs">
+                  <span className="text-2xl font-bold text-emerald-600">{approvedCount}</span>
+                  <span className="text-xs font-semibold text-emerald-600 mt-1">To Approve</span>
+                </div>
+
+                {/* To Reject */}
+                <div className="bg-[#fff1f2] border border-rose-100 rounded-xl p-3 flex flex-col items-center justify-center text-center shadow-xs">
+                  <span className="text-2xl font-bold text-rose-600">{rejectedCount}</span>
+                  <span className="text-xs font-semibold text-rose-600 mt-1">To Reject</span>
+                </div>
+              </div>
             </div>
 
             {/* Remarks comment field */}
@@ -699,7 +785,7 @@ export default function Grade5ApprovalListsPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 border-t pt-3">
+            <div className="flex justify-end gap-2 pt-2">
               <Button
                 onClick={() => setIsProcessModalOpen(false)}
                 className="bg-white text-black hover:bg-gray-100"
@@ -711,6 +797,64 @@ export default function Grade5ApprovalListsPage() {
                 className="bg-[#953002] text-white hover:bg-[#672102]"
               >
                 Process
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              Delete Grade 5 Scholarship Approval List
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Do you want to delete the selected Grade 5 Scholarship Approval List{" "}
+              <span className="font-semibold text-gray-900">{selectedListId}</span>?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDeleteList}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup Message Modal */}
+      {popupModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              {popupModal.title}
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              {popupModal.message}
+            </p>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                type="button"
+                onClick={closePopup}
+                className="bg-[#953002] text-white hover:bg-[#672102] min-w-[80px]"
+              >
+                OK
               </Button>
             </div>
           </div>

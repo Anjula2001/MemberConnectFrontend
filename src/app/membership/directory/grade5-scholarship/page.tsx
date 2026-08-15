@@ -539,8 +539,18 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-  // Change status from view mode
-  const handleChangeStatus = async (newStatus: string) => {
+  // Status change modal state
+  const [statusConfirmModal, setStatusConfirmModal] = useState<{
+    isOpen: boolean;
+    newStatus: string;
+    statusLabel: string;
+  }>({
+    isOpen: false,
+    newStatus: "",
+    statusLabel: "",
+  });
+
+  const handleChangeStatus = (newStatus: string) => {
     if (!grade5Request?.requestNo) {
       setFundError("No Grade 5 Scholarship request is loaded.");
       return;
@@ -551,10 +561,18 @@ export default function Grade5ScholarshipPage() {
       : newStatus === "NEW" ? "New"
       : newStatus;
 
-    const confirmed = window.confirm(
-      `Change Grade 5 Scholarship request status to ${statusLabel}?`
-    );
-    if (!confirmed) return;
+    setStatusConfirmModal({
+      isOpen: true,
+      newStatus,
+      statusLabel,
+    });
+  };
+
+  const confirmChangeStatus = async () => {
+    const { newStatus } = statusConfirmModal;
+    setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
+
+    if (!grade5Request?.requestNo) return;
 
     try {
       const res = await fetch(
@@ -1224,6 +1242,38 @@ export default function Grade5ScholarshipPage() {
                 className="bg-[#953002] text-white hover:bg-[#672102]"
               >
                 {submittingRequest ? "Submitting..." : "Submit"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              Change Grade 5 Scholarship Status
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Change Grade 5 Scholarship request status to{" "}
+              <span className="font-semibold text-gray-900">{statusConfirmModal.statusLabel}</span>?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" })}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmChangeStatus}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
               </Button>
             </div>
           </div>

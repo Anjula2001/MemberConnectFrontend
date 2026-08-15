@@ -764,25 +764,25 @@ export default function Grade5ScholarshipRequestsListPage() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex gap-2 px-6">
-
-                        {row.status === "SUBMITTED_FOR_NORMAL_APPROVAL" && (
-                          <span
-                            title="Submitted for normal approval"
-                            className="text-Blue-500"
-                          >
-                            N
-                          </span>
-                        )}
-
-                        {row.status ===
-                          "SUBMITTED_FOR_DEVIATION_APPROVAL" && (
-                            <span
-                              title="Submitted for deviation approval"
-                              className="text-red-500"
-                            >
-                              D
-                            </span>
+                      <div className="flex items-center gap-1.5">
+                        {row.status !== "NEW" &&
+                          row.status !== "INCOMPLETE" &&
+                          row.status !== "INACTIVE" && (
+                            row.hasDeviation || row.status?.includes("DEVIATION") ? (
+                              <span
+                                title="Deviation Scholarship"
+                                className="font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-xs inline-block"
+                              >
+                                D
+                              </span>
+                            ) : (
+                              <span
+                                title="Normal Scholarship"
+                                className="font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 text-xs inline-block"
+                              >
+                                N
+                              </span>
+                            )
                           )}
                       </div>
                     </td>
