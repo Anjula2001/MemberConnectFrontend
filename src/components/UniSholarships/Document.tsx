@@ -38,7 +38,7 @@ export default function Document({
   documentTypes,
 }: DocumentProps) {
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
-  
+
   //Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -54,12 +54,17 @@ export default function Document({
     },
     [disabled, selectedDocumentType, setFiles]
   );
-  
+
   //Initialize react-dropzone
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: false,
     disabled: disabled || !selectedDocumentType,
+    accept: {
+      "application/pdf": [".pdf"],
+      "image/png": [".png"],
+      "image/jpeg": [".jpg", ".jpeg"],
+    },
   });
 
   //Handle file removal
@@ -128,7 +133,7 @@ export default function Document({
             <UploadCloud className="h-8 w-8 text-[#953002] mb-2" />
             <p>
               {selectedDocumentType
-                ? "Upload selected document"
+                ? "Upload selected document (PDF, PNG, JPG)"
                 : "Select document type before uploading"}
             </p>
           </div>

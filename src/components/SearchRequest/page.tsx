@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Loader2, Edit3, Trash2 } from 'lucide-react';
+import { Search, Loader2, Edit3, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation'; // Added for navigation
 import axios from 'axios';
 
@@ -76,7 +76,7 @@ export default function ProfileChangeRequests() {
         alert("This request type is not yet connected to the backend.");
         setHasSearched(false);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error:", error);
       alert("Failed to fetch data.");
     } finally {
@@ -84,7 +84,7 @@ export default function ProfileChangeRequests() {
     }
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDelete = async (id: string | number | undefined) => {
     if (!id) return;
     if (!window.confirm("Are you sure you want to delete this request?")) return;
 
@@ -105,14 +105,14 @@ export default function ProfileChangeRequests() {
         return rowId !== id;
       }));
       alert("Request deleted successfully.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error during deletion:", error);
       alert("Failed to delete the request. Please ensure the backend delete endpoints are configured correctly.");
     }
   };
 
   // Redirect function
-  const handleEdit = (id: any) => {
+  const handleEdit = (id: string | number | undefined) => {
     if (!id) return;
     if (requestType === 'Name Changes') {
       router.push(`/membership/name-changes/${id}`);
@@ -142,7 +142,8 @@ export default function ProfileChangeRequests() {
               <option>Basic Profile Changes</option>
               <option>Name Changes</option>
               <option>Nomminne Changes</option>
-              <option>Remittance Amount Changes</option>
+              <option>Remmitance Amount Changes</option>
+              <option>Member Transfer</option>
             </select>
           </div>
           <div className="space-y-2">

@@ -451,7 +451,7 @@ export default function MemberDirectoryPage() {
 									>
 										<TableCell className="px-4 py-4 font-medium">
 											{member.memberId || member.id ? (
-												<Link 
+												<Link
 													href={`/membership/directory/${member.id}`}
 													className="text-[#9d3602] hover:underline"
 												>
