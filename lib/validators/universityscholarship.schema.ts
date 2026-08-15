@@ -113,4 +113,8 @@ export const universityScholarshipSchema = z.object({
   minorAccountMonths: z
     .string()
     .optional(),
+
+  specialDegree: z
+    .boolean()
+    .optional(),
 });

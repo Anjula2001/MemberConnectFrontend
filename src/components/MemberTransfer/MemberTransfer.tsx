@@ -71,6 +71,20 @@ type MemberTransferRecord = {
   newWorkingLocationAddress?: string;
   newComputerNoInPayslip?: string;
   newSalaryPayingOffice?: string;
+
+  newDesignation?: { id?: number; name?: string };
+  newNatureOfOccupation?: { id?: number; name?: string };
+  newWorkingLocationType?: { id?: number; name?: string; usesZone?: boolean };
+  newEducationalDistrict?: { id?: number; name?: string };
+  newEducationalZone?: { id?: number; name?: string };
+  newWorkingLocation?: {
+    id?: number;
+    name?: string;
+    address?: string;
+    salaryPayingOffice?: string;
+    educationalDistrict?: { id?: number; name?: string };
+    educationalZone?: { id?: number; name?: string };
+  };
 };
 
 type OptionItem = {
@@ -187,6 +201,7 @@ export default function ChangeMemberTransferForm() {
   const [salaryOptions, setSalaryOptions] = useState<string[]>([]);
   const [isZoneEnabled, setIsZoneEnabled] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [keepCurrentDistrict, setKeepCurrentDistrict] = useState(false);
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
@@ -221,6 +236,27 @@ export default function ChangeMemberTransferForm() {
   const selectedDistrict = watch("educationalDistrictNew");
   const selectedZone = watch("educationalZoneNew");
   const selectedWorkingLocation = watch("workingLocationNew");
+
+  const foundWorkingLocationType = useMemo(() => {
+    return workingLocationTypes.find((type) => type.id === String(selectedWorkingLocationType));
+  }, [workingLocationTypes, selectedWorkingLocationType]);
+
+  const showKeepCurrentDistrict = useMemo(() => {
+    return foundWorkingLocationType
+      ? (foundWorkingLocationType.name.toLowerCase() === "other" || foundWorkingLocationType.raw?.keepCurrentDistrict === true)
+      : false;
+  }, [foundWorkingLocationType]);
+
+  const isKeepDistrict = useMemo(() => {
+    if (!loadedRecord) return false;
+    const locDistrictId = loadedRecord.newWorkingLocation?.educationalDistrict?.id;
+    const reqDistrictId = loadedRecord.newEducationalDistrictId;
+    return Boolean(
+      locDistrictId &&
+      reqDistrictId &&
+      String(locDistrictId) !== String(reqDistrictId)
+    );
+  }, [loadedRecord]);
 
   //get mandatory Document in DB
   useEffect(() => {
@@ -381,22 +417,27 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     if (!loadedRecord) return;
 
+    setKeepCurrentDistrict(isKeepDistrict);
+
+    const locDistrictId = loadedRecord.newWorkingLocation?.educationalDistrict?.id;
     reset({
       designationNew: String(loadedRecord.newDesignationId || ""),
       natureOfOccupationNew: String(loadedRecord.newNatureOfOccupationId || ""),
       workingLocationTypeNew: String(loadedRecord.newWorkingLocationTypeId || ""),
-      educationalDistrictNew: String(loadedRecord.newEducationalDistrictId || ""),
+      educationalDistrictNew: isKeepDistrict && locDistrictId
+        ? String(locDistrictId)
+        : String(loadedRecord.newEducationalDistrictId || ""),
       educationalZoneNew: String(loadedRecord.newEducationalZoneId || ""),
       workingLocationNew: String(loadedRecord.newWorkingLocationId || ""),
       workingLocationAddressNew: loadedRecord.newWorkingLocationAddress || "",
-      computerNoNameNew: loadedRecord.newComputerNoInPayslip || "",
-      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || "",
+      computerNoNameNew: loadedRecord.newComputerNoInPayslip || loadedRecord.computerNoNameNew || "",
+      salaryPayingOfficeNew: loadedRecord.newSalaryPayingOffice || loadedRecord.salaryPayingOfficeNew || "",
     } as any);
 
     setRequestId(loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null));
     setMemberTransferRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
-  }, [loadedRecord, reset]);
+  }, [loadedRecord, isKeepDistrict, reset]);
 
   //Fetch uploaded documents based on Request ID
   useEffect(() => {
@@ -438,6 +479,11 @@ export default function ChangeMemberTransferForm() {
     const usesZone = foundType ? Boolean(foundType.raw?.usesZone) : true;
 
     setIsZoneEnabled(usesZone);
+
+    const isOther = foundType ? (foundType.name.toLowerCase() === "other" || foundType.raw?.keepCurrentDistrict === true) : false;
+    if (!isOther) {
+      setKeepCurrentDistrict(false);
+    }
 
     setValue("educationalDistrictNew", "" as any);
     setValue("educationalZoneNew", (usesZone ? "" : "NA") as any);
@@ -581,12 +627,21 @@ export default function ChangeMemberTransferForm() {
 
     setIsSubmitting(true);
     try {
+      // Find option ID of the current district name
+      const currentDistrictName = oldValues?.educationalDistrict;
+      const currentDistrictOption = districts.find(
+        (d) => d.name === currentDistrictName || d.raw?.name === currentDistrictName
+      );
+      const currentDistrictId = currentDistrictOption ? currentDistrictOption.id : null;
+
       const payload = {
         memberId: member?.id,
         requestedDate: new Date().toISOString().slice(0, 10),
 
         newWorkingLocationTypeId: toNullableNumber((data as any).workingLocationTypeNew),
-        newEducationalDistrictId: toNullableNumber((data as any).educationalDistrictNew),
+        newEducationalDistrictId: keepCurrentDistrict && showKeepCurrentDistrict && currentDistrictId
+          ? toNullableNumber(currentDistrictId)
+          : toNullableNumber((data as any).educationalDistrictNew),
         newEducationalZoneId: toNullableNumber((data as any).educationalZoneNew),
         newWorkingLocationId: toNullableNumber((data as any).workingLocationNew),
         newDesignationId: toNullableNumber((data as any).designationNew),
@@ -619,6 +674,63 @@ export default function ChangeMemberTransferForm() {
       setRequestId(savedId);
       setMemberTransferRequestNo(saved.requestId || saved.memberTransferRequestID || "");
       setStatus(saved.status || "SUBMITTED_FOR_COMMITTEE_APPROVAL");
+
+      // Upload queued documents now that we have a saved request ID
+      if (documentFiles.length > 0 && savedId) {
+        const uploadedItems: DocumentFileItem[] = [];
+
+        for (const docFile of documentFiles) {
+          const reqDoc = requiredDocumentTypes.find(
+            (doc) => doc.documentType === docFile.documentType
+          );
+
+          if (!reqDoc) {
+            console.error("Required document type ID not found for", docFile.documentType);
+            continue;
+          }
+
+          const formData = new FormData();
+          formData.append("file", docFile.file);
+
+          const uploadRes = await fetch(
+            `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
+              String(savedId)
+            )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            console.error("Document upload failed:", uploadRes.status, errText);
+            continue;
+          }
+
+          const savedDoc = await uploadRes.json();
+          uploadedItems.push({
+            ...docFile,
+            id: savedDoc.id,
+            uploadedAt: savedDoc.uploadedAt,
+          });
+        }
+
+        setDocumentFiles(uploadedItems);
+
+        // Refresh the uploaded documents list from backend
+        try {
+          const docsRes = await fetch(
+            `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(savedId))}`
+          );
+          if (docsRes.ok) {
+            const docs = await docsRes.json();
+            setUploadedDocuments(Array.isArray(docs) ? docs : []);
+          }
+        } catch (e) {
+          console.error("Failed to refresh uploaded documents:", e);
+        }
+      }
 
       setPopupMessage("Request submitted successfully!");
       setShowPopup(true);
@@ -798,6 +910,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Designation"
                 oldValue={oldValues.designation}
+                newValue={loadedRecord?.newDesignation?.name}
+                isViewMode={isViewMode}
                 register={register("designationNew")}
                 error={errors.designationNew?.message}
                 options={designationOptions}
@@ -807,6 +921,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Nature of Occupation"
                 oldValue={oldValues.natureOfOccupation}
+                newValue={loadedRecord?.newNatureOfOccupation?.name}
+                isViewMode={isViewMode}
                 register={register("natureOfOccupationNew")}
                 error={errors.natureOfOccupationNew?.message}
                 options={natureOfOccupationOptions}
@@ -816,6 +932,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Working Location Type"
                 oldValue={oldValues.workingLocationType}
+                newValue={loadedRecord?.newWorkingLocationType?.name}
+                isViewMode={isViewMode}
                 register={register("workingLocationTypeNew")}
                 error={errors.workingLocationTypeNew?.message}
                 options={workingLocationTypes}
@@ -825,15 +943,22 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Educational District"
                 oldValue={oldValues.educationalDistrict}
+                newValue={isKeepDistrict ? loadedRecord?.newWorkingLocation?.educationalDistrict?.name : loadedRecord?.newEducationalDistrict?.name}
+                isViewMode={isViewMode}
                 register={register("educationalDistrictNew")}
                 error={errors.educationalDistrictNew?.message}
                 options={districts}
                 disabled={!selectedWorkingLocationType || isInputsDisabled}
+                showKeepCurrentDistrict={showKeepCurrentDistrict}
+                keepCurrentDistrict={keepCurrentDistrict}
+                onKeepCurrentDistrictChange={setKeepCurrentDistrict}
               />
 
               <EditableSelect
                 label="Educational Zone"
                 oldValue={oldValues.educationalZone}
+                newValue={loadedRecord?.newEducationalZone?.name}
+                isViewMode={isViewMode}
                 register={register("educationalZoneNew")}
                 error={errors.educationalZoneNew?.message}
                 options={isZoneEnabled ? zones : [{ id: "NA", name: "NA" }]}
@@ -843,6 +968,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Working Location"
                 oldValue={oldValues.workingLocation}
+                newValue={loadedRecord?.newWorkingLocation?.name}
+                isViewMode={isViewMode}
                 register={register("workingLocationNew")}
                 error={errors.workingLocationNew?.message}
                 options={workingLocations}
@@ -852,6 +979,8 @@ export default function ChangeMemberTransferForm() {
               <EditableInput
                 label="Working Location Address"
                 oldValue={oldValues.permanentPrivateAddress}
+                newValue={loadedRecord?.newWorkingLocationAddress}
+                isViewMode={isViewMode}
                 register={register("workingLocationAddressNew")}
                 error={errors.workingLocationAddressNew?.message}
                 value={watch("workingLocationAddressNew")}
@@ -861,6 +990,8 @@ export default function ChangeMemberTransferForm() {
               <EditableInput
                 label="Computer No"
                 oldValue={oldValues.computerNoName}
+                newValue={loadedRecord?.newComputerNoInPayslip}
+                isViewMode={isViewMode}
                 register={register("computerNoNameNew")}
                 error={errors.computerNoNameNew?.message}
                 disabled={isInputsDisabled}
@@ -869,6 +1000,8 @@ export default function ChangeMemberTransferForm() {
               <EditableSelect
                 label="Salary Paying Office"
                 oldValue={oldValues.salaryPayingOffice}
+                newValue={loadedRecord?.newSalaryPayingOffice}
+                isViewMode={isViewMode}
                 register={register("salaryPayingOfficeNew")}
                 error={errors.salaryPayingOfficeNew?.message}
                 options={(salaryOptions.length > 0 ? salaryOptions : [
@@ -988,27 +1121,48 @@ export default function ChangeMemberTransferForm() {
               <h3 className="mb-4 text-xl font-bold text-[#953002]">Uploaded Documents</h3>
 
               <div className="space-y-3">
-                {uploadedDocuments.map((doc) => (
-                  <div key={doc.id} className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800">{doc.documentType || "Document"}</p>
-                      <p className="mt-1 text-xs text-gray-600">{doc.fileName || "Unnamed file"}</p>
+                {uploadedDocuments.map((doc) => {
+                  const reqDoc = requiredDocumentTypes.find(
+                    (type) => type.id === doc.requiredDocumentId || type.documentType === doc.documentType
+                  );
+                  const docTypeLabel = reqDoc?.displayName || doc.documentType || "Document";
+                  const previewUrl =
+                    doc.fileUrl ||
+                    `http://localhost:8080/api/uploaded-documents/download/${doc.id}?requestId=${encodeURIComponent(
+                      doc.requestId || String(requestId || "")
+                    )}`;
 
-                      {doc.uploadedAt && <p className="mt-1 text-xs text-gray-500">Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</p>}
+                  return (
+                    <div key={doc.id} className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-800">{docTypeLabel}</p>
+                        <p className="mt-1 text-xs text-gray-600">{doc.fileName || "Unnamed file"}</p>
+                        {doc.uploadedAt && (
+                          <p className="mt-1 text-xs text-gray-500">Uploaded: {new Date(doc.uploadedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+
+                      <div className="ml-3 flex gap-2">
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                        >
+                          Preview
+                        </a>
+                        <a
+                          href={`${previewUrl}&download=true`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-[#953002] bg-white px-3 py-1.5 text-xs font-medium text-[#953002] transition-colors hover:bg-[#953002]/10"
+                        >
+                          Download
+                        </a>
+                      </div>
                     </div>
-
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-3 inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
-                      >
-                        View
-                      </a>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -1106,6 +1260,8 @@ function FieldPair({
 function EditableInput({
   label,
   oldValue,
+  newValue,
+  isViewMode,
   register,
   error,
   value,
@@ -1120,7 +1276,9 @@ function EditableInput({
 
       <div>
         <label className="mb-1 block text-sm text-gray-600">{label} (New)</label>
-        {typeof value !== "undefined" ? (
+        {isViewMode ? (
+          <Input value={formatDisplayValue(newValue) || formatDisplayValue(oldValue)} disabled />
+        ) : typeof value !== "undefined" ? (
           <Input {...register} value={value || ""} disabled={disabled} readOnly />
         ) : (
           <Input {...register} disabled={disabled} />
@@ -1134,17 +1292,27 @@ function EditableInput({
 function EditableSelect({
   label,
   oldValue,
+  newValue,
+  isViewMode,
   register,
   error,
   options = [],
   disabled = false,
+  showKeepCurrentDistrict = false,
+  keepCurrentDistrict = false,
+  onKeepCurrentDistrictChange,
 }: {
   label: string;
   oldValue: string;
+  newValue?: string;
+  isViewMode?: boolean;
   register: any;
   error?: string;
   options: OptionItem[];
   disabled?: boolean;
+  showKeepCurrentDistrict?: boolean;
+  keepCurrentDistrict?: boolean;
+  onKeepCurrentDistrictChange?: (checked: boolean) => void;
 }) {
   const selectId = label
     .toLowerCase()
@@ -1163,19 +1331,39 @@ function EditableSelect({
           {label} (New)
         </label>
 
-        <select
-          id={selectId}
-          {...register}
-          disabled={disabled}
-          className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
-        >
-          <option value="">{formatDisplayValue(oldValue)}</option>
-          {options.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))}
-        </select>
+        {isViewMode ? (
+          <Input id={selectId} value={formatDisplayValue(newValue) || formatDisplayValue(oldValue)} disabled />
+        ) : (
+          <select
+            id={selectId}
+            {...register}
+            disabled={disabled}
+            className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+          >
+            <option value="">{formatDisplayValue(oldValue)}</option>
+            {options.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {showKeepCurrentDistrict && (
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="keep-current-district"
+              checked={keepCurrentDistrict}
+              disabled={isViewMode || disabled}
+              onChange={(e) => onKeepCurrentDistrictChange?.(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#953002] focus:ring-[#953002] cursor-pointer disabled:cursor-not-allowed"
+            />
+            <label htmlFor="keep-current-district" className="text-xs text-gray-600 select-none cursor-pointer disabled:cursor-not-allowed">
+              Keep the Current District on the Member Profile
+            </label>
+          </div>
+        )}
 
         {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
       </div>

@@ -158,7 +158,7 @@ export default function RetirementPage() {
           const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
           if (!res.ok) throw new Error("Failed to fetch members");
           const members = await res.json();
-          const activeMember = members.find((m: any) => m.status === "ACTIVE" || m.status === "active");
+          const activeMember = members.find((m: { status: string; memberId: string }) => m.status === "ACTIVE" || m.status === "active");
           if (activeMember) {
             setSelectedMemberId(activeMember.memberId);
           } else if (members.length > 0) {
@@ -183,6 +183,7 @@ export default function RetirementPage() {
       fetchMemberBankAccounts();
       fetchRetirementRequests();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMode, selectedMemberId]);
 
   //Fetches the selected member details for the page header and member panel.

@@ -3,16 +3,22 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue,} from "@/src/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
-import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from "@/src/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import {AlertTriangle,CircleDollarSign,Pencil,ChevronDown,} from "lucide-react";
+import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, X, } from "lucide-react";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import {
+  createTerminationApprovalList,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
 
 interface TerminationRequest {
   id: string;
   requestId: string;
+  sourceType: "termination" | "retirement" | "member_death";
   date: string;
   member: string;
   nameAsInPayroll: string;
@@ -22,7 +28,8 @@ interface TerminationRequest {
   hasLoanBalance: boolean;
   hasIndirectObligations: boolean;
   reason: string;
-  status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE";
+  status: "NEW" | "SUBMITTED_FOR_APPROVAL" | "ADDED_TO_APPROVAL_LIST" | "APPROVED" | "REJECTED" | "INCOMPLETE" | "DISTRICT_COMMITTEE" | "PD_COMMITTEE" | "INACTIVE";
+  selectable: boolean;
 }
 
 type TerminationRequestApiRow = {
@@ -59,21 +66,24 @@ type TerminationRequestApiRow = {
   totalOutstandingLoanBalance?: number;
   reason?: string;
   terminationReason?: string;
-  status?: TerminationRequest["status"];
+  status?: TerminationRequest["status"] | string;
+  recordNo?: string;
+  informedDate?: string;
+  causeOfDeathName?: string;
 };
 
 type TerminationRequestApiResponse =
   | TerminationRequestApiRow[]
   | {
-      content?: TerminationRequestApiRow[];
-      data?: TerminationRequestApiRow[];
-      requests?: TerminationRequestApiRow[];
-    };
+    content?: TerminationRequestApiRow[];
+    data?: TerminationRequestApiRow[];
+    requests?: TerminationRequestApiRow[];
+  };
 
 type RequestType = "termination" | "retirement" | "member_deaths" | "all";
 type StatusType = | "new" | "submitted_for_approval" | "added_to_approval_list" | "approved" | "rejected" | "incomplete"
-                  |"pending_review"| "approved_by_board"| "disbursement_initiated"| "disbursement_completed"
-                  | "awaiting_nominee_confirmation"| "on_hold"| "district-committee"| "pnd-committee"| "inactive";
+  | "pending_review" | "approved_by_board" | "disbursement_initiated" | "disbursement_completed"
+  | "awaiting_nominee_confirmation" | "on_hold" | "district-committee" | "pnd-committee" | "inactive";
 
 type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
 type SortBy = "requestedDate" | "status" | "memberId";
@@ -81,15 +91,40 @@ type SortOrder = "asc" | "desc";
 
 const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
-const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new","submitted_for_approval",];
-const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL","ADDED_TO_APPROVAL_LIST","APPROVED","REJECTED",];
+const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval",];
+const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
+  "submitted_for_approval",
+  "rejected",
+  "added_to_approval_list",
+];
+const DEFAULT_MEMBER_DEATH_STATUSES: StatusType[] = [
+  "new",
+  "submitted_for_approval",
+  "incomplete",
+];
+const TERMINATION_STATUS_LABELS: Record<string, string> = {
+  NEW: "New",
+  SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
+  ADDED_TO_APPROVAL_LIST: "Added to Termination Approval List",
+  DISTRICT_COMMITTEE: "District Committee",
+  PD_COMMITTEE: "P&D Committee",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  INCOMPLETE: "Incomplete",
+  INACTIVE: "Inactive",
+};
+const SELECTABLE_TERMINATION_STATUSES: TerminationRequest["status"][] = [
+  "SUBMITTED_FOR_APPROVAL",
+  "REJECTED",
+];
+const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL", "ADDED_TO_APPROVAL_LIST", "APPROVED", "REJECTED",];
 
 // Status options by request type
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
   termination: [
     { value: "new", label: "New" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
-    { value: "added_to_approval_list", label: "Added to Approval List" },
+    { value: "added_to_approval_list", label: "Added to Termination Approval List" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "inactive", label: "Inactive" },
@@ -115,7 +150,7 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
   all: [
     { value: "new", label: "New" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
-    { value: "added_to_approval_list", label: "Added to Approval List" },
+    { value: "added_to_approval_list", label: "Added to Termination Approval List" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "incomplete", label: "Incomplete" },
@@ -244,7 +279,7 @@ function LocationMultiSelect({
       ? "All Locations"
       : selectedLocations.length === 1
         ? locationOptions.find((location) => location.id === selectedLocations[0])
-            ?.name
+          ?.name
         : `${selectedLocations.length} selected`;
 
   return (
@@ -339,10 +374,9 @@ export default function TerminationPage() {
   const router = useRouter();
 
   //Fiter state value
-  const [requestType, setRequestType] = useState<RequestType>("retirement");
+  const [requestType, setRequestType] = useState<RequestType>("all");
   const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(DEFAULT_RETIREMENT_STATUSES);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
   const [fromDate, setFromDate] = useState("");
@@ -352,23 +386,108 @@ export default function TerminationPage() {
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const showRowSelection = false;
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingApprovalList, setIsSavingApprovalList] = useState(false);
+  const [createdApprovalList, setCreatedApprovalList] =
+    useState<TerminationApprovalListDTO | null>(null);
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [approvalListError, setApprovalListError] = useState("");
+  const showRequestTypeColumn = requestType === "all";
+  const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
+  const showApprovalListActions = requestType === "termination";
+
+  const selectableRowIds = requests
+    .filter(
+      (row) =>
+        row.sourceType === "termination" &&
+        row.selectable &&
+        SELECTABLE_TERMINATION_STATUSES.includes(row.status)
+    )
+    .map((row) => row.requestId);
+
+  const selectedTerminationCount = selectableRowIds.filter((id) =>
+    selectedRows.includes(id)
+  ).length;
+
+  const isAllSelectableSelected =
+    selectableRowIds.length > 0 &&
+    selectedTerminationCount === selectableRowIds.length;
+
+  const isSomeSelectableSelected =
+    selectedTerminationCount > 0 &&
+    selectedTerminationCount < selectableRowIds.length;
+
+  const boardMeetingOptions = boardMeetings.map((meeting) => ({
+    value: String(meeting.id ?? ""),
+    label: `${meeting.scheduledDate ?? "Unknown date"} (${meeting.boardMeetingId ?? meeting.id ?? ""})`,
+  }));
 
   // Get current status options based on request type
-  const currentStatusOptions = requestType === "all"
-      ? STATUS_OPTIONS_BY_TYPE.retirement
-      : STATUS_OPTIONS_BY_TYPE[requestType];
+  const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
+
+  useEffect(() => {
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        setBoardMeetings(meetings);
+      } catch (meetingError) {
+        console.error("Failed to load board meetings:", meetingError);
+      }
+    };
+
+    loadBoardMeetings();
+  }, []);
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
     setRequestType(newType);
     setSelectedStatuses(
-      newType === "retirement" ? DEFAULT_RETIREMENT_STATUSES : []
+      newType === "retirement"
+        ? DEFAULT_RETIREMENT_STATUSES
+        : newType === "termination"
+          ? DEFAULT_TERMINATION_STATUSES
+          : newType === "member_deaths"
+            ? DEFAULT_MEMBER_DEATH_STATUSES
+            : []
     );
   };
 
+  const normalizeStatusForApi = (status: StatusType) => {
+    const normalized = status.toUpperCase().replaceAll("-", "_");
+    return normalized === "PND_COMMITTEE" ? "PD_COMMITTEE" : normalized;
+  };
+
+  const normalizeMemberDeathRows = (
+    rows: TerminationRequestApiRow[]
+  ): TerminationRequest[] =>
+    rows.map((row) => ({
+      id: row.recordNo ?? row.requestNo ?? String(row.id ?? ""),
+      requestId: row.recordNo ?? row.requestNo ?? "-",
+      sourceType: "member_death",
+      date: row.informedDate ?? row.requestedDate ?? row.date ?? "-",
+      member:
+        row.memberFullName ??
+        row.nameWithInitials ??
+        row.fullName ??
+        "-",
+      nameAsInPayroll: row.nameAsInPayroll ?? "-",
+      nameWithInitials: row.nameWithInitials ?? "-",
+      memberNumber: row.memberId ?? row.memberNumber ?? "-",
+      nicNumber: row.memberNic ?? row.nicNumber ?? row.nic ?? "-",
+      hasLoanBalance: row.hasLoanBalance ?? row.hasOutstandingLoans ?? false,
+      hasIndirectObligations:
+        row.hasIndirectObligations ?? row.hasLoanObligations ?? false,
+      reason: row.causeOfDeathName ?? row.reason ?? "-",
+      status: (row.status ?? "NEW") as TerminationRequest["status"],
+      selectable: false,
+    }));
+
   const normalizeApiRows = (
-    responseData: TerminationRequestApiResponse
+    responseData: TerminationRequestApiResponse,
+    sourceType: "termination" | "retirement"
   ): TerminationRequest[] => {
     const rows = Array.isArray(responseData)
       ? responseData
@@ -380,9 +499,12 @@ export default function TerminationPage() {
           ? row.member
           : null;
 
+      const requestId = row.requestId ?? row.requestNo ?? row.requestNumber ?? "-";
+
       return {
-        id: String(row.id ?? row.requestId ?? row.requestNo ?? row.requestNumber ?? ""),
-        requestId: row.requestId ?? row.requestNo ?? row.requestNumber ?? "-",
+        id: requestId !== "-" ? requestId : `${sourceType}-${String(row.id ?? "")}`,
+        requestId,
+        sourceType,
         date: row.requestedDate ?? row.date ?? "-",
         member:
           row.memberName ??
@@ -414,117 +536,185 @@ export default function TerminationPage() {
           row.hasLoanObligations ??
           false,
         reason: row.reason ?? row.terminationReason ?? "-",
-        status: row.status ?? "NEW",
+        status: (row.status ?? "NEW") as TerminationRequest["status"],
+        selectable:
+          sourceType === "termination" &&
+          (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED"),
       };
     });
   };
 
-  const fetchRequests = async () => {
+  const buildQueryParams = (statuses: StatusType[] = selectedStatuses) => {
+    const params = new URLSearchParams();
+
+    statuses.forEach((status) => params.append("statuses", normalizeStatusForApi(status)));
+
+    if (searchQuery.trim()) {
+      params.append("searchKey", searchQuery.trim());
+    }
+
+    if (dateFilter === "this_month") {
+      const { from, to } = getCurrentMonthRange();
+      params.append("fromDate", from);
+      params.append("toDate", to);
+    } else if (dateFilter === "this_and_last_month") {
+      const { from, to } = getThisAndLastMonthRange();
+      params.append("fromDate", from);
+      params.append("toDate", to);
+    } else if (dateFilter === "date_period" && fromDate && toDate) {
+      params.append("fromDate", fromDate);
+      params.append("toDate", toDate);
+    }
+
+    params.append("sortBy", sortBy);
+    params.append("sortOrder", sortOrder);
+
+    return params;
+  };
+
+  const fetchMemberDeathRequestsFromApi = async (
+    statuses: StatusType[] = selectedStatuses
+  ) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/member-death-records?${buildQueryParams(statuses).toString()}`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to retrieve member death records.");
+    }
+
+    const data = (await response.json()) as TerminationRequestApiRow[];
+    return normalizeMemberDeathRows(data);
+  };
+
+  const fetchRequestsFromApi = async (
+    apiPath: "termination-requests" | "retirement-requests",
+    sourceType: "termination" | "retirement",
+    statuses: StatusType[] = selectedStatuses
+  ) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/${apiPath}?${buildQueryParams(statuses).toString()}`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to retrieve requests.");
+    }
+
+    const data = (await response.json()) as TerminationRequestApiResponse;
+    return normalizeApiRows(data, sourceType);
+  };
+
+  const sortMergedRequests = (requests: TerminationRequest[]) => {
+    return [...requests].sort((a, b) => {
+      let result = 0;
+
+      if (sortBy === "status") {
+        result = a.status.localeCompare(b.status);
+      } else if (sortBy === "memberId") {
+        result = a.memberNumber.localeCompare(b.memberNumber);
+      } else {
+        result = a.date.localeCompare(b.date);
+      }
+
+      return sortOrder === "desc" ? -result : result;
+    });
+  };
+
+  const fetchRequests = async (statuses: StatusType[] = selectedStatuses) => {
     try {
       setLoading(true);
       setError("");
-      
+
       //Validate Dates
       if (dateFilter === "date_period") {
         if (fromDate && fromDate > TODAY) {
           setError("From Date cannot be a future date.");
           setRequests([]);
-          setSelectedRequests([]);
           return;
         }
 
         if (toDate && toDate > TODAY) {
           setError("To Date cannot be a future date.");
           setRequests([]);
-          setSelectedRequests([]);
           return;
         }
       }
 
-      if (requestType !== "all" && requestType !== "retirement") {
-        setRequests([]);
-        setSelectedRequests([]);
-        return;
+      let retrievedRequests: TerminationRequest[];
+
+      if (requestType === "all") {
+        const [terminationRequests, retirementRequests, memberDeathRequests] =
+          await Promise.all([
+            fetchRequestsFromApi("termination-requests", "termination", statuses),
+            fetchRequestsFromApi("retirement-requests", "retirement", statuses),
+            fetchMemberDeathRequestsFromApi(statuses),
+          ]);
+        retrievedRequests = sortMergedRequests([
+          ...terminationRequests,
+          ...retirementRequests,
+          ...memberDeathRequests,
+        ]);
+      } else if (requestType === "termination") {
+        retrievedRequests = await fetchRequestsFromApi(
+          "termination-requests",
+          "termination",
+          statuses
+        );
+      } else if (requestType === "retirement") {
+        retrievedRequests = await fetchRequestsFromApi(
+          "retirement-requests",
+          "retirement",
+          statuses
+        );
+      } else {
+        retrievedRequests = await fetchMemberDeathRequestsFromApi(statuses);
       }
 
-      const params = new URLSearchParams();
-
-      selectedStatuses.forEach((status) =>
-        params.append("statuses", status.toUpperCase())
-      );
-
-      if (searchQuery.trim()) {
-        params.append("searchKey", searchQuery.trim());
-      }
-
-      if (dateFilter === "this_month") {
-        const { from, to } = getCurrentMonthRange();
-        params.append("fromDate", from);
-        params.append("toDate", to);
-      } else if (dateFilter === "this_and_last_month") {
-        const { from, to } = getThisAndLastMonthRange();
-        params.append("fromDate", from);
-        params.append("toDate", to);
-      } else if (dateFilter === "date_period" && fromDate && toDate) {
-        params.append("fromDate", fromDate);
-        params.append("toDate", toDate);
-      }
-
-      params.append("sortBy", sortBy);
-      params.append("sortOrder", sortOrder);
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests?${params.toString()}`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        setError(errorText || "Failed to retrieve requests.");
-        setRequests([]);
-        return;
-      }
-
-      const data = (await response.json()) as TerminationRequestApiResponse;
-      const retrievedRequests = normalizeApiRows(data);
       setRequests(retrievedRequests);
-      setSelectedRequests([]);
+      setSelectedRows([]);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
-      setError("Failed to retrieve requests.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to retrieve requests."
+      );
       setRequests([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectRequest = (requestId: string) => {
-    setSelectedRequests((prev) =>
-      prev.includes(requestId) ? prev.filter((id) => id !== requestId) : [...prev, requestId]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedRequests.length === requests.length) {
-      setSelectedRequests([]);
-    } else {
-      setSelectedRequests(requests.map((req) => req.id));
-    }
-  };
-
   const getStatusBadge = (status: TerminationRequest["status"]) => {
     const config: Record<string, { color: string; label: string }> = {
-      NEW: { color: "bg-blue-100 text-blue-800", label: "NEW" },
-      SUBMITTED_FOR_APPROVAL: { color: "bg-purple-100 text-purple-800", label: "SUBMITTED FOR APPROVAL" },
-      ADDED_TO_APPROVAL_LIST: { color: "bg-indigo-100 text-indigo-800", label: "ADDED TO APPROVAL LIST" },
-      APPROVED: { color: "bg-green-100 text-green-800", label: "APPROVED" },
-      REJECTED: { color: "bg-red-100 text-red-800", label: "REJECTED" },
-      INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: "INCOMPLETE" },
-      INACTIVE: { color: "bg-yellow-100 text-yellow-800", label: "INACTIVE" },
+      NEW: { color: "bg-blue-100 text-blue-800", label: TERMINATION_STATUS_LABELS.NEW },
+      SUBMITTED_FOR_APPROVAL: {
+        color: "bg-purple-100 text-purple-800",
+        label: TERMINATION_STATUS_LABELS.SUBMITTED_FOR_APPROVAL,
+      },
+      ADDED_TO_APPROVAL_LIST: {
+        color: "bg-indigo-100 text-indigo-800",
+        label: TERMINATION_STATUS_LABELS.ADDED_TO_APPROVAL_LIST,
+      },
+      DISTRICT_COMMITTEE: {
+        color: "bg-orange-100 text-orange-800",
+        label: TERMINATION_STATUS_LABELS.DISTRICT_COMMITTEE,
+      },
+      PD_COMMITTEE: {
+        color: "bg-orange-100 text-orange-800",
+        label: TERMINATION_STATUS_LABELS.PD_COMMITTEE,
+      },
+      APPROVED: { color: "bg-green-100 text-green-800", label: TERMINATION_STATUS_LABELS.APPROVED },
+      REJECTED: { color: "bg-red-100 text-red-800", label: TERMINATION_STATUS_LABELS.REJECTED },
+      INCOMPLETE: { color: "bg-gray-100 text-gray-800", label: TERMINATION_STATUS_LABELS.INCOMPLETE },
+      INACTIVE: { color: "bg-gray-100 text-gray-600", label: TERMINATION_STATUS_LABELS.INACTIVE },
     };
 
     const { color, label } = config[status] ?? {
       color: "bg-gray-100 text-gray-800",
-      label: status || "UNKNOWN",
+      label: status.replaceAll("_", " "),
     };
     return (
       <Badge variant="secondary" className={`${color} hover:${color}`}>
@@ -533,19 +723,145 @@ export default function TerminationPage() {
     );
   };
 
+  const getRequestBasePath = (sourceType: TerminationRequest["sourceType"]) => {
+    if (sourceType === "termination") {
+      return "/membership/directory/termination-request";
+    }
+    if (sourceType === "member_death") {
+      return "/membership/directory/record-member-death";
+    }
+    return "/membership/directory/retirement";
+  };
+
   const handleEditRequest = (request: TerminationRequest) => {
+    if (request.sourceType === "member_death") {
+      router.push(
+        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
+      );
+      return;
+    }
+
     router.push(
-      `/membership/directory/retirement?requestId=${encodeURIComponent(
-        request.id
-      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
+      `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
     );
   };
 
   const handleOpenRequest = (request: TerminationRequest) => {
+    if (request.sourceType === "member_death") {
+      router.push(
+        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
+      );
+      return;
+    }
+
     router.push(
-      `/membership/directory/retirement?requestId=${encodeURIComponent(
-        request.id
-      )}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+      `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+    );
+  };
+
+  const handleOpenMemberRequest = (request: TerminationRequest) => {
+    if (request.sourceType !== "termination") return;
+
+    router.push(
+      `/membership/directory/termination-request?memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
+    );
+  };
+
+  const toggleRow = (requestId: string) => {
+    setSelectedRows((prev) =>
+      prev.includes(requestId)
+        ? prev.filter((id) => id !== requestId)
+        : [...prev, requestId]
+    );
+  };
+
+  const toggleAllSelectableRows = (checked: boolean) => {
+    setSelectedRows((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...selectableRowIds]));
+      }
+      return prev.filter((id) => !selectableRowIds.includes(id));
+    });
+  };
+
+  const handleOpenBoardMeetingModal = () => {
+    if (selectedTerminationCount === 0) return;
+    setApprovalListError("");
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveApprovalList = async () => {
+    if (!selectedBoardMeeting) return;
+
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting?.id || !meeting.scheduledDate) {
+      setApprovalListError("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingApprovalList(true);
+      setApprovalListError("");
+
+      const createdList = await createTerminationApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        requestNos: selectedRows,
+      });
+
+      const savedRequestIds = [...selectedRows];
+      const updatedStatuses: StatusType[] = selectedStatuses.includes("added_to_approval_list")
+        ? selectedStatuses
+        : [...selectedStatuses, "added_to_approval_list"];
+
+      setCreatedApprovalList(createdList);
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+      setSelectedStatuses(updatedStatuses);
+      setSelectedRows([]);
+
+      if (requestType === "termination" || requestType === "all") {
+        await fetchRequests(updatedStatuses);
+      } else {
+        setRequests((prev) =>
+          prev.map((row) =>
+            savedRequestIds.includes(row.requestId)
+              ? { ...row, status: "ADDED_TO_APPROVAL_LIST", selectable: false }
+              : row
+          )
+        );
+      }
+    } catch (saveError) {
+      console.error("Create termination approval list error:", saveError);
+      setApprovalListError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to create termination approval list."
+      );
+    } finally {
+      setIsSavingApprovalList(false);
+    }
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+    setCreatedApprovalList(null);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    const listId = createdApprovalList?.listId;
+    router.push(
+      listId
+        ? `/membership/termination/approval-lists?listId=${encodeURIComponent(listId)}`
+        : "/membership/termination/approval-lists"
     );
   };
 
@@ -553,37 +869,26 @@ export default function TerminationPage() {
     fetchRequests();
   };
 
-  const handleViewApprovalLists = () => {
-    router.push("/membership/termination/approval-lists");
-  };
-
-  const handleCreateApprovalList = () => {
-    if (selectedRequests.length === 0) {
-      alert("Please select at least one request to create an approval list.");
-      return;
-    }
-    console.log("Creating approval list with selected requests:", selectedRequests);
-  };
-
   return (
     <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
-        {requestType !== "retirement" && (
-          <div className="flex gap-2">
+        {showApprovalListActions && (
+          <div className="flex items-center gap-2">
             <Button
-              onClick={handleCreateApprovalList}
-              disabled={selectedRequests.length === 0}
-              className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Create Approval List
-            </Button>
-            <Button
-              onClick={handleViewApprovalLists}
               variant="outline"
-              className="border-[#8B4513] text-[#8B4513] hover:bg-[#8B4513] hover:text-white"
+              className="border-neutral-300"
+              onClick={() => router.push("/membership/termination/approval-lists")}
             >
               View Approval Lists
+            </Button>
+            <Button
+              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              disabled={selectedTerminationCount === 0}
+              onClick={handleOpenBoardMeetingModal}
+            >
+              Create Termination Approval List
+              {selectedTerminationCount > 0 ? ` (${selectedTerminationCount})` : ""}
             </Button>
           </div>
         )}
@@ -593,144 +898,149 @@ export default function TerminationPage() {
         <h2 className="text-lg font-semibold text-[#953002] mb-4">
           Search & Filter
         </h2>
-       
-       
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
-              <LocationMultiSelect
-                selectedLocations={selectedLocations}
-                onLocationChange={setSelectedLocations}
-              />
-            </div>
 
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
-              <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="termination">Termination</SelectItem>
-                  <SelectItem value="retirement">Retirement</SelectItem>
-                  <SelectItem value="member_deaths">Member Deaths</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
-              <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_days">All Days</SelectItem>
-                  <SelectItem value="this_month">This Month</SelectItem>
-                  <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
-                  <SelectItem value="date_period">Date Period</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {dateFilter === "date_period" && (
-              <>
-                <div className="w-40">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
-                  <Input
-                    type="date"
-                    value={fromDate}
-                    max={TODAY}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-                <div className="w-40">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
-                  <Input
-                    type="date"
-                    value={toDate}
-                    max={TODAY}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </>
-            )}            
-            
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
-              <StatusMultiSelect
-                selectedStatuses={selectedStatuses}
-                onStatusChange={setSelectedStatuses}
-                statusOptions={currentStatusOptions}
-              />
-            </div>
-
-            <div className="flex-1 min-w-45">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
-              <Input
-                type="text"
-                placeholder="Name, NIC, ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full"
-              />
-            </div>
-
-            <div className="w-52">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
-              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select sort option" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="requestedDate">Requested Date</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                  <SelectItem value="memberId">Member ID</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="w-40">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
-              <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                  <SelectItem value="desc">Descending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
+            <LocationMultiSelect
+              selectedLocations={selectedLocations}
+              onLocationChange={setSelectedLocations}
+            />
           </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
+            <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="termination">Termination</SelectItem>
+                <SelectItem value="retirement">Retirement</SelectItem>
+                <SelectItem value="member_deaths">Member Deaths</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
+            <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select date range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all_days">All Days</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
+                <SelectItem value="date_period">Date Period</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {dateFilter === "date_period" && (
+            <>
+              <div className="w-40">
+                <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  max={TODAY}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="w-40">
+                <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  max={TODAY}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
+            <StatusMultiSelect
+              selectedStatuses={selectedStatuses}
+              onStatusChange={setSelectedStatuses}
+              statusOptions={currentStatusOptions}
+            />
+          </div>
+
+          <div className="flex-1 min-w-45">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
+            <Input
+              type="text"
+              placeholder="Name, NIC, ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          <div className="w-52">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select sort option" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="requestedDate">Requested Date</SelectItem>
+                <SelectItem value="status">Status</SelectItem>
+                <SelectItem value="memberId">Member ID</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-40">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
+            <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+        </div>
       </div>
-      
+
 
       <div className="rounded-md border bg-white">
         {error && (
           <p className="border-b px-4 py-3 text-sm text-red-600">{error}</p>
         )}
+        {approvalListError && (
+          <p className="border-b px-4 py-3 text-sm text-red-600">{approvalListError}</p>
+        )}
 
         <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/50">
-              {showRowSelection && (
-                <TableHead className="w-12">
+              {showApprovalListActions && (
+                <TableHead className="w-12 px-4 py-3">
                   <Checkbox
-                    checked={
-                      selectedRequests.length === requests.length &&
-                      requests.length > 0
-                    }
-                    onCheckedChange={handleSelectAll}
-                    disabled={requests.length === 0}
+                    checked={isAllSelectableSelected}
+                    data-state={isSomeSelectableSelected ? "indeterminate" : undefined}
+                    onCheckedChange={(checked) => toggleAllSelectableRows(checked === true)}
+                    disabled={selectableRowIds.length === 0}
+                    className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
                   />
                 </TableHead>
               )}
               <TableHead className="font-semibold px-6 py-3">Request ID</TableHead>
+              {showRequestTypeColumn && (
+                <TableHead className="font-semibold px-6 py-3">Type</TableHead>
+              )}
               <TableHead className="font-semibold px-6 py-3">Date</TableHead>
               <TableHead className="font-semibold px-6 py-3">Member ID</TableHead>
               <TableHead className="font-semibold px-6 py-3">Member Name</TableHead>
@@ -742,19 +1052,22 @@ export default function TerminationPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">
                   Loading requests...
                 </TableCell>
               </TableRow>
             ) : requests.length > 0 ? (
               requests.map((request) => (
                 <TableRow className="h-12" key={request.id}>
-                  {showRowSelection && (
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedRequests.includes(request.id)}
-                        onCheckedChange={() => handleSelectRequest(request.id)}
-                      />
+                  {showApprovalListActions && (
+                    <TableCell className="px-4">
+                      {request.sourceType === "termination" && request.selectable ? (
+                        <Checkbox
+                          checked={selectedRows.includes(request.requestId)}
+                          onCheckedChange={() => toggleRow(request.requestId)}
+                          className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                        />
+                      ) : null}
                     </TableCell>
                   )}
                   <TableCell className="px-6">
@@ -766,8 +1079,27 @@ export default function TerminationPage() {
                       {request.requestId}
                     </button>
                   </TableCell>
+                  {showRequestTypeColumn && (
+                    <TableCell className="px-6 capitalize">
+                      {request.sourceType === "member_death"
+                        ? "Member Death"
+                        : request.sourceType}
+                    </TableCell>
+                  )}
                   <TableCell className="px-6">{request.date}</TableCell>
-                  <TableCell className="px-6">{request.memberNumber}</TableCell>
+                  <TableCell className="px-6">
+                    {request.sourceType === "termination" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMemberRequest(request)}
+                        className="font-medium text-[#8B4513] hover:underline"
+                      >
+                        {request.memberNumber}
+                      </button>
+                    ) : (
+                      request.memberNumber
+                    )}
+                  </TableCell>
                   <TableCell className="px-6">{request.member}</TableCell>
                   <TableCell className="px-6">
                     <div className="flex px-6 items-center gap-2">
@@ -783,7 +1115,7 @@ export default function TerminationPage() {
                           aria-label="Request has indirect obligations"
                         />
                       )}
-                      {!request.hasLoanBalance &&!request.hasIndirectObligations && (
+                      {!request.hasLoanBalance && !request.hasIndirectObligations && (
                         <span className="text-muted-foreground"></span>
                       )}
                     </div>
@@ -792,8 +1124,8 @@ export default function TerminationPage() {
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
                       {!NON_EDITABLE_STATUSES.includes(request.status) && (
-                        <Button variant="ghost" size="sm" 
-                          onClick={() => handleEditRequest(request)} 
+                        <Button variant="ghost" size="sm"
+                          onClick={() => handleEditRequest(request)}
                           className="h-8 w-8 p-0">
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -804,7 +1136,7 @@ export default function TerminationPage() {
               ))
             ) : (
               <TableRow className="h-12">
-                <TableCell colSpan={showRowSelection ? 8 : 7} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -813,7 +1145,110 @@ export default function TerminationPage() {
 
       {requests.length > 0 && (
         <div className="text-sm text-muted-foreground">
-          Showing {requests.length} request(s){selectedRequests.length > 0 && ` • ${selectedRequests.length} selected`}
+          Showing {requests.length} request(s)
+        </div>
+      )}
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-2xl font-semibold text-[#953002]">Select Board Meeting</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="mb-4 text-sm text-gray-600">
+                Select the board meeting to attach {selectedTerminationCount} termination
+                request(s).
+              </p>
+
+              <Select value={selectedBoardMeeting} onValueChange={setSelectedBoardMeeting}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select board meeting" />
+                </SelectTrigger>
+                <SelectContent>
+                  {boardMeetingOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={!selectedBoardMeeting || isSavingApprovalList}
+                  onClick={handleSaveApprovalList}
+                >
+                  {isSavingApprovalList ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-2xl font-semibold text-[#953002]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                The Termination Approval List for{" "}
+                {createdApprovalList?.requestNos?.length ?? 0} request(s) has been created. Do
+                you want to view the list?
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

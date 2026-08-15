@@ -5,10 +5,13 @@ import { ArrowLeft, Send, ChevronDown, AlertCircle, Loader2 } from 'lucide-react
 import { z } from 'zod';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
+import { getMemberById } from '@/lib/api/member';
 
 // --- 1. Zod Schema Definition ---
+// Validates the nominee change request payload before sending to the backend.
+// This schema matches the backend DTO field names used by the nominee change API.
 const nomineeSchema = z.object({
-  newNomineeName: z.string().min(3, "Full name is required (min 3 characters)"),
+  newnommineName: z.string().min(3, "Full name is required (min 3 characters)"),
   relationship: z.string().min(1, "Please select a relationship"),
   nic: z.string().min(10, "NIC/ID must be at least 10 characters"),
   address: z.string().min(5, "Address is too short"),
@@ -20,21 +23,40 @@ interface SectionCardProps {
   children: React.ReactNode;
 }
 
-export default function NomineeChangeRequest({ editId }: { editId?: string }) {
+export default function NomineeChangeRequest({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
   const isEditMode = Boolean(editId);
 
+  const [memberName, setMemberName] = useState<string | null>(null);
+  const [currentData, setCurrentData] = useState({
+    newnommineName: 'Vihanga',
+    relationship: '',
+    nic: '',
+    address: ''
+  });
+
   const INTIAL_NOMINEE_DATA = {
-    newNomineeName: 'Vihanga',
+    newnommineName: 'Vihanga',
     relationship: '',
     nic: '',
     address: ''
   };
 
+  const STATUS_OPTIONS = [
+    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
+    { value: 'REJECTED', label: 'Rejected' },
+    { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'PENDING', label: 'Pending' },
+  ];
+
   const [mounted, setMounted] = useState(false);
+  const [fetchedMemberId, setFetchedMemberId] = useState<string | null>(null);
 
   // --- 2. State Management ---
-  const [formData, setFormData] = useState({ ...INTIAL_NOMINEE_DATA, Language: 'English' });
+  // currentData stores the nominee information currently on file.
+  // formData stores the requested updated nominee values that the user can edit.
+  const [formData, setFormData] = useState({ ...INTIAL_NOMINEE_DATA });
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
@@ -43,35 +65,67 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
   useEffect(() => {
     setMounted(true);
 
-    if (editId) {
-      const fetchRequest = async () => {
-        setLoadingRequest(true);
-        try {
+    const fetchRequest = async () => {
+      if (!editId && !memberId) return;
+
+      setLoadingRequest(true);
+      setLoadError(null);
+
+      try {
+        if (editId) {
           const response = await axios.get(`http://localhost:8080/api/v3/getnommineById/${editId}`);
           const data = response.data.data || response.data;
 
           if (data) {
-            setFormData({
-              newNomineeName: data.newNommineName || data.newNomineeName || "",
-              relationship: data.newRelationship || data.relationship || "",
-              nic: data.newNomineeNIC || data.nic || "",
-              address: data.newNomineeAddress || data.address || "",
-              Language: 'English'
-            });
+            const requestData = {
+              newnommineName: data.newnommineName || "",
+              relationship: data.relationship || "",
+              nic: data.nic || "",
+              address: data.address || "",
+            };
+            setFormData(requestData);
+            setSelectedStatus(data.newStatus || data.Status || '');
+
+            const resolvedMemberId = data.memberId || data.memberID || data.memberid || memberId;
+            if (resolvedMemberId) {
+              setFetchedMemberId(resolvedMemberId.toString());
+              const member = await getMemberById(Number(resolvedMemberId));
+              const currentNomineeData = {
+                newnommineName: member.nomineeFullName || member.nameWithInitials || member.fullName || "",
+                relationship: member.nomineeRelationship || "",
+                nic: member.identificationNumber || member.nic || "",
+                address: member.nomineeAddress || member.permanentPrivateAddress || "",
+              };
+              setCurrentData(currentNomineeData);
+              setMemberName(member.fullName || member.nameWithInitials || null);
+            } else {
+              setCurrentData(requestData);
+              setMemberName(data.fullName || data.nameWithInitials || null);
+            }
           }
-        } catch (err: any) {
-          console.error("API Error details:", err.response || err);
-          const status = err.response?.status;
-          const url = `http://localhost:8080/api/v3/getnommineById/${editId}`;
-          const msg = `Failed to fetch ${url} (Status: ${status}). Please check your Spring Boot console for exact parameter mismatch errors.`;
-          setLoadError(msg);
-        } finally {
-          setLoadingRequest(false);
+        } else if (memberId) {
+          const member = await getMemberById(Number(memberId));
+          const nomineeData = {
+            newnommineName: member.nomineeFullName || member.nameWithInitials || member.fullName || "",
+            relationship: member.nomineeRelationship || "",
+            nic: member.identificationNumber || member.nic || "",
+            address: member.nomineeAddress || member.permanentPrivateAddress || "",
+          };
+          setCurrentData(nomineeData);
+          setMemberName(member.fullName || member.nameWithInitials || null);
         }
-      };
-      fetchRequest();
-    }
-  }, [editId]);
+      } catch (err: any) {
+        console.error("API Error details:", err.response || err);
+        const status = err.response?.status;
+        const url = editId ? `http://localhost:8080/api/v3/getnommineById/${editId}` : `memberId=${memberId}`;
+        const msg = `Failed to fetch ${url} (Status: ${status}). Please check your Spring Boot console for exact parameter mismatch errors.`;
+        setLoadError(msg);
+      } finally {
+        setLoadingRequest(false);
+      }
+    };
+    fetchRequest();
+  }, [editId, memberId]);
 
   // --- 3. Real-time Validation Logic ---
   const handleFieldChange = (field: string, value: string) => {
@@ -96,6 +150,8 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
   };
 
   // --- 4. Submit to Backend ---
+  // Builds the nominee change payload and sends it to the backend.
+  // Edit mode reuses the same save endpoint with an Id and status if needed.
   const handleSubmit = async () => {
     const validation = nomineeSchema.safeParse(formData);
 
@@ -114,17 +170,31 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
     setIsSubmitting(true);
 
     // Data mapped to match your Spring Boot DTO
-    const payload = {
-      newnommineeName: formData.newNomineeName,
+    const currentMemberId = memberId || fetchedMemberId;
+    const payload: any = {
+      newnommineName: formData.newnommineName,
       relationship: formData.relationship,
       nic: formData.nic,
       address: formData.address,
-
     };
+
+    if (currentMemberId) {
+      payload.memberId = currentMemberId;
+    }
+
+    if (isEditMode) {
+      payload.id = editId;
+      if (selectedStatus) {
+        payload.status = selectedStatus;
+        payload.newStatus = selectedStatus;
+      }
+    } else {
+      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
+    }
 
     try {
       if (isEditMode) {
-        await axios.put(`http://localhost:8080/api/v3/updateNommine/${editId}`, payload);
+        await axios.post('http://localhost:8080/api/v3/saveNommine', payload);
         alert("Nominee change request updated successfully!");
         router.push('/membership/profile-changes');
       } else {
@@ -165,18 +235,31 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
                 {isEditMode ? "Edit Nominee Change Request" : "New Nominee Change Request"}
               </h1>
               <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono inline-block mt-1">
-                Johnathan Doe (MB-2023001)
+                {memberName ? `${memberName} (${memberId})` : "Johnathan Doe (MB-2023001)"}
               </span>
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
+            {isEditMode && (
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
+              >
+                <option value="">Change status</option>
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
               className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
                 } text-white`}
             >
-              <Send size={18} /> {isSubmitting ? "Updating..." : "Submit Request"}
+              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+              {isSubmitting ? "Updating..." : isEditMode ? "💾 Update Request" : "💾 Submit Request"}
             </button>
           </div>
         </header>
@@ -191,10 +274,10 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
         {/* Section 1: Current Nominee Details */}
         <SectionCard title="Current Nominee Details" subtitle="Current nominee information on record">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ReadonlyField label="Nominee Name" value="Not Set" />
-            <ReadonlyField label="Relationship" value="Not Set" />
-            <ReadonlyField label="NIC / ID" value="Not Set" />
-            <ReadonlyField label="Address" value="Not Set" />
+            <ReadonlyField label="Nominee Name" value={currentData.newnommineName || 'Not Set'} />
+            <ReadonlyField label="Relationship" value={currentData.relationship || 'Not Set'} />
+            <ReadonlyField label="NIC / ID" value={currentData.nic || 'Not Set'} />
+            <ReadonlyField label="Address" value={currentData.address || 'Not Set'} />
           </div>
         </SectionCard>
 
@@ -205,9 +288,9 @@ export default function NomineeChangeRequest({ editId }: { editId?: string }) {
             <InputField
               label="Nominee Full Name *"
               placeholder="Enter nominee's full name"
-              value={formData.newNomineeName}
-              onChange={(val: string) => handleFieldChange('newNomineeName', val)}
-              error={errors.newNomineeName}
+              value={formData.newnommineName}
+              onChange={(val: string) => handleFieldChange('newnommineName', val)}
+              error={errors.newnommineName}
             />
 
             <div className="flex flex-col gap-2">
