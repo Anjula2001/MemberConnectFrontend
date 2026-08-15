@@ -623,8 +623,8 @@ export default function StudentExamSection() {
       setStatus(savedRequest.status || "NEW");
       setIsSaved(true);
 
-      if (documentFiles.length > 0 && savedRequest.id) {
-        await uploadDocuments(savedRequest.id);
+      if (documentFiles.length > 0 && savedRequest.universityScholarshipRequestID) {
+        await uploadDocuments(savedRequest.universityScholarshipRequestID);
       }
 
       setIsExamNoDuplicate(false);
@@ -903,16 +903,27 @@ export default function StudentExamSection() {
   };
 
   // Upload documents after saving request
-  const uploadDocuments = async (savedRequestId: String) => {
+  const uploadDocuments = async (savedRequestId: string) => {
     const uploadedItems: DocumentFileItem[] = [];
 
     for (const file of documentFiles) {
+      // Look up the numeric ID for this document type
+      const reqDoc = requiredDocumentTypes.find(
+        (doc) => doc.documentType === file.documentType
+      );
+
+      if (!reqDoc) {
+        console.error("Required document type ID not found for", file.documentType);
+        continue;
+      }
+
       const formData = new FormData();
       formData.append("file", file.file);
-      formData.append("documentType", file.documentType);
 
       const response = await fetch(
-        `http://localhost:8080/api/uploaded-documents/upload`,
+        `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
+          savedRequestId
+        )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
         {
           method: "POST",
           body: formData,
@@ -920,6 +931,8 @@ export default function StudentExamSection() {
       );
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Document upload failed:", response.status, errorText);
         throw new Error("Document upload failed");
       }
 
@@ -933,6 +946,21 @@ export default function StudentExamSection() {
     }
 
     setDocumentFiles(uploadedItems);
+
+    // Refresh the uploaded documents list from backend
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
+          savedRequestId
+        )}`
+      );
+      if (res.ok) {
+        const docs = await res.json();
+        setUploadedDocuments(Array.isArray(docs) ? docs : []);
+      }
+    } catch (e) {
+      console.error("Failed to refresh uploaded documents:", e);
+    }
   };
 
   //Handle save 

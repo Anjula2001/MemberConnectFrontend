@@ -92,7 +92,8 @@ export default function FundDisbursementRequest() {
   const [isSaved, setIsSaved] = useState(false);
 
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
-  const [requiredDocumentTypes] = useState<RequiredDocType[]>([]);
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
+  const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
   const [scholarshipSummary, setScholarshipSummary] = useState<ScholarshipSummary | null>(null);
   const [member, setMember] = useState<MemberSummary | null>(null);
   const [currentFundRequest, setCurrentFundRequest] = useState<ScholarshipFundRequest | null>(null);
@@ -167,6 +168,60 @@ export default function FundDisbursementRequest() {
     return `${Math.max(0, years)} year(s)`;
   };
 
+  // Upload pending document files to the backend for a given fund request ID
+  const uploadDocuments = async (savedFundRequestId: string) => {
+    const uploadedItems: DocumentFileItem[] = [];
+
+    for (const docFile of documentFiles) {
+      const reqDoc = requiredDocumentTypes.find(
+        (doc) => doc.documentType === docFile.documentType
+      );
+
+      if (!reqDoc) {
+        console.error("Required document type ID not found for", docFile.documentType);
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append("file", docFile.file);
+
+      const uploadRes = await fetch(
+        `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
+          savedFundRequestId
+        )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
+        { method: "POST", body: formData }
+      );
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        console.error("Document upload failed:", uploadRes.status, errText);
+        continue;
+      }
+
+      const savedDoc = await uploadRes.json();
+      uploadedItems.push({
+        ...docFile,
+        id: savedDoc.id,
+        uploadedAt: savedDoc.uploadedAt,
+      });
+    }
+
+    setDocumentFiles(uploadedItems);
+
+    // Refresh the uploaded documents list from backend
+    try {
+      const docsRes = await fetch(
+        `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(savedFundRequestId)}`
+      );
+      if (docsRes.ok) {
+        const docs = await docsRes.json();
+        setUploadedDocuments(Array.isArray(docs) ? docs : []);
+      }
+    } catch (e) {
+      console.error("Failed to refresh uploaded documents:", e);
+    }
+  };
+
   const handleSaveFundRequest = async (data: FundRequestFormOutput) => {
     try {
       const response = await fetch(
@@ -199,17 +254,25 @@ export default function FundDisbursementRequest() {
       }
 
       const savedRequest: ScholarshipFundRequest = await response.json();
+      const savedFundRequestId = savedRequest.requestId || "";
+
       setRequestId(savedRequest.id ? Number(savedRequest.id) : null);
-      setFundRequestNo(savedRequest.requestId || "");
+      setFundRequestNo(savedFundRequestId);
       setStatus(savedRequest.status || "NEW");
       setCurrentFundRequest(savedRequest);
       setIsSaved(true);
+
+      // Upload any queued documents now that we have the fund request ID
+      if (documentFiles.length > 0 && savedFundRequestId) {
+        await uploadDocuments(savedFundRequestId);
+      }
+
       setPopupMessage("Fund Request is saved successfully");
       setShowPopup(true);
 
-      if (!fundRequestId && savedRequest.requestId) {
+      if (!fundRequestId && savedFundRequestId) {
         router.replace(
-          `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(scholarshipRequestId)}&fundRequestId=${encodeURIComponent(savedRequest.requestId)}`
+          `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(scholarshipRequestId)}&fundRequestId=${encodeURIComponent(savedFundRequestId)}`
         );
       }
     } catch (error) {
@@ -218,6 +281,52 @@ export default function FundDisbursementRequest() {
       setShowPopup(true);
     }
   };
+
+  // Fetch required document types for FUND_REQUEST category
+  useEffect(() => {
+    const fetchRequiredDocumentTypes = async () => {
+      try {
+        const res = await fetch(
+          "http://localhost:8080/api/required-document-types/FUND_REQUEST"
+        );
+        if (!res.ok) throw new Error("Failed to load document types");
+        const data = await res.json();
+        setRequiredDocumentTypes(data);
+      } catch (error) {
+        console.error("Failed to load required document types:", error);
+      }
+    };
+
+    fetchRequiredDocumentTypes();
+  }, []);
+
+  // Fetch uploaded documents when fundRequestId is available
+  useEffect(() => {
+    const targetId = fundRequestNo || fundRequestId;
+    if (!targetId) {
+      setUploadedDocuments([]);
+      return;
+    }
+
+    const fetchUploadedDocuments = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(targetId)}`
+        );
+        if (!res.ok) {
+          setUploadedDocuments([]);
+          return;
+        }
+        const docs = await res.json();
+        setUploadedDocuments(Array.isArray(docs) ? docs : []);
+      } catch (error) {
+        console.error("Failed to load uploaded documents:", error);
+        setUploadedDocuments([]);
+      }
+    };
+
+    fetchUploadedDocuments();
+  }, [fundRequestNo, fundRequestId]);
 
   useEffect(() => {
     if (!scholarshipRequestId) return;

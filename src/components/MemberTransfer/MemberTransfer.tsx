@@ -675,6 +675,63 @@ export default function ChangeMemberTransferForm() {
       setMemberTransferRequestNo(saved.requestId || saved.memberTransferRequestID || "");
       setStatus(saved.status || "SUBMITTED_FOR_COMMITTEE_APPROVAL");
 
+      // Upload queued documents now that we have a saved request ID
+      if (documentFiles.length > 0 && savedId) {
+        const uploadedItems: DocumentFileItem[] = [];
+
+        for (const docFile of documentFiles) {
+          const reqDoc = requiredDocumentTypes.find(
+            (doc) => doc.documentType === docFile.documentType
+          );
+
+          if (!reqDoc) {
+            console.error("Required document type ID not found for", docFile.documentType);
+            continue;
+          }
+
+          const formData = new FormData();
+          formData.append("file", docFile.file);
+
+          const uploadRes = await fetch(
+            `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
+              String(savedId)
+            )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            console.error("Document upload failed:", uploadRes.status, errText);
+            continue;
+          }
+
+          const savedDoc = await uploadRes.json();
+          uploadedItems.push({
+            ...docFile,
+            id: savedDoc.id,
+            uploadedAt: savedDoc.uploadedAt,
+          });
+        }
+
+        setDocumentFiles(uploadedItems);
+
+        // Refresh the uploaded documents list from backend
+        try {
+          const docsRes = await fetch(
+            `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(savedId))}`
+          );
+          if (docsRes.ok) {
+            const docs = await docsRes.json();
+            setUploadedDocuments(Array.isArray(docs) ? docs : []);
+          }
+        } catch (e) {
+          console.error("Failed to refresh uploaded documents:", e);
+        }
+      }
+
       setPopupMessage("Request submitted successfully!");
       setShowPopup(true);
     } catch (error: any) {
