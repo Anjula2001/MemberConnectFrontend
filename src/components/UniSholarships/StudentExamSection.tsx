@@ -69,6 +69,7 @@ type ScholarshipRecord = {
   availablePeriod?: number | null;
   totalUniversityScholarships?: number | null;
   fundRequests?: FundRequestRow[] | null;
+  followDeviationProcess?: boolean | null;
 };
 
 type FundRequestRow = {
@@ -147,7 +148,7 @@ export default function StudentExamSection() {
     getValues,
     setValue,
     reset,
-    formState: { errors, isValid },
+    formState: { errors, isValid, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
@@ -533,11 +534,132 @@ export default function StudentExamSection() {
     }
   };
 
+  // Perform save request data
+  const performSave = async (showPopup = true) => {
+    const currentData = getValues();
+
+    if (!isEditMode) {
+      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
+
+      if (!isExamNoValid) {
+        return null;
+      }
+    }
+
+    let saveData: FormData & { memberId: string } = {
+      ...currentData,
+      memberId: memberId || loadedRecord?.memberId || member?.memberId || "",
+    };
+
+    if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
+      const minorData = await handleRefreshMinorAccount();
+
+      saveData = {
+        ...saveData,
+        hasMinorAccount: minorData?.hasMinorAccount,
+        minorAccountMonths: minorData?.minorAccountMonths,
+      };
+    }
+
+    try {
+      let savedRequest: any = null;
+
+      if (requestId) {
+        const res = await fetch(
+          `http://localhost:8080/api/university-scholarships/${requestId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(saveData),
+          }
+        );
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("Update failed:", res.status, text);
+          if (showPopup) {
+            setExamNoPopupMessage("Failed to update request");
+            setShowExamNoPopup(true);
+          }
+          return null;
+        }
+
+        savedRequest = await res.json();
+      } else {
+        const response = await fetch(
+          "http://localhost:8080/api/university-scholarships",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(saveData),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let message = "Failed to save request";
+
+          try {
+            const errorJson = JSON.parse(errorText);
+            message = errorJson.message || message;
+          } catch { }
+
+          if (showPopup) {
+            setExamNoPopupMessage(message);
+            setShowExamNoPopup(true);
+          }
+          return null;
+        }
+
+        savedRequest = await response.json();
+      }
+
+      setRequestId(
+        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
+      );
+      setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
+      setStatus(savedRequest.status || "NEW");
+      setIsSaved(true);
+
+      if (documentFiles.length > 0 && savedRequest.universityScholarshipRequestID) {
+        await uploadDocuments(savedRequest.universityScholarshipRequestID);
+      }
+
+      setIsExamNoDuplicate(false);
+      if (showPopup) {
+        setExamNoPopupMessage("Request is saved successfully");
+        setShowExamNoPopup(true);
+      }
+
+      // Reset form default values to clear isDirty state
+      reset(currentData);
+
+      return savedRequest;
+    } catch (error) {
+      console.error("Save failed:", error);
+      if (showPopup) {
+        setExamNoPopupMessage("Failed to save request");
+        setShowExamNoPopup(true);
+      }
+      return null;
+    }
+  };
+
   //Handle form submission
   const onSubmit = async () => {
-
     let actionId: string | number | null = requestId;
 
+    if (!isInputsDisabled) {
+      const saved = await performSave(false);
+      if (!saved) {
+        setExamNoPopupMessage("Failed to save request before submitting");
+        setShowExamNoPopup(true);
+        return;
+      }
+      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+    }
 
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
@@ -781,16 +903,27 @@ export default function StudentExamSection() {
   };
 
   // Upload documents after saving request
-  const uploadDocuments = async (savedRequestId: String) => {
+  const uploadDocuments = async (savedRequestId: string) => {
     const uploadedItems: DocumentFileItem[] = [];
 
     for (const file of documentFiles) {
+      // Look up the numeric ID for this document type
+      const reqDoc = requiredDocumentTypes.find(
+        (doc) => doc.documentType === file.documentType
+      );
+
+      if (!reqDoc) {
+        console.error("Required document type ID not found for", file.documentType);
+        continue;
+      }
+
       const formData = new FormData();
       formData.append("file", file.file);
-      formData.append("documentType", file.documentType);
 
       const response = await fetch(
-        `http://localhost:8080/api/uploaded-documents/upload`,
+        `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
+          savedRequestId
+        )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
         {
           method: "POST",
           body: formData,
@@ -798,6 +931,8 @@ export default function StudentExamSection() {
       );
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Document upload failed:", response.status, errorText);
         throw new Error("Document upload failed");
       }
 
@@ -811,108 +946,26 @@ export default function StudentExamSection() {
     }
 
     setDocumentFiles(uploadedItems);
+
+    // Refresh the uploaded documents list from backend
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
+          savedRequestId
+        )}`
+      );
+      if (res.ok) {
+        const docs = await res.json();
+        setUploadedDocuments(Array.isArray(docs) ? docs : []);
+      }
+    } catch (e) {
+      console.error("Failed to refresh uploaded documents:", e);
+    }
   };
 
   //Handle save 
   const handleSave = async () => {
-    const currentData = getValues();
-
-    if (!isEditMode) {
-      const isExamNoValid = await validateExamNoBeforeSave(currentData.examNo);
-
-      if (!isExamNoValid) {
-        return;
-      }
-    }
-
-    let saveData: FormData & { memberId: string } = {
-      ...currentData,
-      memberId: memberId,
-    };
-
-    if (!saveData.hasMinorAccount || saveData.hasMinorAccount === "") {
-      const minorData = await handleRefreshMinorAccount();
-
-      saveData = {
-        ...saveData,
-        hasMinorAccount: minorData?.hasMinorAccount,
-        minorAccountMonths: minorData?.minorAccountMonths,
-      };
-    }
-
-    try {
-      let savedRequest: any = null;
-
-      if (requestId && isEditMode) {
-        const res = await fetch(
-          `http://localhost:8080/api/university-scholarships/${requestId}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(saveData),
-          }
-        );
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("Update failed:", res.status, text);
-          setExamNoPopupMessage("Failed to update request");
-          setShowExamNoPopup(true);
-          return null;
-        }
-
-        savedRequest = await res.json();
-      } else {
-        const response = await fetch(
-          "http://localhost:8080/api/university-scholarships",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(saveData),
-          }
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let message = "Failed to save request";
-
-          try {
-            const errorJson = JSON.parse(errorText);
-            message = errorJson.message || message;
-          } catch { }
-
-          setExamNoPopupMessage(message);
-          setShowExamNoPopup(true);
-          return null;
-        }
-
-        savedRequest = await response.json();
-      }
-
-      setRequestId(
-        savedRequest.universityScholarshipRequestID || (savedRequest.id ? String(savedRequest.id) : null)
-      );
-      setScholarshipRequestNo(savedRequest.universityScholarshipRequestID || "");
-      setStatus(savedRequest.status || "NEW");
-      setIsSaved(true);
-
-      if (documentFiles.length > 0 && savedRequest.id) {
-        await uploadDocuments(savedRequest.id);
-      }
-
-      setIsExamNoDuplicate(false);
-      setExamNoPopupMessage("Request is saved successfully");
-      setShowExamNoPopup(true);
-
-      return savedRequest;
-    } catch (error) {
-      console.error("Save failed:", error);
-      setExamNoPopupMessage("Failed to save request");
-      setShowExamNoPopup(true);
-      return null;
-    }
+    await performSave(true);
   };
 
   // Update University scholarship
@@ -935,6 +988,14 @@ export default function StudentExamSection() {
   const handleMarkIncomplete = async (reason: string) => {
     let actionId: string | number | null = requestId;
 
+    if (!isInputsDisabled) {
+      const saved = await performSave(false);
+      if (!saved) {
+        alert("Failed to save request before marking incomplete");
+        return;
+      }
+      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+    }
 
     if (!actionId) {
       alert("Please save request first");
@@ -1059,6 +1120,7 @@ export default function StudentExamSection() {
       : status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
+  const isFollowingDeviation = !!(loadedRecord?.followDeviationProcess);
   const pageTitle = isApprovedDetailsEditMode
     ? "Edit University Scholarship Details"
     : isExistingRequest
@@ -1235,6 +1297,7 @@ export default function StudentExamSection() {
             </p>
           </div>
 
+
           <div className="flex gap-2">
             {isViewMode && isEditableStatus && (
               <Button
@@ -1279,7 +1342,7 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || isSaved || isApprovedDetailsEditMode}
+              disabled={isInputsDisabled || !isValid || (!isDirty && isSaved) || isApprovedDetailsEditMode}
             >
               Save
             </Button>
@@ -1292,6 +1355,21 @@ export default function StudentExamSection() {
               Submit
             </Button>
           </div>
+        </div>
+        <div>
+          {isFollowingDeviation && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Deviation Process</p>
+                <p className="text-sm text-amber-700 mt-0.5">
+                  This request follows the deviation process. Because The Scholarship Request Date is not within the defined eligibility period from the last exam date.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
@@ -1415,363 +1493,363 @@ export default function StudentExamSection() {
           </TabsList>
 
           <TabsContent value="request" className="space-y-6">
-          <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Student & Exam
-            </h3>
+            <section className="rounded-lg border bg-white p-4">
+              <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                Student & Exam
+              </h3>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="requestDate" className="mb-1 block text-sm  text-gray-600">
-                  Request Date <span className="text-red-500">*</span>
-                </label>
-                <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="requestDate" className="mb-1 block text-sm  text-gray-600">
+                    Request Date <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="requestDate" type="date" {...register("requestDate")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.requestDate && <p className="mt-1 text-sm text-red-500">{errors.requestDate.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="studentName" className="mb-1 block text-sm  text-gray-600">
+                    Student Name <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="nic" className="mb-1 block text-sm text-gray-600">
+                    Student NIC <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="nic" {...register("nic")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="bcNo" className="mb-1 block text-sm text-gray-600">
+                    Birth Certificate Number <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="address" className="mb-1 block text-sm text-gray-600">
+                    Permanent Address <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="address" {...register("address")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="mobile" className="mb-1 block text-sm text-gray-600">
+                    Mobile Number <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="studentName" className="mb-1 block text-sm  text-gray-600">
-                  Student Name <span className="text-red-500">*</span>
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  id="isSchoolApplicant"
+                  type="checkbox"
+                  {...register("isSchoolApplicant")}
+                  disabled={isInputsDisabled || cannotEdit}
+                  className="h-4 w-4 accent-[#953002]"
+                />
+                <label htmlFor="isSchoolApplicant" className="text-sm text-gray-600">
+                  A/L Exam as School Applicant
                 </label>
-                <Input id="studentName" {...register("studentName")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.studentName && <p className="mt-1 text-sm text-red-500">{errors.studentName.message}</p>}
               </div>
 
-              <div>
-                <label htmlFor="nic" className="mb-1 block text-sm text-gray-600">
-                  Student NIC <span className="text-red-500">*</span>
-                </label>
-                <Input id="nic" {...register("nic")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.nic && <p className="mt-1 text-sm text-red-500">{errors.nic.message}</p>}
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
+                    Exam Year <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="examNo" className="mb-1 block text-sm  text-gray-600">
+                    Examination Number <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="zScore" className="mb-1 block text-sm  text-gray-600">
+                    Z-Score <span className="text-red-500">*</span>
+                  </label>
+                  <Input id="zScore" {...register("zscore")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  {errors.zscore && <p className="mt-1 text-sm text-red-500">{errors.zscore.message}</p>}
+                </div>
+
+                <div className="flex items-end justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className=" text-sm  text-gray-600"
+                    onClick={handleValidateExamNo}
+                    disabled={isValidatingExamNo || isInputsDisabled || cannotEdit}
+                  >
+                    {isValidatingExamNo ? "Validating..." : "Validate"}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-lg border bg-white p-4">
+              <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                University & Program
+              </h3>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="university" className="mb-1 block text-sm text-gray-600">
+                    University <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="university"
+                    {...register("university")}
+                    disabled={isInputsDisabled || cannotEdit}
+                    className="h-10 w-full rounded-md border px-3 text-sm"
+                  >
+                    <option value="">Select University</option>
+                    {universities.map((university) => (
+                      <option key={university.id} value={university.id}>
+                        {university.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.university && <p className="mt-1 text-sm text-red-500">{errors.university.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="program" className="mb-1 block text-sm  text-gray-600">
+                    Program <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="program"
+                    {...register("program")}
+                    disabled={!watch("university") || isInputsDisabled || cannotEdit}
+                    className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">Select Program</option>
+                    {programs.map((item) => (
+                      <option key={item.programId} value={item.programId}>
+                        {item.programName}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.program && <p className="mt-1 text-sm text-red-500">{errors.program.message}</p>}
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="bcNo" className="mb-1 block text-sm text-gray-600">
-                  Birth Certificate Number <span className="text-red-500">*</span>
-                </label>
-                <Input id="bcNo" {...register("bcNo")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.bcNo && <p className="mt-1 text-sm text-red-500">{errors.bcNo.message}</p>}
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="duration" className="mb-1 block text-sm text-gray-600">
+                    Program Duration
+                  </label>
+                  <Input id="duration" {...register("duration")} disabled={isInputsDisabled || cannotEdit} readOnly className={whiteInputClass} />
+                </div>
+
+                <div>
+                  <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
+                    Academic Year Start Date
+                  </label>
+                  <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
+                </div>
+
+                <div className="flex items-center gap-2 md:col-span-2">
+                  <input
+                    id="specialDegree"
+                    type="checkbox"
+                    {...register("specialDegree")}
+                    disabled={isApprovedDetailFieldDisabled}
+                    className="h-4 w-4 accent-[#953002]"
+                  />
+                  <label htmlFor="specialDegree" className="text-sm text-gray-600">
+                    Applied for Special Degree
+                  </label>
+                </div>
               </div>
+            </section>
 
-              <div>
-                <label htmlFor="address" className="mb-1 block text-sm text-gray-600">
-                  Permanent Address <span className="text-red-500">*</span>
-                </label>
-                <Input id="address" {...register("address")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="mobile" className="mb-1 block text-sm text-gray-600">
-                  Mobile Number <span className="text-red-500">*</span>
-                </label>
-                <Input id="mobile" {...register("mobile")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.mobile && <p className="mt-1 text-sm text-red-500">{errors.mobile.message}</p>}
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center gap-2">
-              <input
-                id="isSchoolApplicant"
-                type="checkbox"
-                {...register("isSchoolApplicant")}
-                disabled={isInputsDisabled || cannotEdit}
-                className="h-4 w-4 accent-[#953002]"
-              />
-              <label htmlFor="isSchoolApplicant" className="text-sm text-gray-600">
-                A/L Exam as School Applicant
-              </label>
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
-                  Exam Year <span className="text-red-500">*</span>
-                </label>
-                <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="examNo" className="mb-1 block text-sm  text-gray-600">
-                  Examination Number <span className="text-red-500">*</span>
-                </label>
-                <Input id="examNo" {...register("examNo")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.examNo && <p className="mt-1 text-sm text-red-500">{errors.examNo.message}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="zScore" className="mb-1 block text-sm  text-gray-600">
-                  Z-Score <span className="text-red-500">*</span>
-                </label>
-                <Input id="zScore" {...register("zscore")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
-                {errors.zscore && <p className="mt-1 text-sm text-red-500">{errors.zscore.message}</p>}
-              </div>
-
-              <div className="flex items-end justify-end">
+            <section className="rounded-lg border bg-white p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                  Minor Account Status
+                </h3>
                 <Button
                   type="button"
                   variant="outline"
                   className=" text-sm  text-gray-600"
-                  onClick={handleValidateExamNo}
-                  disabled={isValidatingExamNo || isInputsDisabled || cannotEdit}
+                  onClick={handleRefreshMinorAccount}
+                  disabled={isApprovedDetailFieldDisabled}
                 >
-                  {isValidatingExamNo ? "Validating..." : "Validate"}
+                  Refresh
                 </Button>
               </div>
-            </div>
-          </section>
 
-          <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              University & Program
-            </h3>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="university" className="mb-1 block text-sm text-gray-600">
-                  University <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="university"
-                  {...register("university")}
-                  disabled={isInputsDisabled || cannotEdit}
-                  className="h-10 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="">Select University</option>
-                  {universities.map((university) => (
-                    <option key={university.id} value={university.id}>
-                      {university.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.university && <p className="mt-1 text-sm text-red-500">{errors.university.message}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="program" className="mb-1 block text-sm  text-gray-600">
-                  Program <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="program"
-                  {...register("program")}
-                  disabled={!watch("university") || isInputsDisabled || cannotEdit}
-                  className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
-                >
-                  <option value="">Select Program</option>
-                  {programs.map((item) => (
-                    <option key={item.programId} value={item.programId}>
-                      {item.programName}
-                    </option>
-                  ))}
-                </select>
-                {errors.program && <p className="mt-1 text-sm text-red-500">{errors.program.message}</p>}
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="duration" className="mb-1 block text-sm text-gray-600">
-                  Program Duration
-                </label>
-                <Input id="duration" {...register("duration")} disabled={isInputsDisabled || cannotEdit} readOnly className={whiteInputClass} />
-              </div>
-
-              <div>
-                <label htmlFor="academicYearStart" className="mb-1 block text-sm text-gray-600">
-                  Academic Year Start Date
-                </label>
-                <Input id="academicYearStart" type="date" {...register("academicYearStart")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
-              </div>
-
-              <div className="flex items-center gap-2 md:col-span-2">
-                <input
-                  id="specialDegree"
-                  type="checkbox"
-                  {...register("specialDegree")}
-                  disabled={isApprovedDetailFieldDisabled}
-                  className="h-4 w-4 accent-[#953002]"
-                />
-                <label htmlFor="specialDegree" className="text-sm text-gray-600">
-                  Applied for Special Degree
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-lg border bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="mb-4 text-xl font-bold text-[#953002]">
-                Minor Account Status
-              </h3>
-              <Button
-                type="button"
-                variant="outline"
-                className=" text-sm  text-gray-600"
-                onClick={handleRefreshMinorAccount}
-                disabled={isApprovedDetailFieldDisabled}
-              >
-                Refresh
-              </Button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm  text-gray-600">
-                  Minor Account Availability
-                </label>
-                <select
-                  {...register("hasMinorAccount")}
-                  disabled={isApprovedDetailFieldDisabled}
-                  className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
-                >
-                  <option value="">Select Status</option>
-                  <option value="YES">YES</option>
-                  <option value="NO">NO</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm  text-gray-600">
-                  Remitted Months
-                </label>
-                <Input {...register("minorAccountMonths")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Bank Details
-            </h3>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="accountNo" className="mb-1 block text-sm  text-gray-600">
-                  Bank Account Number
-                </label>
-                <Input id="accountNo" {...register("accountNo")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
-                {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="bank" className="mb-1 block text-sm  text-gray-600">
-                  Bank
-                </label>
-                <select
-                  id="bank"
-                  {...register("bank")}
-                  disabled={isApprovedDetailFieldDisabled}
-                  className="h-10 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="">Select Bank</option>
-                  {banks.map((bank) => (
-                    <option key={bank.id} value={bank.id}>
-                      {bank.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="branch" className="mb-1 block text-sm  text-gray-600">
-                  Bank Branch
-                </label>
-                <select
-                  id="branch"
-                  {...register("branch")}
-                  disabled={!watch("bank") || isApprovedDetailFieldDisabled}
-                  className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
-                >
-                  <option value="">Select Branch</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-lg border bg-white p-4">
-            <h3 className="mb-4 text-xl font-bold text-[#953002]">
-              Supporting Documents
-            </h3>
-
-            <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
-              <Document
-                requestId={requestId}
-                disabled={isInputsDisabled || isApprovedDetailsEditMode}
-                isSaved={isSaved}
-                isSubmitted={isSubmitted}
-                files={documentFiles}
-                setFiles={setDocumentFiles}
-                documentTypes={requiredDocumentTypes}
-              />
-            </div>
-          </section>
-
-          {uploadedDocuments.length > 0 && (
-            <section className="rounded-lg border bg-white p-4">
-              <h3 className="mb-4 text-xl font-bold text-[#953002]">
-                Uploaded Documents
-              </h3>
-
-              <div className="space-y-3">
-                {uploadedDocuments.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3"
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm  text-gray-600">
+                    Minor Account Availability
+                  </label>
+                  <select
+                    {...register("hasMinorAccount")}
+                    disabled={isApprovedDetailFieldDisabled}
+                    className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
                   >
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800">
-                        {doc.documentType || "Document"}
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1">
-                        {doc.fileName || "Unnamed file"}
-                      </p>
-                      {doc.uploadedAt && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-3 inline-flex items-center justify-center rounded-md bg-[#953002] text-white px-3 py-1 text-xs font-medium hover:bg-[#7a2500] transition-colors"
-                      >
-                        View
-                      </a>
-                    )}
-                  </div>
-                ))}
+                    <option value="">Select Status</option>
+                    <option value="YES">YES</option>
+                    <option value="NO">NO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm  text-gray-600">
+                    Remitted Months
+                  </label>
+                  <Input {...register("minorAccountMonths")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
+                </div>
               </div>
             </section>
-          )}
 
-          {canReviewSubmission && (
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                className="bg-green-100 border-green-200 text-green-500 hover:bg-green-200"
-                onClick={handleApproveScholarship}
-              >
-                Approve
-              </Button>
+            <section className="rounded-lg border bg-white p-4">
+              <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                Bank Details
+              </h3>
 
-              <Button
-                type="button"
-                className="bg-red-100 border-red-200 text-red-500 hover:bg-red-200"
-                onClick={handleRejectScholarship}
-              >
-                Reject
-              </Button>
-            </div>
-          )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="accountNo" className="mb-1 block text-sm  text-gray-600">
+                    Bank Account Number
+                  </label>
+                  <Input id="accountNo" {...register("accountNo")} disabled={isApprovedDetailFieldDisabled} className={whiteInputClass} />
+                  {errors.accountNo && <p className="mt-1 text-sm text-red-500">{errors.accountNo.message}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="bank" className="mb-1 block text-sm  text-gray-600">
+                    Bank
+                  </label>
+                  <select
+                    id="bank"
+                    {...register("bank")}
+                    disabled={isApprovedDetailFieldDisabled}
+                    className="h-10 w-full rounded-md border px-3 text-sm"
+                  >
+                    <option value="">Select Bank</option>
+                    {banks.map((bank) => (
+                      <option key={bank.id} value={bank.id}>
+                        {bank.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="branch" className="mb-1 block text-sm  text-gray-600">
+                    Bank Branch
+                  </label>
+                  <select
+                    id="branch"
+                    {...register("branch")}
+                    disabled={!watch("bank") || isApprovedDetailFieldDisabled}
+                    className="h-10 w-full rounded-md border px-3 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">Select Branch</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-lg border bg-white p-4">
+              <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                Supporting Documents
+              </h3>
+
+              <div className="rounded-lg border border-dashed p-6 text-left text-sm text-gray-500">
+                <Document
+                  requestId={requestId}
+                  disabled={isInputsDisabled || isApprovedDetailsEditMode}
+                  isSaved={isSaved}
+                  isSubmitted={isSubmitted}
+                  files={documentFiles}
+                  setFiles={setDocumentFiles}
+                  documentTypes={requiredDocumentTypes}
+                />
+              </div>
+            </section>
+
+            {uploadedDocuments.length > 0 && (
+              <section className="rounded-lg border bg-white p-4">
+                <h3 className="mb-4 text-xl font-bold text-[#953002]">
+                  Uploaded Documents
+                </h3>
+
+                <div className="space-y-3">
+                  {uploadedDocuments.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-start justify-between rounded-md border border-gray-200 bg-gray-50 p-3"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-800">
+                          {doc.documentType || "Document"}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {doc.fileName || "Unnamed file"}
+                        </p>
+                        {doc.uploadedAt && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                      {doc.fileUrl && (
+                        <a
+                          href={doc.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-3 inline-flex items-center justify-center rounded-md bg-[#953002] text-white px-3 py-1 text-xs font-medium hover:bg-[#7a2500] transition-colors"
+                        >
+                          View
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {canReviewSubmission && (
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  className="bg-green-100 border-green-200 text-green-500 hover:bg-green-200"
+                  onClick={handleApproveScholarship}
+                >
+                  Approve
+                </Button>
+
+                <Button
+                  type="button"
+                  className="bg-red-100 border-red-200 text-red-500 hover:bg-red-200"
+                  onClick={handleRejectScholarship}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="funds" className="space-y-6">

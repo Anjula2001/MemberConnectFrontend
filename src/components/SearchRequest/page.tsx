@@ -142,7 +142,8 @@ export default function ProfileChangeRequests() {
               <option>Basic Profile Changes</option>
               <option>Name Changes</option>
               <option>Nomminne Changes</option>
-              <option>Remittance Amount Changes</option>
+              <option>Remmitance Amount Changes</option>
+              <option>Member Transfer</option>
             </select>
           </div>
           <div className="space-y-2">
