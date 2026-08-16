@@ -169,6 +169,7 @@ export default function TerminationRequestPage() {
     };
 
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMode, selectedMemberId]);
 
   const fetchTerminationReasons = async () => {
@@ -502,7 +503,7 @@ export default function TerminationRequestPage() {
           Back to Member Profile
         </Link>
 
-        <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 p-6 px-14 py-10">
+        <div className="min-h-screen flex-1 rounded-xl bg-muted/50 p-6 px-14 py-10">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-2xl font-bold text-[#953002]">
