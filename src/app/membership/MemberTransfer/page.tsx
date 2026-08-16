@@ -647,16 +647,12 @@ export default function Page() {
                                                     />
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    {isApproved ? (
-                                                        <span className="font-medium text-gray-700">{requestKey}</span>
-                                                    ) : (
-                                                        <Link
-                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                            className="text-[#953002] hover:underline font-medium"
-                                                        >
-                                                            {requestKey}
-                                                        </Link>
-                                                    )}
+                                                    <Link
+                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                        className="text-[#953002] hover:underline font-medium"
+                                                    >
+                                                        {requestKey}
+                                                    </Link>
                                                 </td>
                                                 <td className="py-4 px-4 text-gray-600">
                                                     {item.memberId}
@@ -677,14 +673,12 @@ export default function Page() {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    {!isApproved && (
-                                                        <Link
-                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                            className="text-[#953002] hover:underline font-medium"
-                                                        >
-                                                            Open
-                                                        </Link>
-                                                    )}
+                                                    <Link
+                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                        className="text-[#953002] hover:underline font-medium"
+                                                    >
+                                                        Open
+                                                    </Link>
                                                 </td>
                                             </tr>
                                         );

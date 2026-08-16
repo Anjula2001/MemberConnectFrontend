@@ -85,6 +85,17 @@ type MemberTransferRecord = {
     educationalDistrict?: { id?: number; name?: string };
     educationalZone?: { id?: number; name?: string };
   };
+
+  // Snapshot of member's values at the time of request creation
+  currentDesignation?: string;
+  currentNatureOfOccupation?: string;
+  currentWorkingLocationType?: string;
+  currentEducationalDistrict?: string;
+  currentEducationalZone?: string;
+  currentWorkingLocation?: string;
+  currentWorkingLocationAddress?: string;
+  currentComputerNoInPayslip?: string;
+  currentSalaryPayingOffice?: string;
 };
 
 type OptionItem = {
@@ -327,6 +338,19 @@ export default function ChangeMemberTransferForm() {
     const targetMemberId = memberId || loadedRecord?.member?.memberId;
     if (!targetMemberId) return;
 
+    // In view mode: if the request has saved snapshot values, use them for the
+    // Current column and only fetch the member to populate `member` state
+    // (needed for header display). Never overwrite oldValues from live data.
+    const hasSnapshot = Boolean(
+      loadedRecord &&
+      (
+        loadedRecord.currentDesignation != null ||
+        loadedRecord.currentWorkingLocationType != null ||
+        loadedRecord.currentEducationalDistrict != null ||
+        loadedRecord.currentWorkingLocation != null
+      )
+    );
+
     const fetchMember = async () => {
       try {
         const res = await fetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
@@ -335,35 +359,77 @@ export default function ChangeMemberTransferForm() {
         const data = await res.json();
         setMember(data);
 
-        setOldValues({
-          fullName: formatDisplayValue(data.fullName),
-          dateOfBirth: formatDisplayValue(data.dateOfBirth),
-          nicNumber: formatDisplayValue(data.nic),
-          gender: formatDisplayValue(data.gender),
-          preferredLanguage: formatDisplayValue(data.preferredLanguage),
-          permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
-          privateTelephone: formatDisplayValue(data.privateTelephone),
-          mobileNumber: formatDisplayValue(data.mobileNumber),
-          emailAddress: formatDisplayValue(data.emailAddress),
-          designation: formatDisplayValue(data.designation),
-          natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
-          workingLocationType: formatDisplayValue(data.workingLocationType),
-          workingLocation: formatDisplayValue(data.workingLocation),
-          educationalZone: formatDisplayValue(data.educationalZone),
-          educationalDistrict: formatDisplayValue(data.educationalDistrict),
-          computerNoName: formatDisplayValue(data.computerNoInPayslip),
-          salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
-        });
+        // Only set oldValues from live member data when creating a NEW request.
+        // For existing requests that have a snapshot, oldValues is set separately below.
+        if (!hasSnapshot) {
+          setOldValues({
+            fullName: formatDisplayValue(data.fullName),
+            dateOfBirth: formatDisplayValue(data.dateOfBirth),
+            nicNumber: formatDisplayValue(data.nic),
+            gender: formatDisplayValue(data.gender),
+            preferredLanguage: formatDisplayValue(data.preferredLanguage),
+            permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
+            privateTelephone: formatDisplayValue(data.privateTelephone),
+            mobileNumber: formatDisplayValue(data.mobileNumber),
+            emailAddress: formatDisplayValue(data.emailAddress),
+            designation: formatDisplayValue(data.designation),
+            natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
+            workingLocationType: formatDisplayValue(data.workingLocationType),
+            workingLocation: formatDisplayValue(data.workingLocation),
+            educationalZone: formatDisplayValue(data.educationalZone),
+            educationalDistrict: formatDisplayValue(data.educationalDistrict),
+            computerNoName: formatDisplayValue(data.computerNoInPayslip),
+            salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
+          });
+        }
       } catch (error) {
         console.error("Failed to load member:", error);
-        setOldValues(emptyOldValues);
+        if (!hasSnapshot) {
+          setOldValues(emptyOldValues);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchMember();
-  }, [memberId, loadedRecord?.member?.memberId]);
+  }, [memberId, loadedRecord?.member?.memberId]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When viewing an existing request that has snapshot data, populate oldValues
+  // from the snapshot so the Current column reflects the state at request creation time.
+  useEffect(() => {
+    if (!loadedRecord) return;
+    const hasSnapshot = Boolean(
+      loadedRecord.currentDesignation != null ||
+      loadedRecord.currentWorkingLocationType != null ||
+      loadedRecord.currentEducationalDistrict != null ||
+      loadedRecord.currentWorkingLocation != null
+    );
+    if (!hasSnapshot) return;
+
+    setOldValues((prev) => ({
+      // Keep personal detail fields from live member data (fullName, dob, etc.)
+      fullName: prev?.fullName ?? "",
+      dateOfBirth: prev?.dateOfBirth ?? "",
+      nicNumber: prev?.nicNumber ?? "",
+      gender: prev?.gender ?? "",
+      preferredLanguage: prev?.preferredLanguage ?? "",
+      permanentPrivateAddress: prev?.permanentPrivateAddress ?? "",
+      privateTelephone: prev?.privateTelephone ?? "",
+      mobileNumber: prev?.mobileNumber ?? "",
+      emailAddress: prev?.emailAddress ?? "",
+      // Transfer-related fields: use the saved snapshot
+      designation: formatDisplayValue(loadedRecord.currentDesignation),
+      natureOfOccupation: formatDisplayValue(loadedRecord.currentNatureOfOccupation),
+      workingLocationType: formatDisplayValue(loadedRecord.currentWorkingLocationType),
+      workingLocation: formatDisplayValue(loadedRecord.currentWorkingLocation),
+      educationalZone: formatDisplayValue(loadedRecord.currentEducationalZone),
+      educationalDistrict: formatDisplayValue(loadedRecord.currentEducationalDistrict),
+      computerNoName: formatDisplayValue(loadedRecord.currentComputerNoInPayslip),
+      salaryPayingOffice: formatDisplayValue(loadedRecord.currentSalaryPayingOffice),
+    }));
+    setLoading(false);
+  }, [loadedRecord]);
 
 
   useEffect(() => {
