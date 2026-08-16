@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { Button } from "../../../components/ui/button";
+import { Button } from "@/src/components/ui/button";
 
 const API_BASE_URL = "http://localhost:8080";
 

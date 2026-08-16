@@ -161,7 +161,7 @@ export default function NavigationSideBar() {
                                     className={cn(
                                       "rounded-lg pr-2.5 text-[14px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
                                       isTwoLineItem
-                                        ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:break-words"
+                                        ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:wrap-break-word"
                                         : "h-9 leading-4 [&>span:last-child]:truncate [&>span:last-child]:whitespace-nowrap",
                                       subItem.icon ? "pl-8" : "pl-10",
                                       isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"

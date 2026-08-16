@@ -53,7 +53,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "../../../components/ui/tabs";
+} from "@/src/components/ui/tabs";
 import DocumentUploadCard from "@/src/components/membership/DocumentUploadCard";
 
 const identificationTypeValues = [

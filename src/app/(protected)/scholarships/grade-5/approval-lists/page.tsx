@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Button } from "../../../../components/ui/button";
+import { Button } from "@/src/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8080";

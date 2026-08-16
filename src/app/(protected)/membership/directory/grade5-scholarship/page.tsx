@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../../../../components/ui/button";
-import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "../../../../components/ui/grade5schoolarship/grade5form";
-import DocumentUpload from "../../../../components/ui/documentupload";
-import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
+import { Button } from "@/src/components/ui/button";
+import Grade5Form, { type Grade5FormRef, type Grade5InitialData, } from "@/src/components/ui/grade5schoolarship/grade5form";
+import DocumentUpload from "@/src/components/ui/documentupload";
+import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Grade5Request = Grade5InitialData & {

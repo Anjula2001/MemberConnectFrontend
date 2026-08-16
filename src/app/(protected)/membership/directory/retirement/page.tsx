@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Button } from "../../../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "../../../../components/ui/select";
-import RetirementForm, { RetirementFormRef, } from "../../../../components/ui/retirement/retirementform";
-import DocumentUpload from "../../../../components/ui/documentupload";
-import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
-import AddBankDetails, { AddBankDetailsRef, } from "../../../../components/ui/retirement/addbankdetails";
+import { Button } from "@/src/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
+import RetirementForm, { RetirementFormRef, } from "@/src/components/ui/retirement/retirementform";
+import DocumentUpload from "@/src/components/ui/documentupload";
+import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
+import AddBankDetails, { AddBankDetailsRef, } from "@/src/components/ui/retirement/addbankdetails";
 
 interface BankAccountRow {
   id: number;
