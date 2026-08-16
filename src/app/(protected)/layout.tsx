@@ -3,8 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { SidebarProvider, SidebarTrigger } from "@/src/components/ui/sidebar";
+import { SidebarProvider } from "@/src/components/ui/sidebar";
 import NavigationSideBar from "@/src/components/NavigationItem/NavigationSideBar";
+import TopHeader from "@/src/components/NavigationItem/TopHeader";
 
 // Patch global fetch to auto-inject JWT on every raw fetch() call
 // This fixes all pages that use fetch() directly instead of apiClient
@@ -60,7 +61,7 @@ export default function ProtectedLayout({
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Show nothing while checking auth
+  // Show loading spinner while checking auth
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#f4f4f5]">
@@ -76,11 +77,20 @@ export default function ProtectedLayout({
 
   return (
     <SidebarProvider>
+      {/* Left: Sidebar */}
       <NavigationSideBar />
-      <main className="flex-1">
-        <SidebarTrigger />
-        {children}
-      </main>
+
+      {/* Right: Header + Page Content */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top header bar: search, role badge, notifications, profile */}
+        <TopHeader />
+
+        {/* Page content */}
+        <main className="flex-1 overflow-auto p-6">
+          {children}
+        </main>
+      </div>
     </SidebarProvider>
   );
 }
+

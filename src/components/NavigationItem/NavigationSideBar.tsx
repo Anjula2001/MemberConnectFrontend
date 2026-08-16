@@ -7,6 +7,7 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarHeader,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
@@ -117,20 +118,19 @@ export default function NavigationSideBar() {
   };
 
   return (
-
     <Sidebar className="border-r border-neutral-200 bg-[#f4f4f5]">
-      <SidebarContent className="gap-0 bg-[#f4f4f5] px-3 py-5">
-        <div className="mb-5 flex items-center gap-3 px-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#9e3600] text-lg font-bold text-white">
+      <SidebarHeader className="flex h-16 shrink-0 items-center border-b border-neutral-200 bg-[#f4f4f5] px-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#9e3600] text-lg font-bold text-white shadow-sm">
             M
           </div>
           <span className="text-[18px] font-semibold tracking-tight text-[#9e3600]">
             MemberConnect
           </span>
         </div>
+      </SidebarHeader>
 
-        <SidebarSeparator className="mx-0 mb-4 bg-neutral-300" />
-
+      <SidebarContent className="gap-0 bg-[#f4f4f5] px-3 py-4">
         <SidebarMenu className="gap-1.5 px-0.5">
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.title}>
