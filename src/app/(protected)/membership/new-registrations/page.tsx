@@ -46,13 +46,14 @@ import {
 } from "@/src/components/ui/select";
 import { NewMemberRegistrationForm } from "./form-new";
 import {
-  getMemberApplications,
+  searchMemberApplications,
   deleteMemberApplication,
   updateMemberApplicationStatus,
   type ApplicationStatus,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import { getEducationalDistricts } from "@/lib/api/education";
 import {
   createBoardApprovalList,
   type BoardApprovalListDTO,
@@ -160,6 +161,9 @@ const statusBadgeClass: Record<RegistrationStatus, string> = {
   ADDED_TO_BOARD_APPROVAL_LIST:
     "bg-amber-500 text-white border-transparent hover:bg-amber-500",
   REJECTED: "bg-red-100 text-red-700 border border-red-300 hover:bg-red-100",
+  // Converted to a Member. Excluded from this list by the backend, but the map must
+  // stay exhaustive over ApplicationStatus.
+  APPROVED: "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-100",
   INACTIVE: "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100",
 };
 
@@ -188,6 +192,8 @@ export default function NewRegistrationsPage() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [sortBy, setSortBy] = useState("applied-date");
   const [sortAsc, setSortAsc] = useState(true);
   const [displayData, setDisplayData] = useState<Registration[]>([]);
@@ -204,7 +210,24 @@ export default function NewRegistrationsPage() {
   const [isDeletingApplication, setIsDeletingApplication] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [districtOptions, setDistrictOptions] = useState<string[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Load the real list of District Office locations (same master used at registration time)
+  // instead of a hardcoded, out-of-sync sample list.
+  useEffect(() => {
+    let isCancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (!isCancelled) setDistrictOptions(districts);
+      })
+      .catch(() => {
+        /* leave empty on failure — filter simply shows no options */
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   // Initialize district location for district officer
   useEffect(() => {
@@ -268,11 +291,9 @@ export default function NewRegistrationsPage() {
   ): Registration => {
     const status = item.status ?? "PENDING";
     const rawAppId = item.applicationID ?? `APP-${item.id ?? index + 1}`;
-    const epochPart = rawAppId.replace("APP-", "");
-    const epoch = Number(epochPart);
-    const appliedDate = Number.isFinite(epoch)
-      ? new Date(epoch).toISOString().slice(0, 10)
-      : null;
+    // Use the actual Application Date field rather than decoding a timestamp out of the
+    // ID — the ID is now a sequential "APP-<year>-<seq>" value, not an epoch millis stamp.
+    const appliedDate = item.applicationDate ?? null;
 
     return {
       id: item.id,
@@ -280,7 +301,9 @@ export default function NewRegistrationsPage() {
       fullName: item.fullName ?? "-",
       nic: item.nicNumber ?? "-",
       appliedDate,
-      district: item.educationalDistrict ?? "-",
+      // "District" here means the District Office branch the application was submitted
+      // at (spec's "Location" filter) — not the applicant's working district.
+      district: item.submissionLocation ?? "-",
       zone: "-",
       status,
       selectable:
@@ -307,14 +330,17 @@ export default function NewRegistrationsPage() {
   const isSomeNewRowsSelected =
     selectedNewRowsCount > 0 && selectedNewRowsCount < selectableNewRowIds.length;
 
-  const locationOptions = [
-    { value: "colombo", label: "Colombo" },
-    { value: "kandy", label: "Kandy" },
-    { value: "galle", label: "Galle" },
-    { value: "nuwara-eliya", label: "Nuwara Eliya" },
-    { value: "matara", label: "Matara" },
-    { value: "jaffna", label: "Jaffna" },
-  ];
+  // The Location dropdown carries slug values ("nuwara-eliya"); the backend filters on
+  // the stored district label ("Nuwara Eliya"), so translate before querying.
+  const locationValueToLabel = (value: string) =>
+    districtOptions.find(
+      (d) => d.toLowerCase().replace(/\s+/g, "-") === value
+    ) ?? value;
+
+  const locationOptions = districtOptions.map((district) => ({
+    value: district.toLowerCase().replace(/\s+/g, "-"),
+    label: district,
+  }));
 
   const statusOptions = [
     { value: "new", label: "New" },
@@ -348,12 +374,49 @@ export default function NewRegistrationsPage() {
     });
   };
 
+  /** Translates the "Application Received On" preset into a concrete date range. */
+  const resolveReceivedRange = (): { receivedFrom?: string; receivedTo?: string } => {
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+    if (applicationReceivedOn === "thisMonth") {
+      return { receivedFrom: iso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+    }
+    if (applicationReceivedOn === "thisAndLastMonth") {
+      return { receivedFrom: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)) };
+    }
+    if (applicationReceivedOn === "DatePeriod") {
+      return {
+        ...(fromDate ? { receivedFrom: fromDate } : {}),
+        ...(toDate ? { receivedTo: toDate } : {}),
+      };
+    }
+    return {};
+  };
+
   const handleRetrieve = async () => {
     setIsRetrieving(true);
     let filtered: Registration[] = [];
 
     try {
-      const applications = await getMemberApplications();
+      // Filtering/sorting happens server-side — previously the entire application
+      // table was fetched and filtered in the browser, which does not scale.
+      const applications = await searchMemberApplications({
+        ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
+        ...(selectedStatuses.length > 0
+          ? {
+              statuses: selectedStatuses
+                .map((s) => statusFilterMap[s])
+                .filter((s): s is ApplicationStatus => Boolean(s) && s !== "PENDING"),
+            }
+          : {}),
+        ...(selectedLocations.length > 0
+          ? { locations: selectedLocations.map(locationValueToLabel) }
+          : {}),
+        ...resolveReceivedRange(),
+        sortBy: sortBy as "applied-date" | "status" | "district" | "zone",
+        sortDirection: sortAsc ? "asc" : "desc",
+      });
       filtered = applications.map(mapToRegistration);
     } catch (error) {
       const message =
@@ -364,70 +427,6 @@ export default function NewRegistrationsPage() {
       setIsRetrieving(false);
       return;
     }
-
-    // Filter by location/district
-    if (selectedLocations.length > 0) {
-      filtered = filtered.filter((row) =>
-        selectedLocations.some(
-          (loc) =>
-            row.district.toLowerCase().replace(/\s+/g, "-") === loc ||
-            row.district.toLowerCase() === loc
-        )
-      );
-    }
-
-    // Filter by status
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((row) =>
-        selectedStatuses.some((s) => statusFilterMap[s] === row.status)
-      );
-    }
-
-    // Filter by application received date
-    const now = new Date();
-    if (applicationReceivedOn === "thisMonth") {
-      filtered = filtered.filter((row) => {
-        if (!row.appliedDate) return false;
-        const d = new Date(row.appliedDate);
-        return (
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth() === now.getMonth()
-        );
-      });
-    } else if (applicationReceivedOn === "thisAndLastMonth") {
-      filtered = filtered.filter((row) => {
-        if (!row.appliedDate) return false;
-        const d = new Date(row.appliedDate);
-        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        return d >= lastMonth;
-      });
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (row) =>
-          row.fullName.toLowerCase().includes(q) ||
-          row.nic.toLowerCase().includes(q) ||
-          row.appId.toLowerCase().includes(q)
-      );
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "applied-date") {
-        cmp = (a.appliedDate ?? "").localeCompare(b.appliedDate ?? "");
-      } else if (sortBy === "status") {
-        cmp = a.status.localeCompare(b.status);
-      } else if (sortBy === "district") {
-        cmp = a.district.localeCompare(b.district);
-      } else if (sortBy === "zone") {
-        cmp = a.zone.localeCompare(b.zone);
-      }
-      return sortAsc ? cmp : -cmp;
-    });
 
     setDisplayData(filtered);
     setSelectedRows([]);
@@ -654,6 +653,32 @@ export default function NewRegistrationsPage() {
                   <SelectItem value="DatePeriod">Date Period</SelectItem>
                 </SelectContent>
               </Select>
+              {/* The "Date Period" option previously had no inputs, so selecting it
+                  had no effect. From/To are required by the spec. */}
+              {applicationReceivedOn === "DatePeriod" && (
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] text-gray-500">From</label>
+                    <Input
+                      type="date"
+                      value={fromDate}
+                      max={toDate || undefined}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] text-gray-500">To</label>
+                    <Input
+                      type="date"
+                      value={toDate}
+                      min={fromDate || undefined}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Status */}

@@ -8,6 +8,7 @@ import {
 	Filter,
 	ListFilter,
 	Loader2,
+	Lock,
 	Printer,
 	Search,
 	SlidersHorizontal,
@@ -35,6 +36,8 @@ import {
 } from "@/src/components/ui/table";
 
 import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
+import { getEducationalDistricts } from "@/lib/api/education";
+import { useAuth } from "@/lib/auth-context";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -134,6 +137,9 @@ function MultiSelectDropdown({
 // ---------------------------------------------------------------------------
 
 export default function MemberDirectoryPage() {
+	const { user } = useAuth();
+	const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
+
 	// ---- filter state ----
 	const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 	const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -142,6 +148,31 @@ export default function MemberDirectoryPage() {
 	const [educationalZone, setEducationalZone] = useState("all-zones");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [sortBy, setSortBy] = useState("membership-date");
+	const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+
+	// Load the real District Office location master (replaces a hardcoded sample list),
+	// and lock District Office users to their own assigned district — they shouldn't be
+	// able to browse other branches' membership profiles.
+	useEffect(() => {
+		let isCancelled = false;
+		getEducationalDistricts()
+			.then((districts) => {
+				if (isCancelled) return;
+				setDistrictOptions(districts);
+			})
+			.catch(() => {
+				/* leave empty on failure — filter simply shows no options */
+			});
+		return () => {
+			isCancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (isDistrictOfficer && user?.assignedDistrict) {
+			setSelectedLocations([user.assignedDistrict]);
+		}
+	}, [isDistrictOfficer, user?.assignedDistrict]);
 
 	// ---- data state ----
 	const [members, setMembers] = useState<MemberDTO[]>([]);
@@ -202,13 +233,10 @@ export default function MemberDirectoryPage() {
 	// Options
 	// ---------------------------------------------------------------------------
 
-	const locationOptions: MultiSelectOption[] = [
-		{ value: "Colombo", label: "Colombo" },
-		{ value: "Kandy", label: "Kandy" },
-		{ value: "Galle", label: "Galle" },
-		{ value: "Matara", label: "Matara" },
-		{ value: "Jaffna", label: "Jaffna" },
-	];
+	const locationOptions: MultiSelectOption[] = districtOptions.map((district) => ({
+		value: district,
+		label: district,
+	}));
 
 	const statusOptions: MultiSelectOption[] = [
 		{ value: "ACTIVE", label: "Active" },
@@ -307,17 +335,32 @@ export default function MemberDirectoryPage() {
 				<CardContent className="space-y-5 px-5 pb-5">
 					{/* Top filters row */}
 					<div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-						<MultiSelectDropdown
-							label="Location"
-							options={locationOptions}
-							selected={selectedLocations}
-							onChange={setSelectedLocations}
-							triggerText={
-								selectedLocations.length === 0
-									? "All Locations"
-									: `${selectedLocations.length} Selected`
-							}
-						/>
+						{isDistrictOfficer ? (
+							<div className="space-y-1.5">
+								<p className="text-xs font-semibold text-neutral-600 flex items-center justify-between">
+									<span>Location</span>
+									<span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
+										<Lock size={10} /> Locked to Branch
+									</span>
+								</p>
+								<div className="flex h-9 w-full items-center justify-between rounded-md border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-800 cursor-not-allowed">
+									<span className="font-semibold">{user?.assignedDistrict}</span>
+									<Lock size={13} className="text-neutral-400" />
+								</div>
+							</div>
+						) : (
+							<MultiSelectDropdown
+								label="Location"
+								options={locationOptions}
+								selected={selectedLocations}
+								onChange={setSelectedLocations}
+								triggerText={
+									selectedLocations.length === 0
+										? "All Locations"
+										: `${selectedLocations.length} Selected`
+								}
+							/>
+						)}
 
 						<MultiSelectDropdown
 							label="Status"

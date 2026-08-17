@@ -31,11 +31,13 @@ import {
   GraduationCap,
   Heart,
   Home,
+  SlidersHorizontal,
   UserCheck,
   UserCog,
   UserMinus,
   UserPlus,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -136,48 +138,114 @@ export default function NavigationSideBar() {
       ];
     }
 
-    // Default / Super Admin: Full Master Access
+    // 3. Super Admin: full access, including Member Registration governance.
+    if (role === "SUPER_ADMIN") {
+      return [
+        {
+          title: "Dashboard",
+          icon: Home,
+          url: "/",
+        },
+        {
+          title: "Membership",
+          icon: Users,
+          subMenu: [
+            {
+              title: "New Registrations",
+              url: "/membership/new-registrations",
+              icon: UserPlus,
+            },
+            {
+              title: "Board Approvals",
+              url: "/membership/board-approvals",
+              icon: ClipboardList,
+            },
+            {
+              title: "Member Directory",
+              url: "/membership/directory",
+              icon: Users,
+            },
+            {
+              title: "Profile Changes",
+              url: "/membership/profile-changes",
+              icon: FileText,
+            },
+            {
+              title: "Termination & Retirement",
+              url: "/membership/termination",
+              icon: UserMinus,
+            },
+            {
+              title: "Dormant Members",
+              url: "/membership/dormant",
+              icon: UserCheck,
+            },
+          ],
+        },
+        {
+          title: "Scholarships",
+          icon: GraduationCap,
+          subMenu: [
+            { title: "Grade 5", url: "/scholarships/grade-5" },
+            { title: "University", url: "/scholarships/university" },
+            { title: "Fund Requests", url: "/scholarships/fund-requests" },
+          ],
+        },
+        { title: "Death Donation", icon: Heart, url: "/death-donation" },
+        { title: "Reports", icon: BarChart, url: "/reports" },
+        {
+          title: "Administration",
+          icon: UserCog,
+          subMenu: [
+            { title: "User Management", url: "/admin/users", icon: UserCog },
+            {
+              title: "Remittance Master",
+              url: "/admin/remittance-master",
+              icon: Wallet,
+            },
+            {
+              title: "Membership Eligibility",
+              url: "/admin/membership-eligibility",
+              icon: SlidersHorizontal,
+            },
+          ],
+        },
+      ];
+    }
+
+    // 4. Accounts: not an actor in the Member Registration flow itself, but owns the
+    // Remittance Master (member contribution amounts), which is a finance parameter.
+    if (role === "ACCOUNTS") {
+      return [
+        {
+          title: "Dashboard",
+          icon: Home,
+          url: "/",
+        },
+        {
+          title: "Administration",
+          icon: UserCog,
+          subMenu: [
+            {
+              title: "Remittance Master",
+              url: "/admin/remittance-master",
+              icon: Wallet,
+            },
+          ],
+        },
+        { title: "Reports", icon: BarChart, url: "/reports" },
+      ];
+    }
+
+    // 5. Everyone else (Scholarship Officer, Death Donation Officer, and any future role
+    // not explicitly handled above) — these roles are not actors in the Member
+    // Registration spec, so they get no Membership access at all rather than silently
+    // inheriting it from a catch-all branch. They keep access to their own modules only.
     return [
       {
         title: "Dashboard",
         icon: Home,
         url: "/",
-      },
-      {
-        title: "Membership",
-        icon: Users,
-        subMenu: [
-          {
-            title: "New Registrations",
-            url: "/membership/new-registrations",
-            icon: UserPlus,
-          },
-          {
-            title: "Board Approvals",
-            url: "/membership/board-approvals",
-            icon: ClipboardList,
-          },
-          {
-            title: "Member Directory",
-            url: "/membership/directory",
-            icon: Users,
-          },
-          {
-            title: "Profile Changes",
-            url: "/membership/profile-changes",
-            icon: FileText,
-          },
-          {
-            title: "Termination & Retirement",
-            url: "/membership/termination",
-            icon: UserMinus,
-          },
-          {
-            title: "Dormant Members",
-            url: "/membership/dormant",
-            icon: UserCheck,
-          },
-        ],
       },
       {
         title: "Scholarships",
@@ -190,15 +258,6 @@ export default function NavigationSideBar() {
       },
       { title: "Death Donation", icon: Heart, url: "/death-donation" },
       { title: "Reports", icon: BarChart, url: "/reports" },
-      ...(role === "SUPER_ADMIN"
-        ? [
-            {
-              title: "User Management",
-              icon: UserCog,
-              url: "/admin/users",
-            },
-          ]
-        : []),
     ];
   };
 

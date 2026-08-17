@@ -17,6 +17,9 @@ export interface MemberDTO {
   applicationId?: number;         // FK to Member_Application — link approved application to member
   memberType?: string;
   status?: MemberStatus;
+  // The District Office branch this member registered/is administered through —
+  // distinct from educationalDistrict (the member's working district).
+  submissionLocation?: string;
   membershipStartDate?: string;   // ISO date string from backend
   title?: string;
   fullName?: string;

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { BOARD_GOVERNANCE_ROLES, DELETE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
 import {
   AlertCircle,
   ArrowRight,
@@ -86,6 +87,7 @@ function formatDisplayDate(value: string) {
 export default function BoardApprovalsPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const canDelete = hasRole(user?.role, DELETE_RIGHTS_ROLES);
   const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
@@ -121,6 +123,8 @@ export default function BoardApprovalsPage() {
   const [selectedListDetails, setSelectedListDetails] = useState<BoardApprovalListDTO | null>(null);
   const [isLoadingApplicationDetails, setIsLoadingApplicationDetails] = useState(false);
   const [isUpdatingMeeting, setIsUpdatingMeeting] = useState(false);
+  // Scan of the signed board approval sheet, attached when processing the list.
+  const [approvalSheetFile, setApprovalSheetFile] = useState<File | null>(null);
 
   const mapApplicationToRow = (application: MemberApplicationDTO): ApprovalApplication => ({
     id: application.id ?? 0,
@@ -503,11 +507,33 @@ export default function BoardApprovalsPage() {
       const decisionsArray = Object.values(applicationDecisions).map(d => d.decision);
       const listDecision: ApplicationDecision = decisionsArray.includes("Approve") ? "Approve" : "Reject";
 
+      // Upload the scanned, signed approval sheet first (if attached) so the stored
+      // key can be saved alongside the decision. A failed upload must not lose the
+      // board's decision, so fall back to recording the filename.
+      let approvedListDocument: string | undefined;
+      if (approvalSheetFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", approvalSheetFile);
+          const uploadRes = await fetch(
+            `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"}/api/file/upload`,
+            { method: "POST", body: formData }
+          );
+          approvedListDocument = uploadRes.ok
+            ? await uploadRes.text()
+            : approvalSheetFile.name;
+        } catch (uploadError) {
+          console.warn("Approval sheet upload failed, storing filename:", uploadError);
+          approvedListDocument = approvalSheetFile.name;
+        }
+      }
+
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
         decision: listDecision,
         boardRemarks,
         processedBy: "Super Admin User",
+        ...(approvedListDocument ? { approvedListDocument } : {}),
       };
 
       const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
@@ -528,6 +554,7 @@ export default function BoardApprovalsPage() {
               const memberPayload: MemberDTO = {
                 status: "INACTIVE",
                 applicationId: appDetails.id,
+                submissionLocation: appDetails.submissionLocation,
                 nic: appDetails.nicNumber,
                 title: appDetails.title,
                 fullName: appDetails.fullName,
@@ -560,7 +587,10 @@ export default function BoardApprovalsPage() {
               };
 
               await createMember(memberPayload);
-              await updateMemberApplicationPartial(app.id, { status: "INACTIVE" });
+              // APPROVED, not INACTIVE — the application succeeded and became a member.
+              // INACTIVE means "an authorised user deactivated it", which is a different
+              // thing; reusing it here made the two indistinguishable in the list.
+              await updateMemberApplicationPartial(app.id, { status: "APPROVED" });
               newMembersCount++;
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : "Unknown error";
@@ -608,6 +638,7 @@ export default function BoardApprovalsPage() {
 
       setIsEditingProcessedList(false);
       setShowConfirmModal(false);
+      setApprovalSheetFile(null);
       setShowProcessToast(true);
       setToastMessage(
         approveToastMessage ?? "Board approval list processed successfully."
@@ -620,7 +651,10 @@ export default function BoardApprovalsPage() {
     }
   };
 
-  if (user && user.role === "DISTRICT_OFFICE") {
+  // Allow-list (not a blocklist) so any role not explicitly granted board governance
+  // access — District Office, but also Accounts/Scholarship Officer/Death Donation
+  // Officer — is denied by default rather than slipping through.
+  if (user && !hasRole(user.role, BOARD_GOVERNANCE_ROLES)) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 shadow-sm mb-4">
@@ -748,17 +782,19 @@ export default function BoardApprovalsPage() {
                         </div>
                       </div>
 
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-gray-400 hover:text-gray-600"
-                        onClick={() => handleOpenDeleteMeetingModal(meeting)}
-                        aria-label={`Delete meeting ${meeting.id}`}
-                        disabled={!meeting.id}
-                      >
-                        <Trash2 size={16} />
-                      </Button>
+                      {canDelete && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-gray-400 hover:text-gray-600"
+                          onClick={() => handleOpenDeleteMeetingModal(meeting)}
+                          aria-label={`Delete meeting ${meeting.id}`}
+                          disabled={!meeting.id}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -895,19 +931,34 @@ export default function BoardApprovalsPage() {
                     )}
                     {(!selectedProcessedState || isEditingProcessedList) && (
                       <div className="flex items-center justify-end gap-2">
-                        <Button type="button" variant="outline" className="h-8 px-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3"
+                          onClick={() =>
+                            window.open(
+                              `/membership/board-approvals/print/${encodeURIComponent(
+                                selectedApprovalListId
+                              )}`,
+                              "_blank"
+                            )
+                          }
+                          disabled={!selectedApprovalListId}
+                        >
                           <Printer size={14} />
                           Print
                         </Button>
-                        <Button
-                          type="button"
-                          className="h-8 bg-rose-600 px-3 text-white hover:bg-rose-700"
-                          onClick={handleDeleteSelectedList}
-                          disabled={!selectedApprovalListId}
-                        >
-                          <Trash2 size={14} />
-                          Delete List
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            type="button"
+                            className="h-8 bg-rose-600 px-3 text-white hover:bg-rose-700"
+                            onClick={handleDeleteSelectedList}
+                            disabled={!selectedApprovalListId}
+                          >
+                            <Trash2 size={14} />
+                            Delete List
+                          </Button>
+                        )}
                       </div>
                     )}
 
@@ -1309,6 +1360,26 @@ export default function BoardApprovalsPage() {
                   placeholder="Any remarks from the board..."
                   className="border-input h-24 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                 />
+              </div>
+
+              {/* Optional scan of the signed "Application List for Board Approval"
+                  sheet brought back from the meeting (spec 4.5). */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">
+                  Signed Approval Sheet{" "}
+                  <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setApprovalSheetFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#9e3600] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#8b2f00]"
+                />
+                {approvalSheetFile && (
+                  <p className="text-xs text-gray-500">
+                    Selected: {approvalSheetFile.name}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">

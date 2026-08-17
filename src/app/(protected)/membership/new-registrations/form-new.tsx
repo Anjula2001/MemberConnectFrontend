@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/lib/toast-context";
+import { useAuth } from "@/lib/auth-context";
 import {
   memberRegistrationSchema,
   type MemberRegistration,
@@ -18,6 +20,7 @@ import {
   type Language,
   type NatureOfOccupation,
   type MemberApplicationDTO,
+  type NicValidationResponseDTO,
   updateMemberApplicationPartial,
 } from "@/lib/api/memberApplications";
 import {
@@ -32,6 +35,12 @@ import {
   getEducationalDistricts,
   getEducationalZonesByDistrict,
 } from "@/lib/api/education";
+import {
+  getActiveRemittanceAccounts,
+  getMembershipEligibility,
+  type RemittanceAccountCode,
+  type RemittanceMasterAccountDTO,
+} from "@/lib/api/membershipConfig";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Checkbox } from "@/src/components/ui/checkbox";
@@ -62,6 +71,21 @@ const identificationTypeValues = [
   "DrivingLicense",
   "BirthCertificate",
 ] as const;
+
+/**
+ * Maps a Remittance Master account onto the form field that carries its amount.
+ * The application stores these as four fixed columns, so the master drives each
+ * account's label and amount rules rather than the set of accounts itself.
+ */
+const REMITTANCE_FIELD_BY_CODE: Record<
+  RemittanceAccountCode,
+  "shareAccount" | "specialDepositAccount" | "fixedDepositAccount" | "scholarshipDeathDonationPension"
+> = {
+  SHARE: "shareAccount",
+  SPECIAL_DEPOSIT: "specialDepositAccount",
+  FIXED_DEPOSIT: "fixedDepositAccount",
+  SCHOLARSHIP_DEATH_DONATION_PENSION: "scholarshipDeathDonationPension",
+};
 
 type IdentificationType = (typeof identificationTypeValues)[number];
 
@@ -173,6 +197,8 @@ export function NewMemberRegistrationForm({
   onDone,
 }: NewMemberRegistrationFormProps) {
   const { addToast } = useToast();
+  const { user } = useAuth();
+  const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
   const addToastRef = useRef(addToast);
   const isEditMode = !!applicationId;
   const [currentTab, setCurrentTab] = useState<"application" | "documents">(
@@ -193,6 +219,12 @@ export function NewMemberRegistrationForm({
   );
   const [nicValidationError, setNicValidationError] = useState(false);
   const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+  const [remittanceAccounts, setRemittanceAccounts] = useState<RemittanceMasterAccountDTO[]>([]);
+  const [ageLimits, setAgeLimits] = useState<{ minimumAge: number; maximumAge: number } | null>(null);
+  // Populated when the entered NIC matches a previously terminated member; drives the
+  // Rejoin popup and the persistent "Rejoin Application" banner.
+  const [rejoinDetails, setRejoinDetails] = useState<NicValidationResponseDTO | null>(null);
+  const [showRejoinModal, setShowRejoinModal] = useState(false);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
   const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
   const [isLoadingZones, setIsLoadingZones] = useState(false);
@@ -329,6 +361,16 @@ export function NewMemberRegistrationForm({
         return false;
       }
 
+      // A previously terminated member does not block the application — surface their
+      // details and let the user decide whether to continue as a Rejoin.
+      if (response.rejoin) {
+        setRejoinDetails(response);
+        setShowRejoinModal(true);
+        setNicValidationError(false);
+        setNicValidationMessage(response.message);
+        return true;
+      }
+
       setNicValidationError(false);
       setNicValidationMessage(response.message);
       addToast(response.message);
@@ -349,6 +391,7 @@ export function NewMemberRegistrationForm({
   const defaultFormValues = useMemo<MemberRegistration>(
     () => ({
       applicationDate: new Date().toISOString().split("T")[0],
+      submissionLocation: "",
       statusOverride: "New",
       title: "Mr",
       preferredLanguage: "English",
@@ -449,6 +492,58 @@ export function NewMemberRegistrationForm({
     };
   }, [addToast, getValues, setValue]);
 
+  // Load the Remittance Master and eligibility limits that drive the amount fields and
+  // the Date of Birth hint. Accounts with a fixed amount are auto-filled and locked.
+  useEffect(() => {
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const [accounts, eligibility] = await Promise.all([
+          getActiveRemittanceAccounts(),
+          getMembershipEligibility().catch(() => null), // non-fatal: hint only
+        ]);
+        if (isCancelled) return;
+
+        setRemittanceAccounts(accounts);
+        if (eligibility) setAgeLimits(eligibility);
+
+        for (const account of accounts) {
+          if (account.fixedAmount == null) continue;
+          const field = REMITTANCE_FIELD_BY_CODE[account.accountCode];
+          if (field) {
+            setValue(field, String(account.fixedAmount), {
+              shouldDirty: false,
+              shouldValidate: false,
+            });
+          }
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const message =
+            error instanceof Error ? error.message : "Failed to load remittance settings";
+          addToastRef.current(message, "destructive");
+        }
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [setValue]);
+
+  // District Office users can only file applications at their own branch — lock the
+  // Submission Location field to their assigned district on new (not edited) applications.
+  useEffect(() => {
+    if (isEditMode || !isDistrictOfficer || !user?.assignedDistrict) return;
+    if (!getValues("submissionLocation")) {
+      setValue("submissionLocation", user.assignedDistrict, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [isEditMode, isDistrictOfficer, user?.assignedDistrict, getValues, setValue]);
+
   // Rebuild the zone list whenever the district changes, and clear stale selections.
   useEffect(() => {
     if (!selectedDistrict) {
@@ -527,6 +622,7 @@ export function NewMemberRegistrationForm({
         const mappedValues: MemberRegistration = {
           ...defaultFormValues,
           applicationDate: data.applicationDate ?? defaultFormValues.applicationDate,
+          submissionLocation: data.submissionLocation ?? defaultFormValues.submissionLocation,
           title: data.title ?? defaultFormValues.title,
           fullName: data.fullName ?? "",
           nameAsInPayroll: data.nameAsInPayroll ?? "",
@@ -651,6 +747,7 @@ export function NewMemberRegistrationForm({
       const payload: MemberApplicationDTO = {
         status: mapStatus(data.statusOverride),
         applicationDate: data.applicationDate,
+        submissionLocation: data.submissionLocation,
         title: data.title,
         fullName: data.fullName,
         nameAsInPayroll: data.nameAsInPayroll,
@@ -827,6 +924,26 @@ export function NewMemberRegistrationForm({
               </div>
             )}
 
+            {/* Persistent indicator once a rejoin has been detected — the spec requires
+                the application to be visibly flagged, not just warned about once. */}
+            {rejoinDetails && (
+              <button
+                type="button"
+                onClick={() => setShowRejoinModal(true)}
+                className="mb-4 flex w-full items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-left text-sm text-red-700 hover:bg-red-100"
+              >
+                <AlertTriangle size={16} className="shrink-0" />
+                <span>
+                  <span className="font-semibold">Rejoin Application</span> — this NIC
+                  belongs to a previously terminated member
+                  {rejoinDetails.previousMemberId
+                    ? ` (${rejoinDetails.previousMemberId})`
+                    : ""}
+                  . Click to view details.
+                </span>
+              </button>
+            )}
+
             {/* Application Date */}
             <Card className="rounded-xl shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
@@ -845,6 +962,34 @@ export function NewMemberRegistrationForm({
                       type="date"
                       {...register("applicationDate")}
                       className="w-full"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Submission Location (District Office)"
+                    error={errors.submissionLocation?.message}
+                    required
+                  >
+                    <Controller
+                      name="submissionLocation"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={readOnly || isDistrictOfficer}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select District Office" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {districtOptions.map((district) => (
+                              <SelectItem key={district} value={district}>
+                                {district}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     />
                   </FormField>
                   <FormField label="Status (Override)">
@@ -986,6 +1131,11 @@ export function NewMemberRegistrationForm({
                     required
                   >
                     <Input type="date" {...register("dateOfBirth")} />
+                    {ageLimits && (
+                      <span className="mt-1 block text-[11px] text-neutral-500">
+                        Eligible age: {ageLimits.minimumAge}–{ageLimits.maximumAge} years
+                      </span>
+                    )}
                   </FormField>
                   <FormField
                     label="Gender"
@@ -1305,45 +1455,48 @@ export function NewMemberRegistrationForm({
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-5 pb-5">
+                {/* Fields, labels and amount rules come from the Remittance Master
+                    (maintained by Accounts) rather than being hardcoded here. */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    label="Share Account"
-                    error={errors.shareAccount?.message}
-                  >
-                    <Input
-                      {...register("shareAccount")}
-                      placeholder="Share Account"
-                    />
-                  </FormField>
-                  <FormField
-                    label="Special Deposit Account"
-                    error={errors.specialDepositAccount?.message}
-                  >
-                    <Input
-                      {...register("specialDepositAccount")}
-                      placeholder="Special Deposit Account"
-                    />
-                  </FormField>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <FormField
-                    label="Fixed Deposit Account"
-                    error={errors.fixedDepositAccount?.message}
-                  >
-                    <Input
-                      {...register("fixedDepositAccount")}
-                      placeholder="Fixed Deposit Account"
-                    />
-                  </FormField>
-                  <FormField
-                    label="Scholarships/ Death Donation / Pension"
-                    error={errors.scholarshipDeathDonationPension?.message}
-                  >
-                    <Input
-                      {...register("scholarshipDeathDonationPension")}
-                      placeholder="Scholarships/ Death Donation / Pension"
-                    />
-                  </FormField>
+                  {remittanceAccounts.map((account) => {
+                    const field = REMITTANCE_FIELD_BY_CODE[account.accountCode];
+                    if (!field) return null;
+                    const isFixed = account.fixedAmount != null;
+                    const hint = isFixed
+                      ? `Fixed at ${account.fixedAmount}`
+                      : account.minimumAmount != null
+                        ? `Minimum ${account.minimumAmount}`
+                        : null;
+
+                    return (
+                      <FormField
+                        key={account.accountCode}
+                        label={account.accountName}
+                        error={errors[field]?.message}
+                        required={account.mandatory ?? false}
+                      >
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          {...register(field)}
+                          readOnly={isFixed}
+                          className={isFixed ? "bg-neutral-100 cursor-not-allowed" : ""}
+                          placeholder={account.accountName}
+                        />
+                        {hint && (
+                          <span className="mt-1 block text-[11px] text-neutral-500">
+                            {hint}
+                          </span>
+                        )}
+                      </FormField>
+                    );
+                  })}
+                  {remittanceAccounts.length === 0 && (
+                    <p className="text-sm text-neutral-500">
+                      No remittance accounts are configured.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1597,6 +1750,71 @@ export function NewMemberRegistrationForm({
           </Card>
         )}
       </TabsContent>
+
+      {/* Rejoin popup — previous membership + termination details. Informational only:
+          the user may continue, and the application is saved flagged as a Rejoin. */}
+      {showRejoinModal && rejoinDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+            <div className="flex items-start gap-3 border-b border-neutral-200 px-5 py-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-neutral-900">
+                  Previously Terminated Member
+                </h3>
+                <p className="mt-0.5 text-sm text-neutral-500">
+                  This NIC matches a member whose membership was terminated.
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 py-4">
+              <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                {[
+                  ["Member ID", rejoinDetails.previousMemberId],
+                  ["Name", rejoinDetails.previousMemberName],
+                  ["Member Start Date", rejoinDetails.membershipStartDate],
+                  ["Terminated Date", rejoinDetails.terminatedDate],
+                  ["Reason", rejoinDetails.terminationReason],
+                ].map(([label, value]) => (
+                  <div key={label as string}>
+                    <dt className="text-[11px] font-medium tracking-wide text-neutral-500 uppercase">
+                      {label}
+                    </dt>
+                    <dd className="mt-0.5 text-sm text-neutral-800">{value || "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="mt-3">
+                <dt className="text-[11px] font-medium tracking-wide text-neutral-500 uppercase">
+                  Comments
+                </dt>
+                <dd className="mt-0.5 rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-800">
+                  {rejoinDetails.terminationComments || "—"}
+                </dd>
+              </div>
+
+              <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                You can continue with this application. It will be flagged as a{" "}
+                <strong>Rejoin</strong> and indicated wherever the application is viewed.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3">
+              <Button
+                type="button"
+                onClick={() => setShowRejoinModal(false)}
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
+              >
+                Continue
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Tabs>
   );
 }

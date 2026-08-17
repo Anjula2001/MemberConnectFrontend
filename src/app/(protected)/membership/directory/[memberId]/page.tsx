@@ -11,9 +11,11 @@ import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
-import { getMemberById, type MemberDTO } from "@/lib/api/member";
+import { getMemberById, updateMemberStatus, type MemberDTO } from "@/lib/api/member";
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
+import { useAuth } from "@/lib/auth-context";
+import { TESTING_ACTIVATE_ROLES, hasRole } from "@/lib/permissions";
 
 const detailTabs = [
 	"Profile Details",
@@ -66,7 +68,31 @@ export default function MemberProfilePage({
 	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
 	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
+	const [isActivating, setIsActivating] = useState(false);
 	const { addToast } = useToast();
+	const { user } = useAuth();
+	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
+
+	// Real activation is supposed to come from the Finance Module once the member's
+	// accounts are created there (out of scope for this build). This button is a
+	// clearly-labelled, Super-Admin-only stand-in so the rest of the flow (card/signature
+	// card/passbook printing, dispatch — all of which require an Active member) can be
+	// tested end-to-end until that integration exists. It must not be mistaken for the
+	// real activation path.
+	const handleTestActivate = async () => {
+		if (!profile?.id) return;
+		setIsActivating(true);
+		try {
+			const updated = await updateMemberStatus(profile.id, "ACTIVE");
+			setProfile(updated);
+			addToast("Member activated (testing override).");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to activate member";
+			addToast(message, "destructive");
+		} finally {
+			setIsActivating(false);
+		}
+	};
 
 	const [loansData, setLoansData] = useState<{ loans: any[]; obligations: any[] } | null>(null);
 	const [scholarship, setScholarship] = useState<any | null>(null);
@@ -358,6 +384,17 @@ export default function MemberProfilePage({
 						<Badge className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${profile.status === 'ACTIVE' ? 'bg-green-600 hover:bg-green-600' : profile.status === 'INACTIVE' ? 'bg-gray-500 hover:bg-gray-500' : 'bg-red-600 hover:bg-red-600'}`}>
 							{profile.status}
 						</Badge>
+						{canTestActivate && profile.status === "INACTIVE" && (
+							<button
+								type="button"
+								onClick={handleTestActivate}
+								disabled={isActivating}
+								title="Finance Module isn't integrated yet — this manually flips the member to Active so printing/dispatch can be tested."
+								className="ml-2 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+							>
+								{isActivating ? "Activating…" : "Activate (Testing Only)"}
+							</button>
+						)}
 					</div>
 				</div>
 

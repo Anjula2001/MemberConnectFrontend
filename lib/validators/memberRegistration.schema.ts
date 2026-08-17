@@ -10,6 +10,9 @@ const identificationTypeValues = [
 export const memberRegistrationSchema = z.object({
   // Application Information
   applicationDate: z.string().min(1, "Application date is required"),
+  // The District Office branch this application is being filed at — distinct from
+  // educationalDistrict below (the applicant's working district).
+  submissionLocation: z.string().min(1, "Submission location is required"),
   statusOverride: z.string().optional(),
 
   // Personal Information
