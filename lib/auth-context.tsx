@@ -20,6 +20,7 @@ export interface AuthUser {
   fullName: string;
   role: UserRole;
   profilePictureUrl?: string | null;
+  assignedDistrict?: string | null;
 }
 
 interface AuthContextType {
@@ -59,9 +60,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const response = await apiClient.post("/api/auth/login", { username, password });
-    const { token: newToken, username: uname, fullName, role, profilePictureUrl } = response.data;
+    const { token: newToken, username: uname, fullName, role, profilePictureUrl, assignedDistrict } = response.data;
 
-    const authUser: AuthUser = { username: uname, fullName, role, profilePictureUrl };
+    const authUser: AuthUser = { username: uname, fullName, role, profilePictureUrl, assignedDistrict };
 
     // Persist
     localStorage.setItem("auth_token", newToken);

@@ -58,70 +58,151 @@ export default function NavigationSideBar() {
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const menuItems: MenuItem[] = [
-    {
-      title: "Dashboard",
-      icon: Home,
-      url: "/",
-    },
-    {
-      title: "Membership",
-      icon: Users,
-      subMenu: [
-        {
-          title: "New Registrations",
-          url: "/membership/new-registrations",
-          icon: UserPlus,
-        },
-        {
-          title: "Board Approvals",
-          url: "/membership/board-approvals",
-          icon: ClipboardList,
-        },
-        {
-          title: "Member Directory",
-          url: "/membership/directory",
-          icon: Users,
-        },
-        {
-          title: "Profile Changes",
-          url: "/membership/profile-changes",
-          icon: FileText,
-        },
-        {
-          title: "Termination & Retirement",
-          url: "/membership/termination",
-          icon: UserMinus,
-        },
-        {
-          title: "Dormant Members",
-          url: "/membership/dormant",
-          icon: UserCheck,
-        },
-      ],
-    },
-    {
-      title: "Scholarships",
-      icon: GraduationCap,
-      subMenu: [
-        { title: "Grade 5", url: "/scholarships/grade-5" },
-        { title: "University", url: "/scholarships/university" },
-        { title: "Fund Requests", url: "/scholarships/fund-requests" },
-      ],
+  const getFilteredMenuItems = (): MenuItem[] => {
+    const role = user?.role;
 
-    },
-    { title: "Death Donation", icon: Heart, url: "/death-donation" },
-    { title: "Reports", icon: BarChart, url: "/reports" },
-    ...(user?.role === "SUPER_ADMIN"
-      ? [
+    // 1. District Office: Focus on Member Creation & Directory
+    if (role === "DISTRICT_OFFICE") {
+      return [
+        {
+          title: "Dashboard",
+          icon: Home,
+          url: "/",
+        },
+        {
+          title: "Membership",
+          icon: Users,
+          subMenu: [
+            {
+              title: "New Registrations",
+              url: "/membership/new-registrations",
+              icon: UserPlus,
+            },
+            {
+              title: "Member Directory",
+              url: "/membership/directory",
+              icon: Users,
+            },
+          ],
+        },
+      ];
+    }
+
+    // 2. Board Secretary / Head Office: Full Member Registration Governance & Approvals
+    if (role === "BOARD_SECRETARY" || role === "HEAD_OFFICE") {
+      return [
+        {
+          title: "Dashboard",
+          icon: Home,
+          url: "/",
+        },
+        {
+          title: "Membership",
+          icon: Users,
+          subMenu: [
+            {
+              title: "New Registrations",
+              url: "/membership/new-registrations",
+              icon: UserPlus,
+            },
+            {
+              title: "Board Approvals",
+              url: "/membership/board-approvals",
+              icon: ClipboardList,
+            },
+            {
+              title: "Member Directory",
+              url: "/membership/directory",
+              icon: Users,
+            },
+            {
+              title: "Profile Changes",
+              url: "/membership/profile-changes",
+              icon: FileText,
+            },
+            {
+              title: "Termination & Retirement",
+              url: "/membership/termination",
+              icon: UserMinus,
+            },
+            {
+              title: "Dormant Members",
+              url: "/membership/dormant",
+              icon: UserCheck,
+            },
+          ],
+        },
+        { title: "Reports", icon: BarChart, url: "/reports" },
+      ];
+    }
+
+    // Default / Super Admin: Full Master Access
+    return [
+      {
+        title: "Dashboard",
+        icon: Home,
+        url: "/",
+      },
+      {
+        title: "Membership",
+        icon: Users,
+        subMenu: [
           {
-            title: "User Management",
-            icon: UserCog,
-            url: "/admin/users",
+            title: "New Registrations",
+            url: "/membership/new-registrations",
+            icon: UserPlus,
           },
-        ]
-      : []),
-  ];
+          {
+            title: "Board Approvals",
+            url: "/membership/board-approvals",
+            icon: ClipboardList,
+          },
+          {
+            title: "Member Directory",
+            url: "/membership/directory",
+            icon: Users,
+          },
+          {
+            title: "Profile Changes",
+            url: "/membership/profile-changes",
+            icon: FileText,
+          },
+          {
+            title: "Termination & Retirement",
+            url: "/membership/termination",
+            icon: UserMinus,
+          },
+          {
+            title: "Dormant Members",
+            url: "/membership/dormant",
+            icon: UserCheck,
+          },
+        ],
+      },
+      {
+        title: "Scholarships",
+        icon: GraduationCap,
+        subMenu: [
+          { title: "Grade 5", url: "/scholarships/grade-5" },
+          { title: "University", url: "/scholarships/university" },
+          { title: "Fund Requests", url: "/scholarships/fund-requests" },
+        ],
+      },
+      { title: "Death Donation", icon: Heart, url: "/death-donation" },
+      { title: "Reports", icon: BarChart, url: "/reports" },
+      ...(role === "SUPER_ADMIN"
+        ? [
+            {
+              title: "User Management",
+              icon: UserCog,
+              url: "/admin/users",
+            },
+          ]
+        : []),
+    ];
+  };
+
+  const menuItems = getFilteredMenuItems();
 
   const isItemActive = (url?: string) => {
     if (!url) return false;

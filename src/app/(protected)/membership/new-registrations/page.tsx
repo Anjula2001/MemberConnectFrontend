@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 import {
   Search,
   RotateCcw,
@@ -15,6 +16,7 @@ import {
   Pencil,
   Trash2,
   SendHorizontal,
+  Lock,
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -172,6 +174,11 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 export default function NewRegistrationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+
+  const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
+  const userDistrict = user?.assignedDistrict || "Colombo";
+
   const applicationIdParam = searchParams.get("applicationId");
   const isReadOnlyView = searchParams.get("mode") === "view";
   const [currentView, setCurrentView] = useState<"list" | "form">("list");
@@ -198,6 +205,13 @@ export default function NewRegistrationsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Initialize district location for district officer
+  useEffect(() => {
+    if (isDistrictOfficer && userDistrict) {
+      setSelectedLocations([userDistrict.toLowerCase().replace(/\s+/g, "-")]);
+    }
+  }, [isDistrictOfficer, userDistrict]);
 
   useEffect(() => {
     if (!applicationIdParam) return;
@@ -566,14 +580,16 @@ export default function NewRegistrationsPage() {
           New Member Registration Search
         </h1>
         <div className="flex items-center gap-2">
-          <Button
-            className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
-            disabled={selectedNewRowsCount === 0}
-            onClick={handleOpenBoardMeetingModal}
-          >
-            Create Board Approval List
-            {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
-          </Button>
+          {!isDistrictOfficer && (
+            <Button
+              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              disabled={selectedNewRowsCount === 0}
+              onClick={handleOpenBoardMeetingModal}
+            >
+              Create Board Approval List
+              {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
+            </Button>
+          )}
           <Button
             className="bg-[#7a2700] hover:bg-[#953002] text-white"
             onClick={() => {
@@ -599,15 +615,27 @@ export default function NewRegistrationsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Location (District) */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">
-                Location (District)
+              <label className="text-xs font-medium text-gray-600 flex items-center justify-between">
+                <span>Location (District)</span>
+                {isDistrictOfficer && (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-medium">
+                    <Lock size={10} /> Locked to Branch
+                  </span>
+                )}
               </label>
-              <MultiSelect
-                options={locationOptions}
-                selected={selectedLocations}
-                onChange={setSelectedLocations}
-                placeholder="Select Locations"
-              />
+              {isDistrictOfficer ? (
+                <div className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-neutral-100 px-3 py-2 text-sm text-neutral-800 shadow-xs cursor-not-allowed">
+                  <span className="font-semibold text-neutral-800">{userDistrict}</span>
+                  <Lock size={13} className="text-neutral-400" />
+                </div>
+              ) : (
+                <MultiSelect
+                  options={locationOptions}
+                  selected={selectedLocations}
+                  onChange={setSelectedLocations}
+                  placeholder="Select Locations"
+                />
+              )}
             </div>
 
             {/* Application Received On */}

@@ -340,6 +340,20 @@ export default function UserManagementPage() {
     (u) => u.role === "HEAD_OFFICE" || u.role === "BOARD_SECRETARY"
   ).length;
 
+  if (currentUser && currentUser.role !== "SUPER_ADMIN") {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-600 border border-red-200 shadow-sm mb-4">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-bold text-neutral-800">Super Admin Access Required</h2>
+        <p className="mt-2 max-w-md text-sm text-neutral-500">
+          User & Role Management is restricted exclusively to the Master Super Administrator.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
       {/* ── Page Header ────────────────────────────────────────────── */}

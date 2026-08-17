@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 import {
   AlertCircle,
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   FileText,
   Printer,
   Search,
+  ShieldAlert,
   Trash2,
   X,
 } from "lucide-react";
@@ -83,6 +85,7 @@ function formatDisplayDate(value: string) {
 
 export default function BoardApprovalsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
@@ -616,6 +619,26 @@ export default function BoardApprovalsPage() {
       setShowProcessToast(true);
     }
   };
+
+  if (user && user.role === "DISTRICT_OFFICE") {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 shadow-sm mb-4">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
+        <p className="mt-2 max-w-md text-sm text-neutral-500">
+          Board Approvals and Meeting Management are restricted to Head Office and Board Secretariat personnel.
+        </p>
+        <button
+          onClick={() => router.push("/membership/new-registrations")}
+          className="mt-6 flex items-center gap-2 rounded-lg bg-[#9e3600] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
+        >
+          Go to New Registrations
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
