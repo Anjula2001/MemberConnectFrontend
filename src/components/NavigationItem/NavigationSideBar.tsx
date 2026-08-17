@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 import {
   Sidebar,
   SidebarContent,
@@ -31,6 +32,7 @@ import {
   Heart,
   Home,
   UserCheck,
+  UserCog,
   UserMinus,
   UserPlus,
   Users,
@@ -54,6 +56,7 @@ type MenuItem = {
 
 export default function NavigationSideBar() {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const menuItems: MenuItem[] = [
     {
@@ -109,6 +112,15 @@ export default function NavigationSideBar() {
     },
     { title: "Death Donation", icon: Heart, url: "/death-donation" },
     { title: "Reports", icon: BarChart, url: "/reports" },
+    ...(user?.role === "SUPER_ADMIN"
+      ? [
+          {
+            title: "User Management",
+            icon: UserCog,
+            url: "/admin/users",
+          },
+        ]
+      : []),
   ];
 
   const isItemActive = (url?: string) => {
