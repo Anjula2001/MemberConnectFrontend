@@ -155,8 +155,12 @@ export default function TopHeader() {
           onClick={() => { setProfileOpen((v) => !v); setNotifOpen(false); }}
           className="flex h-10 items-center gap-2.5 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 transition-colors hover:border-[#9e3600]/30 hover:bg-[#fdf5f2]"
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shrink-0 shadow-xs">
-            {initials}
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shrink-0 shadow-xs overflow-hidden">
+            {user?.profilePictureUrl ? (
+              <img src={user.profilePictureUrl} alt={user.fullName} className="h-full w-full object-cover" />
+            ) : (
+              initials
+            )}
           </div>
           <span className="hidden text-xs font-semibold text-neutral-800 sm:block max-w-[130px] truncate">
             {user?.fullName ?? "User"}
@@ -165,12 +169,16 @@ export default function TopHeader() {
         </button>
 
         {profileOpen && (
-          <div className="absolute right-0 top-11 z-50 w-52 rounded-xl border border-neutral-200 bg-white shadow-lg">
+          <div className="absolute right-0 top-12 z-50 w-56 rounded-xl border border-neutral-200 bg-white shadow-lg">
             {/* User info */}
             <div className="border-b border-neutral-100 px-4 py-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#9e3600] text-sm font-bold text-white">
-                  {initials}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#9e3600] text-sm font-bold text-white overflow-hidden">
+                  {user?.profilePictureUrl ? (
+                    <img src={user.profilePictureUrl} alt={user.fullName} className="h-full w-full object-cover" />
+                  ) : (
+                    initials
+                  )}
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-neutral-800">{user?.fullName ?? "User"}</p>
@@ -182,8 +190,12 @@ export default function TopHeader() {
             {/* Menu items */}
             <div className="p-1.5">
               <button
+                id="profile-menu-link"
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-[#fdf5f2] hover:text-[#9e3600]"
-                onClick={() => setProfileOpen(false)}
+                onClick={() => {
+                  setProfileOpen(false);
+                  router.push("/profile");
+                }}
               >
                 <User className="h-4 w-4 shrink-0" />
                 Profile

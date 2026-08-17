@@ -15,10 +15,11 @@ export type UserRole =
   | "SCHOLARSHIP_OFFICER"
   | "DEATH_DONATION_OFFICER";
 
-interface AuthUser {
+export interface AuthUser {
   username: string;
   fullName: string;
   role: UserRole;
+  profilePictureUrl?: string | null;
 }
 
 interface AuthContextType {
@@ -28,6 +29,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  updateCurrentUser: (updated: Partial<AuthUser>) => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -57,9 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const response = await apiClient.post("/api/auth/login", { username, password });
-    const { token: newToken, username: uname, fullName, role } = response.data;
+    const { token: newToken, username: uname, fullName, role, profilePictureUrl } = response.data;
 
-    const authUser: AuthUser = { username: uname, fullName, role };
+    const authUser: AuthUser = { username: uname, fullName, role, profilePictureUrl };
 
     // Persist
     localStorage.setItem("auth_token", newToken);
@@ -70,6 +72,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setToken(newToken);
     setUser(authUser);
+  };
+
+  const updateCurrentUser = (updated: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updated };
+      localStorage.setItem("auth_user", JSON.stringify(next));
+      return next;
+    });
   };
 
   const logout = () => {
@@ -90,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        updateCurrentUser,
       }}
     >
       {children}
