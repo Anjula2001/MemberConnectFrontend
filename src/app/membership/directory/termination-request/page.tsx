@@ -16,17 +16,10 @@ import {
   SubmitConfirmationModal,
   SubmitSuccessModal,
 } from "@/src/components/ui/termination/SubmitConfirmationModal";
-import AddBankDetails, { AddBankDetailsRef } from "@/src/components/ui/retirement/addbankdetails";
-
-interface BankAccountRow {
-  id: number;
-  memberId: string;
-  bankId: string;
-  bankName: string;
-  branchId: string;
-  branchName: string;
-  accountNumber: string;
-}
+import MinorDisbursementSection, {
+  type MinorDisbursementSectionRef,
+  type SavedMinorDisbursement,
+} from "@/src/components/ui/termination/minordisbursement";
 
 interface MinorSavingsAccount {
   minorAccountNo: string;
@@ -53,6 +46,7 @@ interface TerminationRequest {
   comment?: string;
   status: string;
   incompleteReason?: string;
+  minorDisbursements?: SavedMinorDisbursement[];
 }
 
 interface MemberDetails {
@@ -90,7 +84,7 @@ const DEFAULT_TERMINATION_REASONS: TerminationReason[] = [
 export default function TerminationRequestPage() {
   const searchParams = useSearchParams();
   const formRef = useRef<TerminationFormRef>(null);
-  const bankFormRef = useRef<AddBankDetailsRef>(null);
+  const minorDisbursementRef = useRef<MinorDisbursementSectionRef>(null);
   const pageMode = searchParams.get("mode") || "";
 
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
@@ -99,11 +93,7 @@ export default function TerminationRequestPage() {
   const [openSubmitConfirm, setOpenSubmitConfirm] = useState(false);
   const [openSubmitSuccess, setOpenSubmitSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [openBankModal, setOpenBankModal] = useState(false);
-  const [bankAccounts, setBankAccounts] = useState<BankAccountRow[]>([]);
-  const [editingBankAccount, setEditingBankAccount] = useState<BankAccountRow | null>(null);
   const [minorSavingsAccounts, setMinorSavingsAccounts] = useState<MinorSavingsAccount[]>([]);
-  const [minorSavingsError, setMinorSavingsError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [member, setMember] = useState<MemberDetails>({
     memberId: "",
@@ -162,7 +152,6 @@ export default function TerminationRequestPage() {
         fetchMember(),
         fetchTerminationValidation(),
         fetchMinorSavingsAccounts(),
-        fetchMemberBankAccounts(),
         fetchTerminationRequests(),
       ]);
       setLoading(false);
@@ -250,24 +239,6 @@ export default function TerminationRequestPage() {
     }
   };
 
-  const fetchMemberBankAccounts = async () => {
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/bank-accounts`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const accounts = await response.json();
-      setBankAccounts(accounts);
-    } catch (error) {
-      console.error("Fetch member bank accounts error:", error);
-    }
-  };
-
   const fetchTerminationRequests = async () => {
     try {
       const response = await fetch(
@@ -297,24 +268,6 @@ export default function TerminationRequestPage() {
     } catch (error) {
       console.error("Fetch termination request error:", error);
     }
-  };
-
-  const handleAddAccountClick = () => {
-    if (minorSavingsAccounts.length === 0) {
-      setMinorSavingsError(
-        "No need to add disbursement details because member has no minor saving accounts."
-      );
-      return;
-    }
-
-    if (bankAccounts.length > 0) {
-      setMinorSavingsError("Only one disbursement bank account is allowed.");
-      return;
-    }
-
-    setEditingBankAccount(null);
-    setMinorSavingsError("");
-    setOpenBankModal(true);
   };
 
   const handleConfirmIncomplete = async (reason: string) => {
@@ -368,6 +321,18 @@ export default function TerminationRequestPage() {
 
     setSaveError("");
 
+    const minorDisbursementRows = minorDisbursementRef.current?.getData() || [];
+
+    const payload = {
+      ...formData,
+      minorDisbursements: minorDisbursementRows.map((row) => ({
+        minorAccountNo: row.minorAccountNo,
+        disbursementBankId: row.disbursementBankId ? Number(row.disbursementBankId) : null,
+        disbursementBranchId: row.disbursementBranchId ? Number(row.disbursementBranchId) : null,
+        disbursementAccountNo: row.disbursementAccountNo?.trim() || null,
+      })),
+    };
+
     try {
       const isUpdate = !!terminationRequest?.id && isEditMode;
 
@@ -378,7 +343,7 @@ export default function TerminationRequestPage() {
         {
           method: isUpdate ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         }
       );
 
@@ -414,9 +379,24 @@ export default function TerminationRequestPage() {
       return;
     }
 
-    if (minorSavingsAccounts.length > 0 && bankAccounts.length === 0) {
-      setSaveError("Please add disbursement bank details before submitting.");
-      return;
+    if (minorSavingsAccounts.length > 0) {
+      const rows = minorDisbursementRef.current?.getData() || [];
+      const hasIncompleteRow = minorSavingsAccounts.some((account) => {
+        const row = rows.find((item) => item.minorAccountNo === account.minorAccountNo);
+        return (
+          !row ||
+          !row.disbursementBankId ||
+          !row.disbursementBranchId ||
+          !row.disbursementAccountNo.trim()
+        );
+      });
+
+      if (hasIncompleteRow) {
+        setSaveError(
+          "Please provide complete disbursement bank details for every minor savings account before submitting."
+        );
+        return;
+      }
     }
 
     if (validation && !validation.canSubmit) {
@@ -462,14 +442,6 @@ export default function TerminationRequestPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleBankSave = (savedAccount: BankAccountRow) => {
-    setBankAccounts([savedAccount]);
-    setEditingBankAccount(null);
-    setMinorSavingsError("");
-    setSaveError("");
-    setOpenBankModal(false);
   };
 
   const requestDisplayId = terminationRequest?.requestNo || "NEW";
@@ -663,105 +635,14 @@ export default function TerminationRequestPage() {
               </div>
 
               <div className="rounded-lg bg-white p-4 px-6 shadow-sm">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xl font-bold text-[#953002]">Minor Saving Disbursement</p>
+                <p className="mb-4 text-xl font-bold text-[#953002]">Minor Saving Disbursement</p>
 
-                  <Button
-                    className={
-                      minorSavingsAccounts.length === 0 || (!!terminationRequest?.id && !isEditMode)
-                        ? "cursor-not-allowed bg-gray-200 text-gray-500"
-                        : "bg-gray-50 text-black hover:bg-gray-100"
-                    }
-                    onClick={handleAddAccountClick}
-                    disabled={!!terminationRequest?.id && !isEditMode}
-                  >
-                    +Account
-                  </Button>
-                </div>
-
-                {minorSavingsError && (
-                  <p className="mb-3 text-sm text-red-500">{minorSavingsError}</p>
-                )}
-
-                {minorSavingsAccounts.length === 0 ? (
-                  <p className="text-gray-600">Member has no minor saving account</p>
-                ) : (
-                  <>
-                    <div className="mb-6 overflow-x-auto">
-                      <p className="mb-2 font-semibold">Minor Saving Accounts</p>
-
-                      <table className="w-3/4 rounded-lg border border-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="w-1/4 border-b px-4 py-2 text-left">
-                              Minor Account No
-                            </th>
-                            <th className="w-1/4 border-b px-4 py-2 text-left">Holder Name</th>
-                            <th className="w-1/4 border-b px-4 py-2 text-left">Balance</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {minorSavingsAccounts.map((account) => (
-                            <tr key={account.minorAccountNo}>
-                              <td className="border-b px-4 py-2">{account.minorAccountNo}</td>
-                              <td className="border-b px-4 py-2">{account.holderName}</td>
-                              <td className="border-b px-4 py-2">{account.balance}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {bankAccounts.length === 0 ? (
-                      <p className="text-gray-600">No disbursement bank details added</p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <p className="mb-2 font-semibold">Disbursement Bank Details</p>
-
-                        <table className="w-3/4 rounded-lg border border-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="w-1/4 border-b px-4 py-2 text-left">Bank</th>
-                              <th className="w-1/4 border-b px-4 py-2 text-left">Branch</th>
-                              <th className="w-1/4 border-b px-4 py-2 text-left">
-                                Account Number
-                              </th>
-                              {isEditMode && (
-                                <th className="w-1/4 border-b px-4 py-2 text-left">Action</th>
-                              )}
-                            </tr>
-                          </thead>
-
-                          <tbody>
-                            {bankAccounts.map((account) => (
-                              <tr key={account.id}>
-                                <td className="border-b px-4 py-2">{account.bankName}</td>
-                                <td className="border-b px-4 py-2">{account.branchName}</td>
-                                <td className="border-b px-4 py-2">{account.accountNumber}</td>
-
-                                {isEditMode && (
-                                  <td className="border-b px-4 py-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => {
-                                        setEditingBankAccount(account);
-                                        setOpenBankModal(true);
-                                      }}
-                                    >
-                                      Edit
-                                    </Button>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </>
-                )}
+                <MinorDisbursementSection
+                  ref={minorDisbursementRef}
+                  accounts={minorSavingsAccounts}
+                  initialData={terminationRequest?.minorDisbursements}
+                  readOnly={!!terminationRequest?.id && !isEditMode}
+                />
               </div>
 
               <div className="rounded-lg bg-white p-4 px-6 shadow-sm">
@@ -802,27 +683,6 @@ export default function TerminationRequestPage() {
         requestId={terminationRequest?.requestNo}
         onClose={() => setOpenSubmitSuccess(false)}
       />
-
-      {openBankModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-96 rounded bg-white p-6 shadow-lg">
-            <h2 className="mb-4 text-xl font-bold text-[#953002]">
-              Add Disbursement Bank Details
-            </h2>
-
-            <AddBankDetails
-              ref={bankFormRef}
-              memberId={selectedMemberId}
-              initialData={editingBankAccount}
-              onSave={handleBankSave}
-              onClose={() => {
-                setOpenBankModal(false);
-                setEditingBankAccount(null);
-              }}
-            />
-          </div>
-        </div>
-      )}
     </>
   );
 }
