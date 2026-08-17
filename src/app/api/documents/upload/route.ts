@@ -96,22 +96,30 @@ export async function POST(request: Request) {
     const blob = new Blob([new Uint8Array(processed.buffer)], { type: processed.processedFileType });
     uploadFormData.append("file", blob, processed.processedFileName);
 
+    const authHeader = request.headers.get("Authorization");
+    const uploadHeaders: HeadersInit = authHeader ? { Authorization: authHeader } : {};
+
     const uploadResponse = await fetch(`${backendBaseUrl}/api/file/upload`, {
       method: "POST",
+      headers: uploadHeaders,
       body: uploadFormData,
     });
 
     if (!uploadResponse.ok) {
-      throw new Error(`Failed to upload file to S3: ${uploadResponse.statusText}`);
+      const errText = await uploadResponse.text();
+      throw new Error(`Failed to upload file to S3: ${errText || uploadResponse.statusText}`);
     }
 
     const s3FileName = await uploadResponse.text();
 
+    const metaHeaders: HeadersInit = {
+      "Content-Type": "application/json",
+      ...(authHeader ? { Authorization: authHeader } : {}),
+    };
+
     const metadataResponse = await fetch(`${backendBaseUrl}/api/documents/upload`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: metaHeaders,
       body: JSON.stringify({
         applicationId,
         documentType,
