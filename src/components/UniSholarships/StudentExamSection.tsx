@@ -963,7 +963,7 @@ export default function StudentExamSection() {
       });
     }
 
-    setDocumentFiles(uploadedItems);
+    setDocumentFiles([]);
 
     // Refresh the uploaded documents list from backend
     try {
@@ -1054,14 +1054,39 @@ export default function StudentExamSection() {
   };
 
   //Get mandatory document in DB
-  const mandatoryDocumentTypes = requiredDocumentTypes
-    .filter((doc) => doc.mandatory)
-    .map((doc) => doc.documentType);
+  const mandatoryDocumentTypes = requiredDocumentTypes.filter((doc) => doc.mandatory);
 
-  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((type) =>
-    documentFiles.some((doc) => doc.documentType === type) ||
-    uploadedDocuments.some((doc) => doc.documentType === type)
+  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((reqDoc) =>
+    documentFiles.some((doc) => doc.documentType === reqDoc.documentType) ||
+    uploadedDocuments.some(
+      (doc) => doc.requiredDocumentId === reqDoc.id || doc.documentType === reqDoc.documentType
+    )
   );
+
+  // Handle deleting an already uploaded document
+  const handleDeleteUploadedDocument = async (docId: number) => {
+    if (!requestId) return;
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(requestId)}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        setExamNoPopupMessage("Failed to delete uploaded document");
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setExamNoPopupMessage("Document deleted successfully");
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Delete uploaded document failed:", error);
+      setExamNoPopupMessage("Failed to delete uploaded document");
+      setShowExamNoPopup(true);
+    }
+  };
 
   //Handle edit mode
   const handleEnterEditMode = () => {
@@ -1809,6 +1834,7 @@ export default function StudentExamSection() {
                   files={documentFiles}
                   setFiles={setDocumentFiles}
                   documentTypes={requiredDocumentTypes}
+                  uploadedDocuments={uploadedDocuments}
                 />
               </div>
             </section>
@@ -1870,6 +1896,16 @@ export default function StudentExamSection() {
                           >
                             Download
                           </a>
+                          {!isInputsDisabled && !isApprovedDetailsEditMode && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleDeleteUploadedDocument(doc.id)}
+                              className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-3 py-1.5 text-xs h-auto"
+                            >
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );

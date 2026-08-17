@@ -297,13 +297,39 @@ export default function ChangeMemberTransferForm() {
     const mandatoryTypes = requiredDocumentTypes.filter((t) => t.mandatory);
     if (mandatoryTypes.length === 0) return true;
 
-    const uploadedTypes = new Set([
-      ...uploadedDocuments.map((d) => d.documentType),
-      ...documentFiles.map((d) => d.documentType),
-    ]);
-
-    return mandatoryTypes.every((type) => uploadedTypes.has(type.documentType));
+    return mandatoryTypes.every((type) => {
+      const isStaged = documentFiles.some((d) => d.documentType === type.documentType);
+      const isUploaded = uploadedDocuments.some(
+        (d) => d.requiredDocumentId === type.id || d.documentType === type.documentType
+      );
+      return isStaged || isUploaded;
+    });
   }, [requiredDocumentTypes, uploadedDocuments, documentFiles]);
+
+  const handleDeleteUploadedDocument = async (docId: number) => {
+    const targetId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
+    if (!targetId) return;
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        setPopupMessage("Failed to delete uploaded document");
+        setShowPopup(true);
+        return;
+      }
+
+      setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setPopupMessage("Document deleted successfully");
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Delete uploaded document failed:", error);
+      setPopupMessage("Failed to delete uploaded document");
+      setShowPopup(true);
+    }
+  };
 
   //Get Working location type,distric,designation and nature of occupation in DB
   useEffect(() => {
@@ -795,7 +821,7 @@ export default function ChangeMemberTransferForm() {
           });
         }
 
-        setDocumentFiles(uploadedItems);
+        setDocumentFiles([]);
 
         // Refresh the uploaded documents list from backend
         try {
@@ -1113,11 +1139,20 @@ export default function ChangeMemberTransferForm() {
                       className="h-10 w-full rounded-md border px-3 text-sm"
                     >
                       <option value="">Select Document Type</option>
-                      {requiredDocumentTypes.map((type) => (
-                        <option key={type.id} value={type.documentType}>
-                          {type.displayName} {type.mandatory ? "(Mandatory)" : ""}
-                        </option>
-                      ))}
+                      {requiredDocumentTypes.map((type) => {
+                        const isUploaded = uploadedDocuments.some(
+                          (d) => d.requiredDocumentId === type.id || d.documentType === type.documentType
+                        );
+                        const isStaged = documentFiles.some((d) => d.documentType === type.documentType);
+                        const isAlreadyAdded = Boolean(isUploaded || isStaged);
+
+                        return (
+                          <option key={type.id} value={type.documentType} disabled={isAlreadyAdded}>
+                            {type.displayName} {type.mandatory ? "(Mandatory)" : ""}{" "}
+                            {isAlreadyAdded ? "(Already Added)" : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -1142,6 +1177,7 @@ export default function ChangeMemberTransferForm() {
                             uploadedAt: new Date().toISOString(),
                           },
                         ]);
+                        setSelectedDocumentType("");
                         e.target.value = "";
                       }}
                     />
@@ -1164,7 +1200,6 @@ export default function ChangeMemberTransferForm() {
                       <tr>
                         <th className="px-3 py-2">Document Type</th>
                         <th className="px-3 py-2">File Name</th>
-                        <th className="px-3 py-2">Uploaded Time</th>
                         {!isInputsDisabled && <th className="px-3 py-2">Action</th>}
                       </tr>
                     </thead>
@@ -1175,9 +1210,6 @@ export default function ChangeMemberTransferForm() {
                             {requiredDocumentTypes.find((t) => t.documentType === item.documentType)?.displayName || item.documentType}
                           </td>
                           <td className="px-3 py-2 font-medium text-gray-700">{item.file.name}</td>
-                          <td className="px-3 py-2 text-gray-600">
-                            {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : "—"}
-                          </td>
                           {!isInputsDisabled && (
                             <td className="px-3 py-2">
                               <Button
@@ -1242,6 +1274,16 @@ export default function ChangeMemberTransferForm() {
                         >
                           Download
                         </a>
+                        {!isInputsDisabled && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleDeleteUploadedDocument(doc.id)}
+                            className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-3 py-1.5 text-xs h-auto"
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

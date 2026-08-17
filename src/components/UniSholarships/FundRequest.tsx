@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -100,6 +100,20 @@ export default function FundDisbursementRequest() {
   const [scholarshipSummary, setScholarshipSummary] = useState<ScholarshipSummary | null>(null);
   const [member, setMember] = useState<MemberSummary | null>(null);
   const [currentFundRequest, setCurrentFundRequest] = useState<ScholarshipFundRequest | null>(null);
+
+  const hasAllMandatoryDocuments = useMemo(() => {
+    if (requiredDocumentTypes.length === 0) return true;
+    const mandatoryTypes = requiredDocumentTypes.filter((t) => t.mandatory);
+    if (mandatoryTypes.length === 0) return true;
+
+    return mandatoryTypes.every((type) => {
+      const isStaged = documentFiles.some((d) => d.documentType === type.documentType);
+      const isUploaded = uploadedDocuments.some(
+        (d) => d.requiredDocumentId === type.id || d.documentType === type.documentType
+      );
+      return isStaged || isUploaded;
+    });
+  }, [requiredDocumentTypes, uploadedDocuments, documentFiles]);
 
   const availableBalance = Math.max(
     0,
@@ -234,7 +248,7 @@ export default function FundDisbursementRequest() {
       });
     }
 
-    setDocumentFiles(uploadedItems);
+    setDocumentFiles([]);
 
     // Refresh the uploaded documents list from backend
     try {
@@ -247,6 +261,31 @@ export default function FundDisbursementRequest() {
       }
     } catch (e) {
       console.error("Failed to refresh uploaded documents:", e);
+    }
+  };
+
+  const handleDeleteUploadedDocument = async (docId: number) => {
+    const targetId = fundRequestNo || fundRequestId || requestId;
+    if (!targetId) return;
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        setPopupMessage("Failed to delete uploaded document");
+        setShowPopup(true);
+        return;
+      }
+
+      setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setPopupMessage("Document deleted successfully");
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Delete uploaded document failed:", error);
+      setPopupMessage("Failed to delete uploaded document");
+      setShowPopup(true);
     }
   };
 
@@ -890,6 +929,7 @@ export default function FundDisbursementRequest() {
                 files={documentFiles}
                 setFiles={setDocumentFiles}
                 documentTypes={requiredDocumentTypes}
+                uploadedDocuments={uploadedDocuments}
               />
             </div>
           </section>
@@ -947,6 +987,16 @@ export default function FundDisbursementRequest() {
                         >
                           Download
                         </a>
+                        {canEditRequest && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleDeleteUploadedDocument(doc.id)}
+                            className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-3 py-1.5 text-xs h-auto"
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -972,7 +1022,7 @@ export default function FundDisbursementRequest() {
               <Button
                 type="button"
                 onClick={handleSubmitFundRequest}
-                disabled={!isSaved || !isEditableStatus}
+                disabled={!isSaved || !isEditableStatus || !hasAllMandatoryDocuments}
                 className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
               >
                 Submit for Approval
