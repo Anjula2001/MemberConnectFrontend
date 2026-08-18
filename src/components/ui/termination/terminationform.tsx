@@ -10,9 +10,10 @@ export interface TerminationReason {
 }
 
 export interface TerminationFormRef {
+  // Only the master id is returned. The reason text is resolved from the
+  // Termination Reasons Master on the server and is never sent by the client.
   validateAndGetData: () => {
     terminationReasonId: string;
-    terminationReason: string;
     requestedDate: string;
     effectiveDate: string;
     comment: string;
@@ -38,8 +39,10 @@ const getEffectiveDateError = (date: string) =>
 
 const TerminationForm = forwardRef<TerminationFormRef, Props>(
   ({ initialData, reasons, readOnly = false }, ref) => {
+    // Held as a string because an HTML <select> value always is one; ids coming
+    // from the master are normalised the same way, so the two always compare.
     const [terminationReasonId, setTerminationReasonId] = useState(
-      initialData?.terminationReasonId || ""
+      initialData?.terminationReasonId ? String(initialData.terminationReasonId) : ""
     );
     const [requestedDate, setRequestedDate] = useState(initialData?.requestedDate || "");
     const [effectiveDate, setEffectiveDate] = useState(initialData?.effectiveDate || "");
@@ -54,7 +57,9 @@ const TerminationForm = forwardRef<TerminationFormRef, Props>(
     });
 
     useEffect(() => {
-      setTerminationReasonId(initialData?.terminationReasonId || "");
+      setTerminationReasonId(
+        initialData?.terminationReasonId ? String(initialData.terminationReasonId) : ""
+      );
       setRequestedDate(initialData?.requestedDate || "");
       setEffectiveDate(initialData?.effectiveDate || "");
       setComment(initialData?.comment || "");
@@ -143,13 +148,23 @@ const TerminationForm = forwardRef<TerminationFormRef, Props>(
           return null;
         }
 
-        setFieldErrors({});
+        // Guards against submitting an id that is not one of the options the
+        // master actually offered - the server rejects those anyway, this just
+        // reports it in the field instead of as a save failure.
+        const selectedReason = reasons.find(
+          (reason) => String(reason.id) === terminationReasonId
+        );
 
-        const selectedReason = reasons.find((r) => r.id === terminationReasonId);
+        if (!selectedReason) {
+          setFieldErrors({ terminationReasonId: "Please select a valid termination reason" });
+          setError("Please select a valid termination reason");
+          return null;
+        }
+
+        setFieldErrors({});
 
         return {
           terminationReasonId: validationResult.data.terminationReasonId,
-          terminationReason: selectedReason?.name || "",
           requestedDate: validationResult.data.requestedDate,
           effectiveDate: validationResult.data.effectiveDate,
           comment: validationResult.data.comment.trim(),
@@ -172,7 +187,7 @@ const TerminationForm = forwardRef<TerminationFormRef, Props>(
           >
             <option value="">Select termination reason</option>
             {reasons.map((reason) => (
-              <option key={reason.id} value={reason.id}>
+              <option key={String(reason.id)} value={String(reason.id)}>
                 {reason.name}
               </option>
             ))}

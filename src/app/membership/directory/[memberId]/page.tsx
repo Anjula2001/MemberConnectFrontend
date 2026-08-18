@@ -11,7 +11,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
-import { getMemberById, type MemberDTO } from "@/lib/api/member";
+import { getMemberById, searchMembers, type MemberDTO } from "@/lib/api/member";
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
 
@@ -132,9 +132,25 @@ export default function MemberProfilePage({
 	useEffect(() => {
 		if (!memberIdParam) return;
 
+		const idParam = memberIdParam;
+
 		async function loadMember() {
 			try {
-				const data = await getMemberById(Number(memberIdParam));
+				const numericId = Number(idParam);
+				// The route segment is normally the numeric primary key, but some links pass
+				// the member number (e.g. "MEM-0012") or an undefined id — resolve those by search
+				// instead of sending "NaN" to /getMemberById/{id}, which the backend rejects.
+				const data = Number.isInteger(numericId) && numericId > 0
+					? await getMemberById(numericId)
+					: (await searchMembers({ query: idParam })).find(
+						(m) => m.memberId === idParam
+					);
+
+				if (!data) {
+					setProfile(null);
+					return;
+				}
+
 				setProfile(data);
 				if (data.applicationId) {
 					const docs = await getDocumentsByApplication(data.applicationId);

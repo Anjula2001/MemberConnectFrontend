@@ -74,13 +74,6 @@ const TERMINATION_STATUS_LABELS: Record<string, string> = {
 const formatTerminationStatus = (status: string) =>
   TERMINATION_STATUS_LABELS[status] ?? status.replaceAll("_", " ");
 
-const DEFAULT_TERMINATION_REASONS: TerminationReason[] = [
-  { id: "1", name: "Resignation from Post" },
-  { id: "2", name: "Disciplinary Action" },
-  { id: "3", name: "Transfer to Another Organization" },
-  { id: "4", name: "Other" },
-];
-
 export default function TerminationRequestPage() {
   const searchParams = useSearchParams();
   const formRef = useRef<TerminationFormRef>(null);
@@ -103,9 +96,8 @@ export default function TerminationRequestPage() {
   });
   const [terminationRequest, setTerminationRequest] = useState<TerminationRequest | null>(null);
   const [validation, setValidation] = useState<TerminationValidation | null>(null);
-  const [terminationReasons, setTerminationReasons] = useState<TerminationReason[]>(
-    DEFAULT_TERMINATION_REASONS
-  );
+  const [terminationReasons, setTerminationReasons] = useState<TerminationReason[]>([]);
+  const [reasonsError, setReasonsError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const isRequestLocked = terminationRequest?.status
@@ -123,6 +115,22 @@ export default function TerminationRequestPage() {
   const showWorkflowActions = hasSavedRequest && !isRequestLocked && !isEditMode;
   const isWorkflowBlockedByEdit = isEditMode;
   const isSubmitBlockedByLoans = validation ? !validation.canSubmit : true;
+
+  // A saved request keeps the reason it was created with. Once that reason is
+  // deactivated the master stops offering it, so it is merged back in here -
+  // otherwise the <select> would match no option, render blank, and the next
+  // save would silently replace the reason the request was approved under.
+  const savedReasonId = terminationRequest?.terminationReasonId || "";
+  const formReasons: TerminationReason[] =
+    savedReasonId && !terminationReasons.some((reason) => reason.id === savedReasonId)
+      ? [
+          ...terminationReasons,
+          {
+            id: savedReasonId,
+            name: `${terminationRequest?.terminationReason || "Unknown reason"} (inactive)`,
+          },
+        ]
+      : terminationReasons;
 
   useEffect(() => {
     let memberIdParam = searchParams.get("memberId");
@@ -160,22 +168,36 @@ export default function TerminationRequestPage() {
     loadData();
   }, [pageMode, selectedMemberId]);
 
+  // The Termination Reasons Master is the only source of dropdown options. On any
+  // failure the list is left empty and an error is shown - never a stale local
+  // copy, which would let a user pick a reason the server would then reject.
   const fetchTerminationReasons = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/masters/termination-reasons`);
-      if (!response.ok) return;
+
+      if (!response.ok) {
+        setTerminationReasons([]);
+        setReasonsError("Failed to load termination reasons. Please try again.");
+        return;
+      }
 
       const reasons = (await response.json()) as Array<{ id: string | number; name: string }>;
-      if (reasons.length > 0) {
-        setTerminationReasons(
-          reasons.map((reason) => ({
-            id: String(reason.id),
-            name: reason.name,
-          }))
-        );
-      }
+
+      // Ids arrive from the master as numbers but a <select> value is always a
+      // string, so they are normalised once here rather than at each comparison.
+      setTerminationReasons(
+        reasons.map((reason) => ({
+          id: String(reason.id),
+          name: reason.name,
+        }))
+      );
+      setReasonsError(
+        reasons.length === 0 ? "No termination reasons are configured. Please contact an administrator." : ""
+      );
     } catch (error) {
       console.error("Failed to fetch termination reasons:", error);
+      setTerminationReasons([]);
+      setReasonsError("Failed to load termination reasons. Please try again.");
     }
   };
 
@@ -498,6 +520,8 @@ export default function TerminationRequestPage() {
                 </p>
               </div>
 
+              {reasonsError && <p className="mt-2 text-sm text-red-500">{reasonsError}</p>}
+
               {saveError && <p className="mt-2 text-sm text-red-500">{saveError}</p>}
             </div>
 
@@ -622,7 +646,7 @@ export default function TerminationRequestPage() {
                 <TerminationForm
                   key={`${selectedMemberId}-${terminationRequest?.id || "new"}-${terminationRequest?.requestedDate || ""}-${terminationRequest?.effectiveDate || ""}-${terminationRequest?.terminationReasonId || ""}-${terminationRequest?.comment || ""}`}
                   ref={formRef}
-                  reasons={terminationReasons}
+                  reasons={formReasons}
                   readOnly={!!terminationRequest?.id && !isEditMode}
                   initialData={{
                     terminationReasonId: terminationRequest?.terminationReasonId || "",
