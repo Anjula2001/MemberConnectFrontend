@@ -8,7 +8,7 @@ import { Input } from "@/src/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil } from "lucide-react";
+import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil, AlertCircle } from "lucide-react";
 
 type RequestRow = {
   id: number;
@@ -24,6 +24,7 @@ type RequestRow = {
   address?: string;
   examNumber?: string;
   requestDate?: string;
+  approvalListId?: string;
 };
 
 export default function Page() {
@@ -37,7 +38,7 @@ export default function Page() {
   const [toDate, setToDate] = useState("");
   const [dateError, setDateError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("request-id");
+  const [sortBy, setSortBy] = useState("requested-date");
   const [sortAsc, setSortAsc] = useState(true);
   const [hasRetrieved, setHasRetrieved] = useState(false);
   const router = useRouter();
@@ -265,14 +266,16 @@ export default function Page() {
     // Sort
     filtered.sort((a, b) => {
       let cmp = 0;
-      if (sortBy === "student") {
-        cmp = (a.studentName || "").localeCompare(b.studentName || "");
-      } else if (sortBy === "member") {
-        cmp = (a.memberName || "").localeCompare(b.memberName || "");
-      } else if (sortBy === "university") {
-        cmp = (a.universityName || "").localeCompare(b.universityName || "");
-      } else {
-        cmp = (a.requestId || "").localeCompare(b.requestId || "");
+      if (sortBy === "requested-date") {
+        cmp = (a.requestDate || "").localeCompare(b.requestDate || "");
+      } else if (sortBy === "status") {
+        cmp = (a.status || "").localeCompare(b.status || "");
+      } else if (sortBy === "member-id") {
+        cmp = (a.memberId || "").localeCompare(b.memberId || "");
+      } else if (sortBy === "scholarship-id") {
+        const aKey = a.requestId || String(a.id);
+        const bKey = b.requestId || String(b.id);
+        cmp = aKey.localeCompare(bKey);
       }
       return sortAsc ? cmp : -cmp;
     });
@@ -627,7 +630,7 @@ export default function Page() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
               <div className="flex flex-col gap-1 md:col-span-2">
                 <label className="text-xs font-medium text-gray-600">Search (MemberName / MemberID / StudentName / StudentNIC / RequestID / ExamNumber)</label>
                 <div className="relative">
@@ -644,21 +647,31 @@ export default function Page() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-gray-600">Sort By</label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Requested Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="requested-date">Requested Date</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="member-id">Member ID</SelectItem>
+                    <SelectItem value="scholarship-id">Scholarship ID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort Order</label>
                 <div className="flex items-center gap-2">
-                  <Select value={sortBy} onValueChange={setSortBy}>
+                  <Select value={sortAsc ? "asc" : "desc"} onValueChange={(val) => setSortAsc(val === "asc")}>
                     <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Request ID" />
+                      <SelectValue placeholder="Ascending" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="request-id">Request ID</SelectItem>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="university">University</SelectItem>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                      <SelectItem value="desc">Descending</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
-                    <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
-                  </Button>
                   <Button className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap" onClick={handleRetrieve} disabled={isLoading}>
                     <RotateCcw size={14} className={isLoading ? "animate-spin" : ""} />
                     {isLoading ? "Retrieving..." : "Retrieve"}
@@ -693,6 +706,7 @@ export default function Page() {
                   <th className="py-4 px-4 font-medium">NIC</th>
                   <th className="py-4 px-4 font-medium">Member</th>
                   <th className="py-4 px-4 font-medium">Status</th>
+                  <th className="py-4 px-4 font-medium">Indicator</th>
                   <th className="py-4 px-4 font-medium">Action</th>
                 </tr>
               </thead>
@@ -700,13 +714,14 @@ export default function Page() {
               <tbody>
                 {displayed.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-4 text-gray-500">
+                    <td colSpan={8} className="text-center py-4 text-gray-500">
                       No data available
                     </td>
                   </tr>
                 ) : (
                   displayed.map((item) => {
                     const requestKey = item.requestId || String(item.id);
+                    const isDeviation = (item.status || "").toUpperCase().includes("DEVIATION") || (item.approvalListId || "").startsWith("USDL-");
 
                     return (
                       <tr key={item.id} className="border-t text-sm text-gray-600">
@@ -736,6 +751,19 @@ export default function Page() {
                           <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
                             {formatStatusLabel(item.status)}
                           </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          {isDeviation ? (
+                            <span
+                              title="Deviation Process"
+                              className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 font-semibold cursor-help"
+                            >
+                              <AlertCircle size={12} />
+                              Deviation
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
                         </td>
                         <td className="py-4 px-4">
                           {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") ? (

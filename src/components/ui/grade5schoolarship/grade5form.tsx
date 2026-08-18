@@ -27,6 +27,7 @@ export type Grade5InitialData = {
   districtCutOffMark?: number | string | null;
   marksObtained?: number;
   examinationNumber?: string;
+  hasDeviation?: boolean;
 };
 
 export type Grade5SavedRequest = Grade5InitialData & {
@@ -34,6 +35,15 @@ export type Grade5SavedRequest = Grade5InitialData & {
   requestNo?: string;
   status?: string;
   incompleteReason?: string;
+  hasDeviation?: boolean;
+};
+
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 // For Validate Form
@@ -42,10 +52,7 @@ const grade5Schema = z.object({
     .string()
     .min(1, "Requested date is required")
     .refine((dateStr) => {
-      const selectedDate = new Date(dateStr);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return selectedDate <= today;
+      return dateStr <= getTodayDateStr();
     }, "Requested date cannot be in the future"),
 
   studentName: z.string().min(1, "Student name is required"),
@@ -122,6 +129,7 @@ export interface Grade5FormRef {
   ) => Promise<Grade5SavedRequest | undefined>;
   validateAndGetData: () => Promise<Grade5RequestPayload | undefined>;
   getBirthCertificateNo: () => string;
+  getExamYear: () => number | undefined;
 }
 
 const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
@@ -343,15 +351,20 @@ useEffect(() => {
 
       if (!res.ok) {
         const errorText = await res.text();
+        let displayError = errorText;
+        try {
+          const parsed = JSON.parse(errorText);
+          if (parsed && parsed.message) {
+            displayError = parsed.message;
+          }
+        } catch (_) {}
 
-        setPopupError(errorText || "Grade 5 Scholarship Request Cannot Be Created.Member Is Not ACTIVE");
+        setPopupError(displayError || "Grade 5 Scholarship Request Cannot Be Created.");
 
         return;
       }
 
       const savedData = await res.json();
-      alert(isUpdate ? "Form updated successfully" : "Form saved successfully");
-
       return savedData;
       } catch (error: any) {
       console.error("Save error:", error);
@@ -401,6 +414,9 @@ useEffect(() => {
     getBirthCertificateNo: () => {
       return getValues("birthCertificateNo");
     },
+    getExamYear: () => {
+      return getValues("examYear");
+    },
   }));
 
   return (
@@ -446,7 +462,7 @@ useEffect(() => {
           <Input
             type="date"
             {...register("requestedDate")}
-            max={new Date().toISOString().split("T")[0]}
+            max={getTodayDateStr()}
             disabled={readOnly}
           />
           {errors.requestedDate && (

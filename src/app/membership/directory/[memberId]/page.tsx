@@ -31,6 +31,8 @@ const actionGroups = {
 		"Change Remittance",
 		"Change Nominee",
 		"Member Transfer",
+	],
+	scholarshipRequests: [
 		"Grade 5 Scholarship",
 		"University Scholarship",
 	],
@@ -66,6 +68,9 @@ export default function MemberProfilePage({
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
 	const { addToast } = useToast();
 
+	const [loansData, setLoansData] = useState<{ loans: any[]; obligations: any[] } | null>(null);
+	const [scholarship, setScholarship] = useState<any | null>(null);
+
 	// Filter out orphaned old local files ("uploads/...") for ALL documents
 	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
 
@@ -75,6 +80,8 @@ export default function MemberProfilePage({
 	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
 	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
 	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	const isRetirementAvailable = profile?.status === "ACTIVE";
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -140,6 +147,42 @@ export default function MemberProfilePage({
 					const docs = await getDocumentsByApplication(data.applicationId);
 					setDocuments(docs);
 				}
+
+				if (data.memberId) {
+					// Load Grade 5 Scholarship request
+					fetch(`http://localhost:8080/api/grade5/${data.memberId}/request`)
+						.then(res => {
+							if (!res.ok) return null;
+							return res.text().then(text => {
+								try {
+									return text ? JSON.parse(text) : null;
+								} catch (e) {
+									return null;
+								}
+							});
+						})
+						.then(scholData => {
+							if (scholData) setScholarship(scholData);
+						})
+						.catch(e => console.error("Error loading scholarship request", e));
+
+					// Load Loans and Obligations
+					fetch(`http://localhost:8080/api/members/${data.memberId}/loans`)
+						.then(res => {
+							if (!res.ok) return null;
+							return res.text().then(text => {
+								try {
+									return text ? JSON.parse(text) : null;
+								} catch (e) {
+									return null;
+								}
+							});
+						})
+						.then(loansVal => {
+							if (loansVal) setLoansData(loansVal);
+						})
+						.catch(e => console.error("Error loading loans", e));
+				}
 			} catch (err) {
 				console.error("Failed to fetch member", err);
 			} finally {
@@ -152,6 +195,19 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
+
+		if (action === "Death Donation Request" && profile.status !== "ACTIVE") {
+			return;
+		}
+
+		if (
+			action === "Record Member Death" &&
+			profile.status !== "ACTIVE" &&
+			profile.status !== "MEMBER_DEATH_RECORDED"
+		) {
+			return;
+		}
+
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
 		const routeMap: Record<string, string> = {
@@ -160,8 +216,10 @@ export default function MemberProfilePage({
 			"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
 			"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
 			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
-			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}`,
+			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}&mode=new`,
+			"Grade 5 Scholarships": `/membership/directory/grade5-scholarship${memberIdQuery}&mode=new`,
 			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"University Scholarships": `/membership/directory/university-scholarship${memberIdQuery}`,
 			"Member Termination": `/membership/directory/termination-request${memberIdQuery}`,
 			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
 			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
@@ -243,21 +301,57 @@ export default function MemberProfilePage({
 									))}
 								</div>
 
+								<div className="border-b border-neutral-300 px-5 py-2">
+									<details className="group">
+										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602] [&::-webkit-details-marker]:hidden">
+											<span>Scholarship</span>
+											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+										</summary>
+										<div className="mt-1 space-y-1 pl-3">
+											{actionGroups.scholarshipRequests.map((item) => (
+												<button
+													key={item}
+													type="button"
+													onClick={() => handleActionClick(item)}
+													className="block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+												>
+													{item}
+												</button>
+											))}
+										</div>
+									</details>
+								</div>
+
 								<div className="px-5 py-2 space-y-1">
-									{actionGroups.secondary.map((item) => (
-										<button
-											key={item}
-											onClick={() => handleActionClick(item)}
-											type="button"
-											className={
-												item === "Member Termination"
-													? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-													: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-											}
-										>
-											{item}
-										</button>
-									))}
+									{actionGroups.secondary.map((item) => {
+										const isRetirementItem = item === "Retirement";
+										const isDeathDonation = item === "Death Donation Request";
+										const isRecordMemberDeath = item === "Record Member Death";
+										const isDisabled =
+											(isDeathDonation && profile.status !== "ACTIVE") ||
+											(isRecordMemberDeath &&
+												profile.status !== "ACTIVE" &&
+												profile.status !== "MEMBER_DEATH_RECORDED") || (isRetirementItem && !isRetirementAvailable);
+										;
+
+										return (
+											<button
+												key={item}
+												onClick={() => handleActionClick(item)}
+												type="button"
+												disabled={isDisabled}
+												className={
+													item === "Member Termination"
+														? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
+														: isDisabled
+															? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+												}
+											>
+												{item}
+											</button>
+										);
+									})}
 								</div>
 							</div>
 						</details>
@@ -268,20 +362,33 @@ export default function MemberProfilePage({
 				</div>
 
 				<div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2">
-					{detailTabs.map((tab) => (
-						<button
-							key={tab}
-							type="button"
-							onClick={() => setActiveTab(tab)}
-							className={
-								activeTab === tab
-									? "rounded-sm border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm"
-									: "rounded-sm px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700"
-							}
-						>
-							{tab}
-						</button>
-					))}
+					{detailTabs.map((tab) => {
+						const hasActiveLoan = loansData?.loans?.some((loan: any) => loan.balance > 0);
+						return (
+							<button
+								key={tab}
+								type="button"
+								onClick={() => setActiveTab(tab)}
+								className={
+									activeTab === tab
+										? "rounded-sm border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm flex items-center gap-1.5"
+										: "rounded-sm px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700 flex items-center gap-1.5"
+								}
+							>
+								<span>{tab}</span>
+								{tab === "Loans" && hasActiveLoan && (
+									<span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 border border-red-200 leading-none">
+										Outstanding
+									</span>
+								)}
+								{tab === "Scholarships" && scholarship && (
+									<span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200 leading-none">
+										Active
+									</span>
+								)}
+							</button>
+						);
+					})}
 				</div>
 
 				<div className="p-4">
@@ -463,7 +570,104 @@ export default function MemberProfilePage({
 						</Card>
 					)}
 
-					{activeTab !== "Profile Details" && activeTab !== "Documents" && (
+					{activeTab === "Loans" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-6 p-4">
+								<div>
+									<h2 className="text-xl font-semibold leading-none text-[#9d3602]">
+										Loan Records
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Member outstanding loans</p>
+								</div>
+
+								{/* Loans Section */}
+								<div className="space-y-3">
+									<p className="text-sm font-semibold text-[#b2410f]">Active Outstanding Loans</p>
+									<div className="overflow-hidden rounded-lg border border-neutral-200">
+										<table className="w-full text-left text-xs">
+											<thead className="bg-neutral-50 text-neutral-700">
+												<tr className="border-b border-neutral-200">
+													<th className="px-4 py-3 font-semibold">Loan ID</th>
+													<th className="px-4 py-3 font-semibold text-right">Outstanding Balance (LKR)</th>
+												</tr>
+											</thead>
+											<tbody className="divide-y divide-neutral-200">
+												{loansData?.loans && loansData.loans.length > 0 ? (
+													loansData.loans.map((loan: any) => (
+														<tr key={loan.id} className="hover:bg-neutral-50/50">
+															<td className="px-4 py-3 font-medium text-neutral-800">
+																{loan.id}
+															</td>
+															<td className="px-4 py-3 text-right font-medium text-red-600">
+																{loan.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+															</td>
+														</tr>
+													))
+												) : (
+													<tr>
+														<td colSpan={2} className="px-4 py-6 text-center text-neutral-500">
+															No active outstanding loans found.
+														</td>
+													</tr>
+												)}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab === "Scholarships" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-6 p-4">
+								<div>
+									<h2 className="text-xl font-semibold leading-none text-[#9d3602]">
+										Scholarship Details
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
+								</div>
+
+								{scholarship ? (
+									<div className="grid grid-cols-3 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200">
+										<div className="space-y-1 p-4">
+											<p className="text-[11px] text-neutral-500">Request ID</p>
+											{scholarship.requestNo ? (
+												<button
+													type="button"
+													onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
+													className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+												>
+													{scholarship.requestNo}
+												</button>
+											) : (
+												<p className="text-sm font-medium text-neutral-800">—</p>
+											)}
+										</div>
+										<div className="space-y-1 p-4">
+											<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
+											<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
+										</div>
+										<div className="space-y-1 p-4">
+											<p className="text-[11px] text-neutral-500">Status</p>
+											<Badge className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
+												scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
+													'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
+												}`}>
+												{scholarship.status?.replace(/_/g, ' ')}
+											</Badge>
+										</div>
+									</div>
+								) : (
+									<div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
+										<p>No Grade 5 scholarship record found for this member.</p>
+									</div>
+								)}
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Loans" && activeTab !== "Scholarships" && (
 						<div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
 							<p>This tab is currently under construction.</p>
 						</div>

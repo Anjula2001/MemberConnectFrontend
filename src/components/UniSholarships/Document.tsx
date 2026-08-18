@@ -20,7 +20,7 @@ export type RequiredDocType = {
 };
 
 type DocumentProps = {
-  requestId: number | null;
+  requestId: number | string | null;
   disabled: boolean;
   isSaved: boolean;
   isSubmitted?: boolean;
@@ -30,6 +30,7 @@ type DocumentProps = {
 };
 
 export default function Document({
+  requestId,
   disabled,
   isSaved,
   isSubmitted,
@@ -38,7 +39,7 @@ export default function Document({
   documentTypes,
 }: DocumentProps) {
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
-  
+
   //Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -54,12 +55,17 @@ export default function Document({
     },
     [disabled, selectedDocumentType, setFiles]
   );
-  
+
   //Initialize react-dropzone
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: false,
     disabled: disabled || !selectedDocumentType,
+    accept: {
+      "application/pdf": [".pdf"],
+      "image/png": [".png"],
+      "image/jpeg": [".jpg", ".jpeg"],
+    },
   });
 
   //Handle file removal
@@ -128,7 +134,7 @@ export default function Document({
             <UploadCloud className="h-8 w-8 text-[#953002] mb-2" />
             <p>
               {selectedDocumentType
-                ? "Upload selected document"
+                ? "Upload selected document (PDF, PNG, JPG)"
                 : "Select document type before uploading"}
             </p>
           </div>
@@ -165,8 +171,10 @@ export default function Document({
                   <td className="px-3 py-2">
                     {item.id ? (
                       <a
-                        href={`http://localhost:8080/api/documents/download/${item.id}`}
-                        className="font-medium text-blue-600 underline"
+                        href={`http://localhost:8080/api/uploaded-documents/download/${item.id}?requestId=${encodeURIComponent(requestId ? String(requestId) : "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-600 underline hover:text-blue-800"
                       >
                         {item.file.name}
                       </a>

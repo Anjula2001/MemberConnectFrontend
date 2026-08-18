@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Loader2, Edit3, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation'; // Added for navigation
+import { Search, Loader2, Edit3, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { createBoardApprovalList } from '@/lib/api/boardApprovalLists';
 import { getBoardMeetings, type BoardMeetingDTO } from '@/lib/api/boardMeeting';
 import { getMemberApplications, type MemberApplicationDTO } from '@/lib/api/memberApplications';
 
 interface RequestData {
+  newnomineeNIC: string | undefined;
+  newNomineeName: string;
   id?: number;
   Id?: number;
   ID?: number;
@@ -368,7 +370,8 @@ export default function ProfileChangeRequests() {
 
   const handleRetrieve = async () => {
     setLoading(true);
-    setResults([]); // Clear previous results
+    setResults([]);
+    setSelectedRequestIds([]);
     try {
       if (requestType === 'Basic Profile Changes') {
         const response = await axios.get('http://localhost:8080/api/v2/getRequests', {
@@ -398,7 +401,7 @@ export default function ProfileChangeRequests() {
         alert("This request type is not yet connected to the backend.");
         setHasSearched(false);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error:", error);
       alert("Failed to fetch data.");
     } finally {
@@ -427,7 +430,7 @@ export default function ProfileChangeRequests() {
         return rowId !== id;
       }));
       alert("Request deleted successfully.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error during deletion:", error);
       alert("Failed to delete the request. Please ensure the backend delete endpoints are configured correctly.");
     }
@@ -464,7 +467,8 @@ export default function ProfileChangeRequests() {
               <option>Basic Profile Changes</option>
               <option>Name Changes</option>
               <option>Nomminne Changes</option>
-              <option>Remittance Amount Changes</option>
+              <option>Remmitance Amount Changes</option>
+              <option>Member Transfer</option>
             </select>
           </div>
           <div className="space-y-2">
@@ -555,7 +559,7 @@ export default function ProfileChangeRequests() {
                       </td>
                     )}
                     <td className="p-4">
-                      <button onClick={() => { console.log("Editing row:", row); handleEdit(rowId); }} className="text-blue-600 font-bold hover:underline">
+                      <button onClick={() => rowId !== undefined && handleEdit(rowId)} className="text-blue-600 font-bold hover:underline">
                         {requestType === 'Name Changes' ? 'NCR' : requestType === 'Nomminne Changes' ? 'NMR' : 'PCR'}-2026-{rowId ? rowId.toString().padStart(3, '0') : '000'}
                       </button>
                     </td>
@@ -566,9 +570,9 @@ export default function ProfileChangeRequests() {
                       </>
                     ) : requestType === 'Nomminne Changes' ? (
                       <>
-                        <td className="p-4 font-bold">{row.newnommineName || '-'}</td>
+                        <td className="p-4 font-bold">{row.newNomineeName || '-'}</td>
                         <td className="p-4 text-gray-600">{row.newRelationship || row.relationship || '-'}</td>
-                        <td className="p-4 text-gray-600">{row.newNomineeNIC || row.nic || '-'}</td>
+                        <td className="p-4 text-gray-600">{row.newnomineeNIC || row.nic || '-'}</td>
                         <td className="p-4 text-gray-600 truncate max-w-[150px]" title={row.newNomineeAddress || row.address || ''}>
                           {row.newNomineeAddress || row.address || '-'}
                         </td>
@@ -591,10 +595,10 @@ export default function ProfileChangeRequests() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-3">
-                        <button onClick={() => handleDelete(rowId)} className="text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors">
+                        <button onClick={() => rowId !== undefined && handleDelete(rowId)} className="text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors">
                           <Trash2 className="w-4 h-4" /> Delete
                         </button>
-                        <button onClick={() => { console.log("Editing row:", row); handleEdit(rowId); }} className="text-gray-600 hover:text-[#8B3205] flex items-center gap-1 transition-colors">
+                        <button onClick={() => rowId !== undefined && handleEdit(rowId)} className="text-gray-600 hover:text-[#8B3205] flex items-center gap-1 transition-colors">
                           <Edit3 className="w-4 h-4" /> Edit
                         </button>
                       </div>
@@ -602,7 +606,7 @@ export default function ProfileChangeRequests() {
                   </tr>
                 );
               })}
-              {results.length === 0 && (
+              {displayedResults.length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-gray-500">
                     No requests found matching your criteria.

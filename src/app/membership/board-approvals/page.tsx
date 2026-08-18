@@ -156,6 +156,25 @@ export default function BoardApprovalsPage() {
     };
 
     fetchMeetings();
+    // If a listId query param is present, auto-open it after lists are loaded
+    const params = new URLSearchParams(window.location.search);
+    const listIdParam = params.get('listId');
+    if (listIdParam) {
+      (async () => {
+        try {
+          const lists = await getBoardApprovalLists();
+          setApprovalLists(lists);
+          if (lists && lists.length > 0) {
+            const found = lists.find(l => l.listId === listIdParam);
+            if (found) {
+              setSelectedApprovalListId(found.listId ?? '');
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    }
   }, []);
 
   // Toast timeout effect

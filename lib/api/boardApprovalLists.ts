@@ -38,7 +38,7 @@ export interface ProcessBoardApprovalListPayload {
 
 const BASE_PATH = "/api/board-approval-lists";
 
-export async function createBoardApprovalList(payload: BoardApprovalListDTO) {
+export async function createBoardApprovalList(payload: BoardApprovalListCreatePayload) {
   const { data } = await apiClient.post<BoardApprovalListDTO>(
     `${BASE_PATH}/createBoardApprovalList`,
     payload
@@ -104,7 +104,6 @@ export async function getNomineeChangeRequestsByListId(listId: string) {
   );
   return data;
 }
-
 export async function processBoardApprovalList(
   listId: string,
   payload: ProcessBoardApprovalListPayload
