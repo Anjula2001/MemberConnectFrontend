@@ -17,6 +17,14 @@ export interface MemberDTO {
   applicationId?: number;         // FK to Member_Application — link approved application to member
   memberType?: string;
   status?: MemberStatus;
+  // The District Office branch this member registered/is administered through —
+  // distinct from educationalDistrict (the member's working district).
+  submissionLocation?: string;
+  // Membership documentation tracking (MR15-18). Null means not yet done.
+  membershipCardPrintedAt?: string | null;
+  signatureCardPrintedAt?: string | null;
+  passbookPrintedAt?: string | null;
+  documentsDispatchedAt?: string | null;
   membershipStartDate?: string;   // ISO date string from backend
   title?: string;
   fullName?: string;

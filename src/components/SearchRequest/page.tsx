@@ -222,7 +222,7 @@ export default function ProfileChangeRequests() {
                         <td className="p-4 font-bold">{row.newnommineName || '-'}</td>
                         <td className="p-4 text-gray-600">{row.newRelationship || row.relationship || '-'}</td>
                         <td className="p-4 text-gray-600">{row.newNomineeNIC || row.nic || '-'}</td>
-                        <td className="p-4 text-gray-600 truncate max-w-[150px]" title={row.newNomineeAddress || row.address || ''}>
+                        <td className="p-4 text-gray-600 truncate max-w-37.5" title={row.newNomineeAddress || row.address || ''}>
                           {row.newNomineeAddress || row.address || '-'}
                         </td>
                       </>
