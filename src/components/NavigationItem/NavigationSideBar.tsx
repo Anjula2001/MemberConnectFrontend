@@ -27,10 +27,12 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  CreditCard,
   FileText,
   GraduationCap,
   Heart,
   Home,
+  Send,
   SlidersHorizontal,
   UserCheck,
   UserCog,
@@ -85,6 +87,11 @@ export default function NavigationSideBar() {
               url: "/membership/directory",
               icon: Users,
             },
+            {
+              title: "Documentation Dispatch",
+              url: "/membership/dispatch",
+              icon: Send,
+            },
           ],
         },
       ];
@@ -116,6 +123,26 @@ export default function NavigationSideBar() {
               title: "Member Directory",
               url: "/membership/directory",
               icon: Users,
+            },
+            {
+              title: "Print Membership Cards",
+              url: "/membership/print-membership-cards",
+              icon: CreditCard,
+            },
+            {
+              title: "Print Signature Cards",
+              url: "/membership/print-signature-cards",
+              icon: CreditCard,
+            },
+            {
+              title: "Print Passbooks",
+              url: "/membership/print-passbooks",
+              icon: CreditCard,
+            },
+            {
+              title: "Documentation Dispatch",
+              url: "/membership/dispatch",
+              icon: Send,
             },
             {
               title: "Profile Changes",
@@ -164,6 +191,26 @@ export default function NavigationSideBar() {
               title: "Member Directory",
               url: "/membership/directory",
               icon: Users,
+            },
+            {
+              title: "Print Membership Cards",
+              url: "/membership/print-membership-cards",
+              icon: CreditCard,
+            },
+            {
+              title: "Print Signature Cards",
+              url: "/membership/print-signature-cards",
+              icon: CreditCard,
+            },
+            {
+              title: "Print Passbooks",
+              url: "/membership/print-passbooks",
+              icon: CreditCard,
+            },
+            {
+              title: "Documentation Dispatch",
+              url: "/membership/dispatch",
+              icon: Send,
             },
             {
               title: "Profile Changes",
