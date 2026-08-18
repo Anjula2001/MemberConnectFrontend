@@ -39,6 +39,10 @@ import {
   type BoardApprovalListDTO,
 } from "@/lib/api/boardApprovalLists";
 import {
+  getTerminationApprovalLists,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
+import {
   getMemberApplicationById,
   updateMemberApplicationPartial,
   type MemberApplicationDTO,
@@ -52,6 +56,18 @@ type BoardMeeting = BoardMeetingDTO & {
 type BoardTab = "meetings" | "approval-lists";
 
 type ApplicationDecision = "Approve" | "Reject";
+
+type ApprovalListKind = "membership" | "termination";
+
+type ApprovalListRow = {
+  kind: ApprovalListKind;
+  listId: string;
+  status?: string;
+  boardMeetingId?: number;
+  boardMeetingDate?: string;
+  createdAt?: string;
+  itemCount: number;
+};
 
 type ApprovalApplication = {
   id: number;
@@ -98,7 +114,11 @@ export default function BoardApprovalsPage() {
   const [isRetrievingApplications, setIsRetrievingApplications] = useState(false);
   const [isDeletingSelectedList, setIsDeletingSelectedList] = useState(false);
   const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
+  const [terminationApprovalLists, setTerminationApprovalLists] = useState<
+    TerminationApprovalListDTO[]
+  >([]);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
+  const [selectedListKind, setSelectedListKind] = useState<ApprovalListKind>("membership");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
   const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
   const [applicationDecisions, setApplicationDecisions] = useState<Record<number, { decision: ApplicationDecision; rejectReason: string }>>({});
@@ -328,11 +348,43 @@ export default function BoardApprovalsPage() {
     }
   };
 
+  const combinedApprovalLists = useMemo<ApprovalListRow[]>(() => {
+    const membershipRows: ApprovalListRow[] = approvalLists
+      .filter((item) => Boolean(item.listId))
+      .map((item) => ({
+        kind: "membership" as const,
+        listId: item.listId as string,
+        status: item.status,
+        boardMeetingId: item.boardMeetingId,
+        boardMeetingDate: item.boardMeetingDate,
+        createdAt: item.createdAt,
+        itemCount: item.applicationIds?.length ?? 0,
+      }));
+
+    const terminationRows: ApprovalListRow[] = terminationApprovalLists
+      .filter((item) => Boolean(item.listId))
+      .map((item) => ({
+        kind: "termination" as const,
+        listId: item.listId as string,
+        status: item.status,
+        boardMeetingId: item.boardMeetingId,
+        boardMeetingDate: item.boardMeetingDate,
+        createdAt: item.createdAt,
+        itemCount: item.requestNos?.length ?? 0,
+      }));
+
+    return [...membershipRows, ...terminationRows].sort((left, right) => {
+      const leftDate = left.createdAt ?? left.boardMeetingDate ?? "";
+      const rightDate = right.createdAt ?? right.boardMeetingDate ?? "";
+      return rightDate.localeCompare(leftDate);
+    });
+  }, [approvalLists, terminationApprovalLists]);
+
   const filteredApprovalLists = useMemo(() => {
-    if (dateFilter === "all") return approvalLists;
+    if (dateFilter === "all") return combinedApprovalLists;
 
     const now = new Date();
-    return approvalLists.filter((item) => {
+    return combinedApprovalLists.filter((item) => {
       const itemDate = new Date(item.createdAt ?? item.boardMeetingDate ?? "");
       if (dateFilter === "thisMonth") {
         return (
@@ -351,7 +403,7 @@ export default function BoardApprovalsPage() {
 
       return true;
     });
-  }, [approvalLists, dateFilter]);
+  }, [combinedApprovalLists, dateFilter]);
 
   const actualMeetingDateOptions = useMemo(() => {
     const unique = new Map<string, { value: string; label: string }>();
@@ -376,22 +428,50 @@ export default function BoardApprovalsPage() {
   const handleRetrieveApprovalLists = async () => {
     try {
       setIsRetrievingLists(true);
-      const lists = await getBoardApprovalLists();
-      setApprovalLists(lists);
+      const [membershipResult, terminationResult] = await Promise.allSettled([
+        getBoardApprovalLists(),
+        getTerminationApprovalLists(),
+      ]);
+
+      if (membershipResult.status === "fulfilled") {
+        setApprovalLists(membershipResult.value);
+      } else {
+        console.error("Error retrieving board approval lists:", membershipResult.reason);
+      }
+
+      if (terminationResult.status === "fulfilled") {
+        setTerminationApprovalLists(terminationResult.value);
+      } else {
+        console.error(
+          "Error retrieving termination approval lists:",
+          terminationResult.reason
+        );
+      }
+
+      const membershipFailed = membershipResult.status === "rejected";
+      const terminationFailed = terminationResult.status === "rejected";
+      if (membershipFailed || terminationFailed) {
+        setToastMessage(
+          membershipFailed && terminationFailed
+            ? "Failed to retrieve approval lists"
+            : membershipFailed
+              ? "Failed to retrieve membership approval lists"
+              : "Failed to retrieve termination approval lists"
+        );
+        setShowProcessToast(true);
+      }
+
       setSelectedApprovalListId("");
+      setSelectedListKind("membership");
       setApplicationsRetrieved(false);
       setSelectedListApplications([]);
-    } catch (error) {
-      console.error("Error retrieving board approval lists:", error);
-      setToastMessage("Failed to retrieve board approval lists");
-      setShowProcessToast(true);
     } finally {
       setIsRetrievingLists(false);
     }
   };
 
   const handleRetrieveApplications = async () => {
-    if (!selectedApprovalListId) return;
+    if (!selectedApprovalListId || selectedListKind !== "membership") return;
 
     try {
       setIsRetrievingApplications(true);
@@ -415,6 +495,13 @@ export default function BoardApprovalsPage() {
     } finally {
       setIsRetrievingApplications(false);
     }
+  };
+
+  const handleOpenTerminationList = (listId: string) => {
+    if (!listId) return;
+    router.push(
+      `/membership/termination/approval-lists?listId=${encodeURIComponent(listId)}`
+    );
   };
 
   const handleDeleteSelectedList = () => {
@@ -857,11 +944,11 @@ export default function BoardApprovalsPage() {
                   ) : (
                     filteredApprovalLists.map((item) => (
                       <button
-                        key={item.listId ?? item.id ?? item.boardMeetingId ?? "approval-list"}
+                        key={`${item.kind}-${item.listId}`}
                         type="button"
                         onClick={() => {
-                          if (!item.listId) return;
                           setSelectedApprovalListId(item.listId);
+                          setSelectedListKind(item.kind);
                           setApplicationsRetrieved(false);
                           setSelectedListApplications([]);
                           setApplicationDecisions({});
@@ -873,10 +960,26 @@ export default function BoardApprovalsPage() {
                         }`}
                       >
                         <div className="leading-tight">
-                          <p className="text-sm font-medium text-gray-800">{item.listId ?? "-"}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium text-gray-800">{item.listId}</p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                item.kind === "termination"
+                                  ? "bg-[#f7ede8] text-[#953002]"
+                                  : "bg-blue-50 text-blue-700"
+                              }`}
+                            >
+                              {item.kind === "termination" ? "Termination" : "Membership"}
+                            </span>
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {item.boardMeetingDate ?? "-"}
                             {item.boardMeetingId ? ` (${item.boardMeetingId})` : ""}
+                            {item.itemCount
+                              ? ` · ${item.itemCount} ${
+                                  item.kind === "termination" ? "requests" : "applications"
+                                }`
+                              : ""}
                           </p>
                         </div>
                         <span className="rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
@@ -892,9 +995,17 @@ export default function BoardApprovalsPage() {
                     type="button"
                     className="h-9 w-full bg-[#953002] text-white hover:bg-[#7a2700]"
                     disabled={!selectedApprovalListId || isRetrievingApplications}
-                    onClick={handleRetrieveApplications}
+                    onClick={() =>
+                      selectedListKind === "termination"
+                        ? handleOpenTerminationList(selectedApprovalListId)
+                        : handleRetrieveApplications()
+                    }
                   >
-                    {isRetrievingApplications ? "Retrieving..." : "Retrieve Applications"}
+                    {selectedListKind === "termination"
+                      ? "Open Termination Requests"
+                      : isRetrievingApplications
+                        ? "Retrieving..."
+                        : "Retrieve Applications"}
                   </Button>
                 </div>
               </CardContent>
@@ -902,15 +1013,40 @@ export default function BoardApprovalsPage() {
 
             <Card className="rounded-xl py-0 shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
-                <CardTitle className="text-4 font-bold text-[#953002]">Applications</CardTitle>
+                <CardTitle className="text-4 font-bold text-[#953002]">
+                  {selectedListKind === "termination" && selectedApprovalListId
+                    ? "Termination Requests"
+                    : "Applications"}
+                </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  {applicationsRetrieved && selectedApprovalListId
-                    ? `Showing ${selectedListApplications.length} applications`
-                    : "Click 'Retrieve Applications' to view data"}
+                  {selectedListKind === "termination" && selectedApprovalListId
+                    ? "Open this list to review its termination requests"
+                    : applicationsRetrieved && selectedApprovalListId
+                      ? `Showing ${selectedListApplications.length} applications`
+                      : "Click 'Retrieve Applications' to view data"}
                 </p>
               </CardHeader>
               <CardContent className="px-5 pb-5">
-                {!selectedApprovalListId || !applicationsRetrieved ? (
+                {selectedListKind === "termination" && selectedApprovalListId ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                    <FileText size={36} className="text-gray-300" />
+                    <p className="text-sm">
+                      <span className="font-medium text-gray-800">{selectedApprovalListId}</span> is a
+                      termination approval list.
+                    </p>
+                    <p className="text-xs">
+                      Its requests are reviewed on the termination approvals screen.
+                    </p>
+                    <Button
+                      type="button"
+                      className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                      onClick={() => handleOpenTerminationList(selectedApprovalListId)}
+                    >
+                      Open Termination Requests
+                      <ArrowRight size={14} />
+                    </Button>
+                  </div>
+                ) : !selectedApprovalListId || !applicationsRetrieved ? (
                   <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
                     <FileText size={36} className="text-gray-300" />
                     <p>Select a list and click Retrieve Applications</p>
