@@ -255,6 +255,11 @@ export default function NavigationSideBar() {
               url: "/admin/membership-eligibility",
               icon: SlidersHorizontal,
             },
+            {
+              title: "Member Accounts",
+              url: "/admin/member-accounts",
+              icon: Wallet,
+            },
           ],
         },
       ];
@@ -273,6 +278,11 @@ export default function NavigationSideBar() {
           title: "Administration",
           icon: UserCog,
           subMenu: [
+            {
+              title: "Member Accounts",
+              url: "/admin/member-accounts",
+              icon: Wallet,
+            },
             {
               title: "Remittance Master",
               url: "/admin/remittance-master",

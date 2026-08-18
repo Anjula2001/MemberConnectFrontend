@@ -54,6 +54,13 @@ type ReportDefinition = {
   available: boolean;
   /** Shown instead of an action when the report is not yet implemented. */
   pendingNote?: string;
+  /**
+   * Where this report is actually produced, when that is a workflow screen rather
+   * than here. A membership card belongs to a person and is reached from that
+   * person's row, so Reports links to the screen instead of duplicating it.
+   */
+  href?: string;
+  hrefLabel?: string;
 };
 
 const REPORTS: ReportDefinition[] = [
@@ -73,8 +80,9 @@ const REPORTS: ReportDefinition[] = [
     description:
       "Printable membership card for an activated member, issued once the member's accounts have been created.",
     roles: CARD_PRINTING_ROLES,
-    available: false,
-    pendingNote: "Printed from Membership \u2192 Print Membership Cards. The printable card template is pending design sign-off.",
+    available: true,
+    href: "/membership/print-membership-cards",
+    hrefLabel: "Go to Print Membership Cards",
   },
   {
     section: "5.3",
@@ -83,8 +91,9 @@ const REPORTS: ReportDefinition[] = [
     description:
       "Signature card posted to the member for signing, then scanned back onto the membership profile.",
     roles: CARD_PRINTING_ROLES,
-    available: false,
-    pendingNote: "Printed from Membership \u2192 Print Signature Cards. The printable card template is pending design sign-off.",
+    available: true,
+    href: "/membership/print-signature-cards",
+    hrefLabel: "Go to Print Signature Cards",
   },
   {
     section: "5.4",
@@ -93,8 +102,11 @@ const REPORTS: ReportDefinition[] = [
     description:
       "PDF of the membership records currently retrieved on the Membership Profile Search screen.",
     roles: REGISTRATION_ROLES,
-    available: false,
-    pendingNote: "Downloaded from the Member Directory screen (not yet built).",
+    available: true,
+    // Filter-driven: the report reflects whatever the directory has retrieved, so
+    // Reports sends you there to set the criteria rather than duplicating them.
+    href: "/membership/directory",
+    hrefLabel: "Go to Member Directory",
   },
   {
     section: "5.5",
@@ -223,7 +235,17 @@ export default function ReportsPage() {
                       </p>
                     </div>
 
-                    {report.available && isDispatchReport ? (
+                    {report.available && report.href ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 px-3 text-sm"
+                        onClick={() => window.open(report.href, "_blank")}
+                      >
+                        <Printer className="size-4" />
+                        {report.hrefLabel ?? "Open"}
+                      </Button>
+                    ) : report.available && isDispatchReport ? (
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-neutral-600">Dispatch</label>
                         <Select

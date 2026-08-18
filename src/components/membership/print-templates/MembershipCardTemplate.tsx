@@ -52,7 +52,7 @@ export default function MembershipCardTemplate({ member }: { member: MemberDTO }
         background: "#ffffff",
         borderRadius: "2.8mm",
         overflow: "hidden",
-        fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-geist-sans), system-ui, -apple-system, 'Segoe UI', sans-serif",
         WebkitPrintColorAdjust: "exact",
         printColorAdjust: "exact",
       }}
