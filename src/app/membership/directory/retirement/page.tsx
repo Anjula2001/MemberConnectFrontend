@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "../../../../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "../../../../components/ui/select";
 import RetirementForm, { RetirementFormRef, } from "../../../../components/ui/retirement/retirementform";
 import DocumentUpload from "../../../../components/ui/documentupload";
 import { MarkIncompleteModal } from "../../../../components/ui/grade5schoolarship/MarkIncomplete";
@@ -85,6 +86,7 @@ export default function RetirementPage() {
 
   const [retirementRequest, setRetirementRequest] = useState<RetirementRequest | null>(null);
   const [isCurrentSessionSaved, setIsCurrentSessionSaved] = useState(false);
+  const [selectedViewModeStatus, setSelectedViewModeStatus] = useState<string>("");
 
   const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
@@ -97,12 +99,47 @@ export default function RetirementPage() {
   const showApprovalActions = retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
   const hideRequestEditActions = showApprovalActions;
   const isViewRequestMode = pageMode === "view" && !!requestId;
+
+  const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
+    NEW: [
+      { status: "INCOMPLETE", label: "Mark Incomplete" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INCOMPLETE: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    SUBMITTED_FOR_APPROVAL: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    REJECTED: [
+      { status: "NEW", label: "Return to New" },
+      { status: "INACTIVE", label: "Mark Inactive" },
+    ],
+    INACTIVE: [
+      { status: "NEW", label: "Reopen" },
+    ],
+  };
+
+  const viewModeStatusActions = retirementRequest?.status
+    ? VIEW_MODE_STATUS_TRANSITIONS[retirementRequest.status] || []
+    : [];
+
+  const showViewModeStatusActions =
+    !!retirementRequest?.id &&
+    !isEditMode &&
+    !isCurrentSessionSaved &&
+    isViewRequestMode &&
+    viewModeStatusActions.length > 0;
+
   const showDisabledRequestActions =
     !!retirementRequest?.id &&
     !isEditMode &&
     !isCurrentSessionSaved &&
-    !showApprovalActions &&
-    (isViewRequestMode);
+    isViewRequestMode &&
+    viewModeStatusActions.length === 0;
+
   const showRequestEditActions =
     !hideRequestEditActions &&
     !showDisabledRequestActions &&
@@ -121,7 +158,7 @@ export default function RetirementPage() {
           const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
           if (!res.ok) throw new Error("Failed to fetch members");
           const members = await res.json();
-          const activeMember = members.find((m: any) => m.status === "ACTIVE" || m.status === "active");
+          const activeMember = members.find((m: { status: string; memberId: string }) => m.status === "ACTIVE" || m.status === "active");
           if (activeMember) {
             setSelectedMemberId(activeMember.memberId);
           } else if (members.length > 0) {
@@ -146,6 +183,7 @@ export default function RetirementPage() {
       fetchMemberBankAccounts();
       fetchRetirementRequests();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMode, selectedMemberId]);
 
   //Fetches the selected member details for the page header and member panel.
@@ -230,9 +268,17 @@ export default function RetirementPage() {
   // Loads the existing retirement request for the selected member.
   const fetchRetirementRequests = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
-      );
+      let response;
+
+      if (requestId) {
+        response = await fetch(
+          `${API_BASE_URL}/api/retirement-requests/request/${requestId}`
+        );
+      } else {
+        response = await fetch(
+          `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
+        );
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -240,12 +286,18 @@ export default function RetirementPage() {
         return;
       }
 
-      const requests: RetirementRequest[] = await response.json();
+      if (requestId) {
+        const request: RetirementRequest = await response.json();
+        setRetirementRequest(request);
+      } else {
+        const requests: RetirementRequest[] = await response.json();
 
-      if (requests.length > 0) {
-        setRetirementRequest(requests[0]);
-        setIsCurrentSessionSaved(false);
+        if (requests.length > 0) {
+          setRetirementRequest(requests[0]);
+        }
       }
+
+      setIsCurrentSessionSaved(false);
     } catch (error) {
       console.error("Fetch retirement request error:", error);
     }
@@ -409,6 +461,76 @@ export default function RetirementPage() {
     }
   };
 
+  // Status change modal state
+  const [statusConfirmModal, setStatusConfirmModal] = useState<{
+    isOpen: boolean;
+    newStatus: string;
+    statusLabel: string;
+  }>({
+    isOpen: false,
+    newStatus: "",
+    statusLabel: "",
+  });
+
+  const handleChangeStatus = (newStatus: string) => {
+    if (!retirementRequest?.requestNo) {
+      setSaveError("Please open a retirement request before changing status.");
+      return;
+    }
+
+    const statusLabel =
+      newStatus === "INACTIVE"
+        ? "Inactive"
+        : newStatus === "INCOMPLETE"
+          ? "Incomplete"
+          : newStatus === "NEW"
+            ? "New"
+            : newStatus === "SUBMITTED_FOR_APPROVAL"
+              ? "Submitted for Approval"
+              : newStatus;
+
+    setStatusConfirmModal({
+      isOpen: true,
+      newStatus,
+      statusLabel,
+    });
+  };
+
+  const confirmChangeStatus = async () => {
+    const { newStatus } = statusConfirmModal;
+    setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
+
+    if (!retirementRequest?.requestNo) return;
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/status`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        setSaveError(errorData.message || "Failed to change retirement request status.");
+        return;
+      }
+
+      const updatedRequest: RetirementRequest = await response.json();
+
+      setRetirementRequest(updatedRequest);
+      setSaveError("");
+      await fetchMember();
+    } catch (error) {
+      console.error("Change status error:", error);
+      setSaveError("Failed to change retirement request status.");
+    }
+  };
+
   // Approves or rejects a submitted retirement request.
   const handleApprovalAction = async (
     action: "approve" | "reject",
@@ -490,8 +612,8 @@ export default function RetirementPage() {
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
-        <div className="min-h-[100vh] flex-1 px-14 py-10 rounded-xl bg-muted/50 p-6">
+      <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
+        <div className="min-h-[100vh] flex-1 rounded-xl w-full px-6 py-6 bg-muted/50">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-2xl font-bold text-[#953002] ">
@@ -561,6 +683,35 @@ export default function RetirementPage() {
               )}
 
               {/*  */}
+              {showViewModeStatusActions && (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={selectedViewModeStatus}
+                    onValueChange={async (value) => {
+                      setSelectedViewModeStatus(value);
+                      if (value === "INCOMPLETE") {
+                        setOpenModal(true);
+                        setSelectedViewModeStatus("");
+                      } else {
+                        await handleChangeStatus(value);
+                        setSelectedViewModeStatus("");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-52">
+                      <SelectValue placeholder="Change status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {viewModeStatusActions.map((action) => (
+                        <SelectItem key={action.status} value={action.status}>
+                          {action.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {showDisabledRequestActions && (
                 <>
                   <Button
@@ -818,6 +969,7 @@ export default function RetirementPage() {
                                     <Button
                                       type="button"
                                       size="sm"
+                                      className="bg-[#953002] text-white hover:bg-gray-100"
                                       onClick={() => {
                                         setEditingBankAccount(account);
                                         setOpenBankModal(true);
@@ -925,6 +1077,39 @@ export default function RetirementPage() {
                 setEditingBankAccount(null);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {statusConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg space-y-4">
+            <h3 className="text-lg font-bold text-[#953002]">
+              Change Retirement Request Status
+            </h3>
+
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Change retirement request status to{" "}
+              <span className="font-semibold text-gray-900">{statusConfirmModal.statusLabel}</span>?
+              This action may update the member&apos;s profile status.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" })}
+                className="bg-white text-black hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmChangeStatus}
+                className="bg-[#953002] text-white hover:bg-[#672102]"
+              >
+                OK
+              </Button>
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Building2,
+  ChevronDown,
+  Landmark,
+  Pencil,
+  Send,
+} from "lucide-react";
+
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
 import {
@@ -20,177 +30,679 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
-import { Eye } from "lucide-react";
+import { Checkbox } from "@/src/components/ui/checkbox";
+import {
+  searchDeathDonationRequests,
+  type DeathDonationRequest,
+} from "@/lib/api/deathDonation";
 
-interface DeathDonationRequest {
-  id: string;
-  requestId: string;
-  reqDate: string;
-  deceased: string;
-  member: string;
-  status: "SUBMITTED_APPROVAL" | "DISTRICT_COMMITTEE" | "P_AND_D_COMMITTEE";
+const TODAY = new Date().toISOString().split("T")[0];
+
+type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
+type SortBy = "requestedDate" | "deceasedDate" | "status" | "memberId";
+type SortOrder = "asc" | "desc";
+type DeathDonationStatus =
+  | "NEW"
+  | "INCOMPLETE"
+  | "SUBMITTED_FOR_APPROVAL"
+  | "DISTRICT_COMMITTEE"
+  | "PD_COMMITTEE"
+  | "REJECTED"
+  | "APPROVED"
+  | "INACTIVE";
+
+const DEFAULT_STATUSES: DeathDonationStatus[] = [
+  "NEW",
+  "SUBMITTED_FOR_APPROVAL",
+  "DISTRICT_COMMITTEE",
+  "PD_COMMITTEE",
+  "APPROVED",
+  "REJECTED",
+];
+
+const NON_EDITABLE_STATUSES: DeathDonationStatus[] = [
+  "SUBMITTED_FOR_APPROVAL",
+  "DISTRICT_COMMITTEE",
+  "PD_COMMITTEE",
+  "APPROVED",
+  "REJECTED",
+  "INACTIVE",
+];
+
+const STATUS_OPTIONS: { value: DeathDonationStatus; label: string }[] = [
+  { value: "NEW", label: "New" },
+  { value: "INCOMPLETE", label: "Incomplete" },
+  { value: "SUBMITTED_FOR_APPROVAL", label: "Submitted for Approval" },
+  { value: "DISTRICT_COMMITTEE", label: "District Committee" },
+  { value: "PD_COMMITTEE", label: "P&D Committee" },
+  { value: "REJECTED", label: "Rejected" },
+  { value: "APPROVED", label: "Approved" },
+  { value: "INACTIVE", label: "Inactive" },
+];
+
+const STATUS_LABELS: Record<string, string> = {
+  NEW: "New",
+  INCOMPLETE: "Incomplete",
+  SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
+  DISTRICT_COMMITTEE: "District Committee",
+  PD_COMMITTEE: "P&D Committee",
+  P_AND_D_COMMITTEE: "P&D Committee",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  INACTIVE: "Inactive",
+};
+
+const STATUS_BADGE_CLASSES: Record<string, string> = {
+  NEW: "bg-slate-100 text-slate-800 hover:bg-slate-100",
+  INCOMPLETE: "bg-orange-100 text-orange-800 hover:bg-orange-100",
+  SUBMITTED_FOR_APPROVAL: "bg-green-100 text-green-800 hover:bg-green-100",
+  DISTRICT_COMMITTEE: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100",
+  PD_COMMITTEE: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+  P_AND_D_COMMITTEE: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+  APPROVED: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
+  REJECTED: "bg-red-100 text-red-800 hover:bg-red-100",
+  INACTIVE: "bg-gray-100 text-gray-700 hover:bg-gray-100",
+};
+
+const AVAILABLE_LOCATIONS = [
+  { id: "all", name: "All Locations" },
+  { id: "colombo", name: "Colombo" },
+  { id: "gampaha", name: "Gampaha" },
+  { id: "kalutara", name: "Kalutara" },
+  { id: "kandy", name: "Kandy" },
+  { id: "matale", name: "Matale" },
+  { id: "nuwara_eliya", name: "Nuwara Eliya" },
+  { id: "galle", name: "Galle" },
+  { id: "matara", name: "Matara" },
+  { id: "hambantota", name: "Hambantota" },
+  { id: "jaffna", name: "Jaffna" },
+  { id: "kilinochchi", name: "Kilinochchi" },
+  { id: "mannar", name: "Mannar" },
+  { id: "vavuniya", name: "Vavuniya" },
+  { id: "mullaitivu", name: "Mullaitivu" },
+  { id: "batticaloa", name: "Batticaloa" },
+  { id: "ampara", name: "Ampara" },
+  { id: "trincomalee", name: "Trincomalee" },
+  { id: "kurunegala", name: "Kurunegala" },
+  { id: "puttalam", name: "Puttalam" },
+  { id: "anuradhapura", name: "Anuradhapura" },
+  { id: "polonnaruwa", name: "Polonnaruwa" },
+  { id: "badulla", name: "Badulla" },
+  { id: "monaragala", name: "Monaragala" },
+  { id: "ratnapura", name: "Ratnapura" },
+  { id: "kegalle", name: "Kegalle" },
+];
+
+function getCurrentMonthRange() {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    from: firstDay.toISOString().split("T")[0],
+    to: lastDay.toISOString().split("T")[0],
+  };
 }
 
-type StatusFilter = "all" | "SUBMITTED_APPROVAL" | "DISTRICT_COMMITTEE" | "P_AND_D_COMMITTEE";
+function getThisAndLastMonthRange() {
+  const now = new Date();
+  const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastDayThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    from: firstDayLastMonth.toISOString().split("T")[0],
+    to: lastDayThisMonth.toISOString().split("T")[0],
+  };
+}
+
+function LocationMultiSelect({
+  selectedLocations,
+  onLocationChange,
+}: {
+  selectedLocations: string[];
+  onLocationChange: (locations: string[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const locationOptions = AVAILABLE_LOCATIONS.filter((location) => location.id !== "all");
+  const isAllSelected =
+    selectedLocations.length === 0 || selectedLocations.includes("all");
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
+  const selectAllLocations = () => {
+    onLocationChange(["all"]);
+  };
+
+  const toggleLocation = (locationId: string) => {
+    const withoutAll = selectedLocations.filter((id) => id !== "all");
+    const nextLocations = withoutAll.includes(locationId)
+      ? withoutAll.filter((id) => id !== locationId)
+      : [...withoutAll, locationId];
+
+    onLocationChange(nextLocations.length === 0 ? ["all"] : nextLocations);
+  };
+
+  const displayText = isAllSelected
+    ? "All Locations"
+    : selectedLocations.length === 1
+      ? locationOptions.find((location) => location.id === selectedLocations[0])?.name
+      : `${selectedLocations.length} selected`;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+      >
+        <span className="text-sm">{displayText}</span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-gray-300 bg-white shadow-lg">
+          <div className="max-h-64 overflow-y-auto p-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 hover:bg-gray-100">
+              <Checkbox
+                checked={isAllSelected}
+                onCheckedChange={selectAllLocations}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <span className="text-sm font-medium">All Locations</span>
+            </label>
+            {locationOptions.map((location) => (
+              <label
+                key={location.id}
+                className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 hover:bg-gray-100"
+              >
+                <Checkbox
+                  checked={!isAllSelected && selectedLocations.includes(location.id)}
+                  onCheckedChange={() => toggleLocation(location.id)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <span className="text-sm">{location.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusMultiSelect({
+  selectedStatuses,
+  onStatusChange,
+}: {
+  selectedStatuses: DeathDonationStatus[];
+  onStatusChange: (statuses: DeathDonationStatus[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
+  const toggleStatus = (status: DeathDonationStatus) => {
+    onStatusChange(
+      selectedStatuses.includes(status)
+        ? selectedStatuses.filter((value) => value !== status)
+        : [...selectedStatuses, status]
+    );
+  };
+
+  const displayText =
+    selectedStatuses.length === 0
+      ? "Select statuses"
+      : selectedStatuses.length === 1
+        ? STATUS_OPTIONS.find((option) => option.value === selectedStatuses[0])?.label
+        : `${selectedStatuses.length} selected`;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+      >
+        <span className="text-sm">{displayText}</span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-gray-300 bg-white shadow-lg">
+          <div className="max-h-64 overflow-y-auto p-2">
+            {STATUS_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 hover:bg-gray-100"
+              >
+                <Checkbox
+                  checked={selectedStatuses.includes(option.value)}
+                  onCheckedChange={() => toggleStatus(option.value)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <span className="text-sm">{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DeathDonationPage() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const router = useRouter();
+
+  const [selectedLocations, setSelectedLocations] = useState<string[]>(["all"]);
+  const [selectedStatuses, setSelectedStatuses] =
+    useState<DeathDonationStatus[]>(DEFAULT_STATUSES);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("requestedDate");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [requests, setRequests] = useState<DeathDonationRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [hasRetrieved, setHasRetrieved] = useState(false);
 
-  // Sample data - replace with actual data from your API
-  const requests: DeathDonationRequest[] = [
-    {
-      id: "1",
-      requestId: "DD-2026-001",
-      reqDate: "2026-02-01",
-      deceased: "John Doe Sr.",
-      member: "Johnathan Doe",
-      status: "SUBMITTED_APPROVAL",
-    },
-    {
-      id: "2",
-      requestId: "DD-2026-002",
-      reqDate: "2026-02-05",
-      deceased: "Jane Smith (Spouse)",
-      member: "Jane Smith",
-      status: "DISTRICT_COMMITTEE",
-    },
-    {
-      id: "3",
-      requestId: "DD-2026-003",
-      reqDate: "2026-01-15",
-      deceased: "Child Perera",
-      member: "Ranil Perera",
-      status: "P_AND_D_COMMITTEE",
-    },
-  ];
+  const buildSearchParams = () => {
+    const params: {
+      locations: string[];
+      statuses: string[];
+      fromDate?: string;
+      toDate?: string;
+      searchKey?: string;
+      sortBy: SortBy;
+      sortOrder: SortOrder;
+    } = {
+      locations:
+        selectedLocations.length === 0 || selectedLocations.includes("all")
+          ? ["all"]
+          : selectedLocations,
+      statuses: selectedStatuses,
+      sortBy,
+      sortOrder,
+    };
 
-  // Filter requests based on status and search query
-  const filteredRequests = requests.filter((request) => {
-    const matchesStatus = statusFilter === "all" || request.status === statusFilter;
-    const matchesSearch =
-      searchQuery === "" ||
-      request.deceased.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.member.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.requestId.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+    if (searchQuery.trim()) {
+      params.searchKey = searchQuery.trim();
+    }
 
-  const getStatusBadge = (status: DeathDonationRequest["status"]) => {
-    switch (status) {
-      case "SUBMITTED_APPROVAL":
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
-            SUBMITTED_APPROVAL
-          </Badge>
-        );
-      case "DISTRICT_COMMITTEE":
-        return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-            DISTRICT_COMMITTEE
-          </Badge>
-        );
-      case "P_AND_D_COMMITTEE":
-        return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-            P_AND_D_COMMITTEE
-          </Badge>
-        );
+    if (dateFilter === "this_month") {
+      const { from, to } = getCurrentMonthRange();
+      params.fromDate = from;
+      params.toDate = to;
+    } else if (dateFilter === "this_and_last_month") {
+      const { from, to } = getThisAndLastMonthRange();
+      params.fromDate = from;
+      params.toDate = to;
+    } else if (dateFilter === "date_period" && fromDate && toDate) {
+      params.fromDate = fromDate;
+      params.toDate = toDate;
+    }
+
+    return params;
+  };
+
+  const handleRetrieve = async () => {
+    if (dateFilter === "date_period") {
+      if (fromDate && fromDate > TODAY) {
+        setError("From Date cannot be a future date.");
+        setRequests([]);
+        return;
+      }
+      if (toDate && toDate > TODAY) {
+        setError("To Date cannot be a future date.");
+        setRequests([]);
+        return;
+      }
+      if (fromDate && toDate && fromDate > toDate) {
+        setError("From Date cannot be after To Date.");
+        setRequests([]);
+        return;
+      }
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+      const data = await searchDeathDonationRequests(buildSearchParams());
+      setRequests(data);
+      setHasRetrieved(true);
+    } catch (err) {
+      console.error("Retrieve death donation requests error:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to retrieve death donation requests"
+      );
+      setRequests([]);
+      setHasRetrieved(true);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleViewRequest = (requestId: string) => {
-    console.log("View request:", requestId);
-    // Navigate to request detail page or open modal
+  const getStatusBadge = (status?: string) => {
+    const normalized = status ?? "UNKNOWN";
+    const label = STATUS_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+    const className =
+      STATUS_BADGE_CLASSES[normalized] ?? "bg-gray-100 text-gray-800 hover:bg-gray-100";
+
+    return (
+      <Badge variant="secondary" className={className}>
+        {label}
+      </Badge>
+    );
   };
+
+  const getStatusIndicators = (status?: string) => {
+    if (status === "SUBMITTED_FOR_APPROVAL") {
+      return (
+        <Send
+          className="h-4 w-4 text-green-700"
+          aria-label="Submitted for approval"
+          title="Submitted for approval"
+        />
+      );
+    }
+    if (status === "DISTRICT_COMMITTEE") {
+      return (
+        <Building2
+          className="h-4 w-4 text-yellow-700"
+          aria-label="District Committee"
+          title="District Committee"
+        />
+      );
+    }
+    if (status === "PD_COMMITTEE" || status === "P_AND_D_COMMITTEE") {
+      return (
+        <Landmark
+          className="h-4 w-4 text-blue-700"
+          aria-label="P&D Committee"
+          title="P&D Committee"
+        />
+      );
+    }
+    return <span className="text-muted-foreground">-</span>;
+  };
+
+  const formatDate = (value?: string) => {
+    if (!value) return "-";
+    return value.split("T")[0];
+  };
+
+  const buildRequestUrl = (
+    request: DeathDonationRequest,
+    mode: "view" | "edit"
+  ) => {
+    if (!request.memberId || !request.requestNo) return "#";
+    const params = new URLSearchParams({
+      memberId: request.memberId,
+      requestNo: request.requestNo,
+      mode,
+      source: "death-donation",
+    });
+    return `/membership/directory/death-donation-request?${params.toString()}`;
+  };
+
+  const openRequest = (request: DeathDonationRequest) => {
+    if (!request.memberId || !request.requestNo) return;
+    router.push(buildRequestUrl(request, "view"));
+  };
+
+  const canEdit = (status?: string) =>
+    !!status && !NON_EDITABLE_STATUSES.includes(status as DeathDonationStatus);
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <h1 className="text-2xl font-bold text-[#8B4513]">Death Donation Requests</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-[#8B4513]">Death Donation Requests</h1>
+        <p className="text-sm text-muted-foreground">MMD02 - Search existing Death Donation Requests</p>
+      </div>
 
       <Card>
         <CardContent className="p-6">
-          {/* Search Section */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-4">Search</h2>
-            <div className="flex flex-wrap gap-4">
-              <div className="w-48">
-                <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="SUBMITTED_APPROVAL">Submitted Approval</SelectItem>
-                    <SelectItem value="DISTRICT_COMMITTEE">District Committee</SelectItem>
-                    <SelectItem value="P_AND_D_COMMITTEE">P&D Committee</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1 min-w-64">
-                <Input
-                  type="text"
-                  placeholder="Search Deceased Name, Cert No, Member..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </div>
+          <h2 className="mb-4 text-lg font-semibold text-[#953002]">Search & Filter</h2>
 
-          {/* Table Section */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">Request ID</TableHead>
-                  <TableHead className="font-semibold">Req. Date</TableHead>
-                  <TableHead className="font-semibold">Deceased</TableHead>
-                  <TableHead className="font-semibold">Member</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((request) => (
-                    <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.requestId}</TableCell>
-                      <TableCell>{request.reqDate}</TableCell>
-                      <TableCell>{request.deceased}</TableCell>
-                      <TableCell>{request.member}</TableCell>
-                      <TableCell>{getStatusBadge(request.status)}</TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewRequest(request.id)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No requests found. Try adjusting your search criteria.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {filteredRequests.length > 0 && (
-            <div className="mt-4 text-sm text-muted-foreground">
-              Showing {filteredRequests.length} of {requests.length} requests
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="w-52">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                Location
+              </label>
+              <LocationMultiSelect
+                selectedLocations={selectedLocations}
+                onLocationChange={setSelectedLocations}
+              />
             </div>
-          )}
+
+            <div className="w-52">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                Request Received On
+              </label>
+              <Select
+                value={dateFilter}
+                onValueChange={(value) => setDateFilter(value as DateFilterType)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select date range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_days">All Days</SelectItem>
+                  <SelectItem value="this_month">This Month</SelectItem>
+                  <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
+                  <SelectItem value="date_period">Date Period</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {dateFilter === "date_period" && (
+              <>
+                <div className="w-40">
+                  <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                    From Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    max={TODAY}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <div className="w-40">
+                  <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                    To Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    max={TODAY}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="w-56">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">Status</label>
+              <StatusMultiSelect
+                selectedStatuses={selectedStatuses}
+                onStatusChange={setSelectedStatuses}
+              />
+            </div>
+
+            <div className="min-w-64 flex-1">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                Search Member
+              </label>
+              <Input
+                type="text"
+                placeholder="Member name, member number, NIC, death certificate no..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="w-52">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">Sort By</label>
+              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select sort option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="requestedDate">Requested Date</SelectItem>
+                  <SelectItem value="deceasedDate">Deceased Date</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="memberId">Member ID</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="w-40">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                Sort Order
+              </label>
+              <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={() => void handleRetrieve()}
+              className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+            >
+              {loading ? "Retrieving..." : "Retrieve"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
+
+      <div className="rounded-md border bg-white">
+        {error && <p className="border-b px-4 py-3 text-sm text-red-600">{error}</p>}
+
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className="font-semibold">Request ID</TableHead>
+              <TableHead className="font-semibold">Req. Date</TableHead>
+              <TableHead className="font-semibold">Deceased</TableHead>
+              <TableHead className="font-semibold">Member ID</TableHead>
+              <TableHead className="font-semibold">Member Name</TableHead>
+              <TableHead className="font-semibold">Indicators</TableHead>
+              <TableHead className="font-semibold">Status</TableHead>
+              <TableHead className="text-center font-semibold">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  Loading death donation requests...
+                </TableCell>
+              </TableRow>
+            ) : !hasRetrieved ? (
+              <TableRow>
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  Click Retrieve to load death donation requests.
+                </TableCell>
+              </TableRow>
+            ) : requests.length > 0 ? (
+              requests.map((request) => (
+                <TableRow key={request.id ?? request.requestNo}>
+                  <TableCell className="font-medium">
+                    {request.requestNo ? (
+                      <button
+                        type="button"
+                        onClick={() => openRequest(request)}
+                        className="font-medium text-[#8B4513] hover:underline"
+                      >
+                        {request.requestNo}
+                      </button>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+                  <TableCell>{formatDate(request.requestedDate)}</TableCell>
+                  <TableCell>{request.deceasedName ?? "-"}</TableCell>
+                  <TableCell>
+                    {request.memberId ? (
+                      <button
+                        type="button"
+                        onClick={() => openRequest(request)}
+                        className="font-medium text-[#8B4513] hover:underline"
+                      >
+                        {request.memberId}
+                      </button>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+                  <TableCell>{request.memberFullName ?? "-"}</TableCell>
+                  <TableCell>{getStatusIndicators(request.status)}</TableCell>
+                  <TableCell>{getStatusBadge(request.status)}</TableCell>
+                  <TableCell className="text-center">
+                    {canEdit(request.status) && request.memberId && request.requestNo ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        asChild
+                        className="h-8 w-8 p-0"
+                      >
+                        <Link href={buildRequestUrl(request, "edit")}>
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  No requests found. Try adjusting your search criteria.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {hasRetrieved && !loading && (
+        <div className="text-sm text-muted-foreground">
+          Showing {requests.length} request(s)
+        </div>
+      )}
     </div>
   );
 }

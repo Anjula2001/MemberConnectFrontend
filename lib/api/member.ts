@@ -1,7 +1,7 @@
 import { apiClient } from "@/lib/api/client";
 
 export type MemberStatus = 
-"ACTIVE" | "INACTIVE" | "RESIGNED" | "TERMINATED" | "DECEASED";
+"ACTIVE" | "INACTIVE" | "RESIGNED" | "TERMINATED" | "DECEASED" | "MEMBER_DEATH_RECORDED";
 
 export type Gender = "MALE" | "FEMALE";
 

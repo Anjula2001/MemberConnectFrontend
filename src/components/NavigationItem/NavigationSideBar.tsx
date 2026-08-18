@@ -104,6 +104,7 @@ export default function NavigationSideBar() {
         { title: "University", url: "/scholarships/university" },
         { title: "Fund Requests", url: "/scholarships/fund-requests" },
       ],
+
     },
     { title: "Death Donation", icon: Heart, url: "/death-donation" },
     { title: "Reports", icon: BarChart, url: "/reports" },
@@ -116,7 +117,7 @@ export default function NavigationSideBar() {
   };
 
   return (
-    
+
     <Sidebar className="border-r border-neutral-200 bg-[#f4f4f5]">
       <SidebarContent className="gap-0 bg-[#f4f4f5] px-3 py-5">
         <div className="mb-5 flex items-center gap-3 px-2">
@@ -154,29 +155,29 @@ export default function NavigationSideBar() {
                                   subItem.url === "/membership/termination";
 
                                 return (
-                              <SidebarMenuButton
-                                asChild
-                                isActive={isItemActive(subItem.url)}
-                                className={cn(
-                                  "rounded-lg pr-2.5 text-[14px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
-                                  isTwoLineItem
-                                    ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:break-words"
-                                    : "h-9 leading-4 [&>span:last-child]:truncate [&>span:last-child]:whitespace-nowrap",
-                                  subItem.icon ? "pl-8" : "pl-10",
-                                  isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"
-                                )}
-                              >
-                                <Link href={subItem.url}>
-                                  <span className="inline-flex w-4 items-center justify-center">
-                                    {subItem.icon ? (
-                                      <subItem.icon className="h-4 w-4" />
-                                    ) : (
-                                      <ChevronRight className="h-4 w-4" />
+                                  <SidebarMenuButton
+                                    asChild
+                                    isActive={isItemActive(subItem.url)}
+                                    className={cn(
+                                      "rounded-lg pr-2.5 text-[14px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
+                                      isTwoLineItem
+                                        ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:break-words"
+                                        : "h-9 leading-4 [&>span:last-child]:truncate [&>span:last-child]:whitespace-nowrap",
+                                      subItem.icon ? "pl-8" : "pl-10",
+                                      isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"
                                     )}
-                                  </span>
-                                  <span className="ml-2">{subItem.title}</span>
-                                </Link>
-                              </SidebarMenuButton>
+                                  >
+                                    <Link href={subItem.url}>
+                                      <span className="inline-flex w-4 items-center justify-center">
+                                        {subItem.icon ? (
+                                          <subItem.icon className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4" />
+                                        )}
+                                      </span>
+                                      <span className="ml-2">{subItem.title}</span>
+                                    </Link>
+                                  </SidebarMenuButton>
                                 );
                               })()}
                             </SidebarMenuItem>

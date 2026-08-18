@@ -303,7 +303,7 @@ export default function ProfileChangeRequests() {
       const backendMessage =
         typeof error === 'object' && error !== null && 'response' in error
           ? (error as { response?: { data?: { message?: string; error?: string } } }).response?.data?.message ||
-            (error as { response?: { data?: { message?: string; error?: string } } }).response?.data?.error
+          (error as { response?: { data?: { message?: string; error?: string } } }).response?.data?.error
           : undefined;
       const fallbackMessage = error instanceof Error ? error.message : 'Failed to create board approval list';
       alert(backendMessage || fallbackMessage || 'Failed to create board approval list');
@@ -367,7 +367,7 @@ export default function ProfileChangeRequests() {
     }
   };
 
-  const handleDelete = async (id: string | number) => {
+  const handleDelete = async (id: any) => {
     if (!id) return;
     if (!window.confirm("Are you sure you want to delete this request?")) return;
 
@@ -395,7 +395,7 @@ export default function ProfileChangeRequests() {
   };
 
   // Redirect function
-  const handleEdit = (id: string | number) => {
+  const handleEdit = (id: any) => {
     if (!id) return;
     if (requestType === 'Name Changes') {
       router.push(`/membership/name-changes/${id}`);
@@ -425,7 +425,8 @@ export default function ProfileChangeRequests() {
               <option>Basic Profile Changes</option>
               <option>Name Changes</option>
               <option>Nomminne Changes</option>
-              <option>Remittance Amount Changes</option>
+              <option>Remmitance Amount Changes</option>
+              <option>Member Transfer</option>
             </select>
           </div>
           <div className="space-y-2">
