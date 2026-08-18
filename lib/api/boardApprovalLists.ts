@@ -74,6 +74,8 @@ export interface NameChangeRequestDTO {
   newNameAsInPayroll?: string | null;
   newNameWithInitials?: string | null;
   newStatus?: string | null;
+  status?: string | null;
+  boardDecisionReason?: string | null;
 }
 
 export async function getNameChangeRequestsByListId(listId: string) {
@@ -90,6 +92,10 @@ export interface NommineChangeRequestDTO {
   nic?: string | null;
   address?: string | null;
   newStatus?: string | null;
+  status?: string | null;
+  boardDecisionReason?: string | null;
+  nomineeChangeID?: number | string | null;
+  nommineChangeId?: number | string | null;
 }
 
 export async function getNomineeChangeRequestsByListId(listId: string) {

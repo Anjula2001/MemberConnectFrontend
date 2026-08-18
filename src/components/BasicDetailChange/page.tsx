@@ -5,7 +5,9 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { z } from "zod";
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
-import { getMemberById } from '@/lib/api/member';
+import { getMemberById, updateMember } from '@/lib/api/member';
+import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
+import { useToast } from '@/lib/toast-context';
 
 // 1. Schema Definition
 // This Zod schema validates the profile change request fields before submission.
@@ -32,6 +34,7 @@ type ProfileData = {
 
 export default function BasicDetailChange({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
+  const { addToast } = useToast();
   const isEditMode = Boolean(editId);
 
   const INITIAL_MEMBER_DATA: ProfileData = {
@@ -62,6 +65,12 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [fetchedMemberId, setFetchedMemberId] = useState<string | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [existingUrl, setExistingUrl] = useState<string | null>(null);
+  const [existingFileName, setExistingFileName] = useState<string | null>(null);
+  const [existingStoragePath, setExistingStoragePath] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -81,6 +90,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
           const data = response.data.data || response.data;
 
           if (data) {
+            setFetchedMemberId(data.memberId || data.member?.id || null);
             const mapped = {
               dob: data.newBirthDate || INITIAL_MEMBER_DATA.dob,
               nic: data.newNIC || INITIAL_MEMBER_DATA.nic,
@@ -95,6 +105,11 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
             setCurrentData(mapped);
             setFormData(mapped);
             setSelectedStatus(data.status || data.newStatus || '');
+            if (data.documentStoragePath) {
+              setExistingUrl(`/api/documents/file/${data.documentStoragePath}`);
+              setExistingFileName(data.documentFileName || data.documentType || 'Supporting Document');
+              setExistingStoragePath(data.documentStoragePath);
+            }
           }
         } else if (memberId) {
           const data = await getMemberById(Number(memberId));
@@ -168,63 +183,98 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (overrideStatus?: string) => {
     if (!validateBeforeSubmit()) return;
 
     setIsSubmitting(true);
 
-    // Build payload with every new field value so the backend gets current data as new if user did not change it.
-    const payload: Record<string, unknown> = {
-      newBirthDate: formData.dob,
-      newNIC: formData.nic,
-      newGender: formData.gender,
-      newPermanentPrivateAddress: formData.address,
-      newMobileNumber: formData.mobile,
-      newEmailAddress: formData.email,
-      newPreferredLanguage: formData.language,
-      newDesignation: formData.designation,
-      newNatureOfOccupation: formData.occupation,
-    };
-
+    const nextStatus = overrideStatus ?? selectedStatus;
+    const formDataPayload = new FormData();
     if (isEditMode) {
-      if (Object.keys(payload).length === 0) {
-        alert('No changes provided. Please update at least one field or cancel.');
-        setIsSubmitting(false);
-        return;
+      if (editId) formDataPayload.append("editId", editId);
+      if (nextStatus) {
+        formDataPayload.append("status", nextStatus);
+        formDataPayload.append("newStatus", nextStatus);
       }
+    } else {
+      formDataPayload.append("status", "SUBMITTED_FOR_APPROVAL");
+      formDataPayload.append("newStatus", "SUBMITTED_FOR_APPROVAL");
     }
 
-    // Status and memberId
-    if (isEditMode) {
-      if (selectedStatus) payload.newStatus = selectedStatus;
-    } else {
-      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
-      payload.createdDate = formatLocalDateTime(new Date());
+    if (memberId) formDataPayload.append("memberId", memberId);
+
+    formDataPayload.append("dob", formData.dob);
+    formDataPayload.append("nic", formData.nic);
+    formDataPayload.append("gender", formData.gender);
+    formDataPayload.append("address", formData.address);
+    formDataPayload.append("mobile", formData.mobile);
+    formDataPayload.append("email", formData.email);
+    if (formData.language) formDataPayload.append("language", formData.language);
+    if (formData.designation) formDataPayload.append("designation", formData.designation);
+    if (formData.occupation) formDataPayload.append("occupation", formData.occupation);
+
+    if (selectedFile) {
+      formDataPayload.append("file", selectedFile);
+    } else if (existingStoragePath) {
+      formDataPayload.append("documentStoragePath", existingStoragePath);
     }
-    if (memberId) payload.memberId = memberId;
 
     try {
+      await axios.post('/api/profile-change/upload', formDataPayload, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
       if (isEditMode) {
-        await axios.put(`http://localhost:8080/api/v2/updateRequest/${editId}`, payload);
-        alert("Updated!");
+        addToast("Profile change request updated successfully!", "default");
       } else {
-        await axios.post('http://localhost:8080/api/v2/saveRequests', payload);
-        alert("Saved!");
+        addToast("Profile change request submitted successfully!", "default");
       }
       router.push('/membership/profile-changes');
     } catch (error: unknown) {
-      // Try to extract a useful message from the error object
       let msg: string | undefined;
-      if (typeof error === 'object' && error !== null) {
-        type ErrorResponse = { response?: { data?: { message?: string; error?: string } } };
-        const errObj = error as ErrorResponse;
-        msg = errObj.response?.data?.message || errObj.response?.data?.error;
+      if (axios.isAxiosError(error)) {
+        msg = error.response?.data?.message || error.response?.data?.error || error.message;
+      } else if (error instanceof Error) {
+        msg = error.message;
       }
-      alert('Error: ' + (msg || 'Server Error'));
+      addToast(msg || 'Server Error', 'destructive');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const handleApproveRequest = async () => {
+    setSelectedStatus('APPROVED');
+    
+    const targetMemberId = memberId || fetchedMemberId;
+    if (targetMemberId) {
+      try {
+        await updateMember(Number(targetMemberId), {
+          dateOfBirth: formData.dob,
+          nic: formData.nic,
+          gender: formData.gender as any,
+          permanentPrivateAddress: formData.address,
+          mobileNumber: formData.mobile,
+          emailAddress: formData.email,
+          preferredLanguage: formData.language as any,
+          designation: formData.designation,
+          natureOfOccupation: formData.occupation as any
+        });
+      } catch (error) {
+        console.error("Failed to update member details:", error);
+        addToast("Failed to update member details", "destructive");
+        return;
+      }
+    } else {
+      addToast("Could not find Member ID to update", "destructive");
+      return;
+    }
+
+    await handleSubmit('APPROVED');
+  };
+
 
   if (!mounted) return null;
 
@@ -249,6 +299,16 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
         </div>
         <div className="flex items-center gap-3">
           {isEditMode && (
+            <button
+              type="button"
+              onClick={handleApproveRequest}
+              disabled={isSubmitting}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-all disabled:opacity-60"
+            >
+              Approved
+            </button>
+          )}
+          {isEditMode && (
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
@@ -261,7 +321,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
             </select>
           )}
           <button
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={isSubmitting}
             className="bg-[#8B3205] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all"
           >
@@ -281,12 +341,37 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
         <ComparisonRow label="DATE OF BIRTH" current={currentData.dob} value={formData.dob} isInput type="date" onChange={(v: string) => handleFieldChange("dob", v)} error={errors.dob} required={!Boolean(currentData.dob)} />
         <ComparisonRow label="NIC NUMBER" current={currentData.nic} value={formData.nic} isInput onChange={(v: string) => handleFieldChange("nic", v)} error={errors.nic} required={!Boolean(currentData.nic)} />
         <ComparisonRow label="GENDER" current={currentData.gender} value={formData.gender} isInput onChange={(v: string) => handleFieldChange("gender", v)} error={errors.gender} required={!Boolean(currentData.gender)} options={["Male", "Female"]} />
-        <ComparisonRow label="PREFERRED LANGUAGE" current={currentData.language || ''} value={formData.language || ''} isInput onChange={(v: string) => handleFieldChange("language", v)} error={errors.language} required={!Boolean(currentData.language)} options={["Sinhala","Tamil","English"]} />
+        <ComparisonRow label="PREFERRED LANGUAGE" current={currentData.language || ''} value={formData.language || ''} isInput onChange={(v: string) => handleFieldChange("language", v)} error={errors.language} required={!Boolean(currentData.language)} options={["Sinhala", "Tamil", "English"]} />
         <ComparisonRow label="DESIGNATION" current={currentData.designation || ''} value={formData.designation || ''} isInput onChange={(v: string) => handleFieldChange("designation", v)} error={errors.designation} required={!Boolean(currentData.designation)} />
-        <ComparisonRow label="NATURE OF OCCUPATION" current={currentData.occupation || ''} value={formData.occupation || ''} isInput onChange={(v: string) => handleFieldChange("occupation", v)} error={errors.occupation} required={!Boolean(currentData.occupation)} options={["Permanent","Probation","Temporary","Casual"]} />
+        <ComparisonRow label="NATURE OF OCCUPATION" current={currentData.occupation || ''} value={formData.occupation || ''} isInput onChange={(v: string) => handleFieldChange("occupation", v)} error={errors.occupation} required={!Boolean(currentData.occupation)} options={["Permanent", "Probation", "Temporary", "Casual"]} />
         <ComparisonRow label="MOBILE" current={currentData.mobile} value={formData.mobile} isInput onChange={(v: string) => handleFieldChange("mobile", v)} error={errors.mobile} required={!Boolean(currentData.mobile)} />
         <ComparisonRow label="ADDRESS" current={currentData.address} value={formData.address} isInput onChange={(v: string) => handleFieldChange("address", v)} error={errors.address} required={!Boolean(currentData.address)} />
         <ComparisonRow label="EMAIL" current={currentData.email} value={formData.email} isInput onChange={(v: string) => handleFieldChange("email", v)} error={errors.email} required={!Boolean(currentData.email)} />
+
+        <div className="pt-6 border-t border-gray-100">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
+            SUPPORTING DOCUMENT
+          </label>
+          <div className="max-w-md">
+            <DocumentUploadCard
+              label="Supporting Document"
+              existingUrl={existingUrl}
+              existingFileName={existingFileName}
+              onFileSelected={(file) => {
+                setSelectedFile(file);
+                setExistingUrl(null);
+                setExistingFileName(null);
+                setExistingStoragePath(null);
+              }}
+              onDelete={async () => {
+                setSelectedFile(null);
+                setExistingUrl(null);
+                setExistingFileName(null);
+                setExistingStoragePath(null);
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

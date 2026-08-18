@@ -76,14 +76,14 @@ export default function RemittanceChangePage({ editId, memberId }: { editId?: st
   };
 
   // Validation helper for the remittance request.
-// Ensures every new remittance item has a valid account type and a positive amount.
-const validateAccounts = () => {
+  // Ensures every new remittance item has a valid account type and a positive amount.
+  const validateAccounts = () => {
     return mutableAccounts.some(acc => acc.type.trim() === '' || normalizeAmount(acc.amount) <= 0);
   };
 
   // Submit remittance change request to the backend.
   // Uses create or update route depending on whether editId is present.
-  const handleSubmit = async () => {
+  const handleSubmit = async (overrideStatus?: string) => {
     if (validateAccounts()) {
       setSubmitError('Please provide valid account types and positive amounts for all remittance items.');
       return;
@@ -92,10 +92,12 @@ const validateAccounts = () => {
     setIsSubmitting(true);
     setSubmitError(null);
 
+    const nextStatus = overrideStatus ?? selectedStatus;
+
     const payload: any = {
       newRemittanceAmount: totalNewRemittance.toString(),
       newRemittanceCurrency: 'LKR',
-      ...(isEditMode ? (selectedStatus ? { status: selectedStatus } : {}) : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
+      ...(isEditMode ? (nextStatus ? { newStatus: nextStatus } : {}) : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
     };
 
     try {
@@ -112,6 +114,11 @@ const validateAccounts = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleApproveRequest = async () => {
+    setSelectedStatus('APPROVED');
+    await handleSubmit('APPROVED');
   };
 
   // Fix Hydration Mismatch
@@ -195,6 +202,16 @@ const validateAccounts = () => {
           <div className="flex items-center gap-3">
             <button onClick={() => router.back()} className="px-6 py-2 border border-slate-300 rounded-lg bg-white font-semibold">Cancel</button>
             {isEditMode && (
+              <button
+                type="button"
+                onClick={handleApproveRequest}
+                disabled={isSubmitting}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-all disabled:opacity-60"
+              >
+                Approved
+              </button>
+            )}
+            {isEditMode && (
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
@@ -207,7 +224,7 @@ const validateAccounts = () => {
               </select>
             )}
             <button
-              onClick={handleSubmit}
+              onClick={() => handleSubmit()}
               disabled={isSubmitting}
               className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400 text-slate-700 cursor-not-allowed' : 'bg-[#8A4C27] text-white hover:bg-[#733F20]'}`}
             >

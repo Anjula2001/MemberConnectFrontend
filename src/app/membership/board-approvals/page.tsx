@@ -100,6 +100,8 @@ export default function BoardApprovalsPage() {
   const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
   const [selectedListNameChangeRequests, setSelectedListNameChangeRequests] = useState<any[]>([]);
   const [selectedListNomineeChangeRequests, setSelectedListNomineeChangeRequests] = useState<any[]>([]);
+  const [selectedListNameChangeDecisions, setSelectedListNameChangeDecisions] = useState<Record<string, { decision: ApplicationDecision; rejectReason: string }>>({});
+  const [selectedListNomineeChangeDecisions, setSelectedListNomineeChangeDecisions] = useState<Record<string, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [applicationDecisions, setApplicationDecisions] = useState<Record<number, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
@@ -380,6 +382,9 @@ export default function BoardApprovalsPage() {
       setSelectedListApplications([]);
       setSelectedListNameChangeRequests([]);
       setSelectedListNomineeChangeRequests([]);
+      setSelectedListNameChangeDecisions({});
+      setSelectedListNomineeChangeDecisions({});
+      setApplicationDecisions({});
     } catch (error) {
       console.error("Error retrieving board approval lists:", error);
       setToastMessage("Failed to retrieve board approval lists");
@@ -401,16 +406,40 @@ export default function BoardApprovalsPage() {
       try {
         const ncrs = await getNameChangeRequestsByListId(selectedApprovalListId);
         setSelectedListNameChangeRequests(ncrs || []);
+        setSelectedListNameChangeDecisions(
+          (ncrs || []).reduce((acc, ncr) => {
+            const key = String(ncr.nameChangeRequestID ?? "");
+            if (!key) return acc;
+            acc[key] = {
+              decision: String(ncr.newStatus || ncr.status || "").trim().toUpperCase() === "REJECTED" ? "Reject" : "Approve",
+              rejectReason: String(ncr.boardDecisionReason || ""),
+            };
+            return acc;
+          }, {} as Record<string, { decision: ApplicationDecision; rejectReason: string }>)
+        );
       } catch (err) {
         setSelectedListNameChangeRequests([]);
+        setSelectedListNameChangeDecisions({});
       }
 
       // Fetch nominee change requests for this list (if any)
       try {
         const nmrs = await getNomineeChangeRequestsByListId(selectedApprovalListId);
         setSelectedListNomineeChangeRequests(nmrs || []);
+        setSelectedListNomineeChangeDecisions(
+          (nmrs || []).reduce((acc, nmr) => {
+            const key = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+            if (!key) return acc;
+            acc[key] = {
+              decision: String(nmr.newStatus || nmr.status || "").trim().toUpperCase() === "REJECTED" ? "Reject" : "Approve",
+              rejectReason: String(nmr.boardDecisionReason || ""),
+            };
+            return acc;
+          }, {} as Record<string, { decision: ApplicationDecision; rejectReason: string }>)
+        );
       } catch (err) {
         setSelectedListNomineeChangeRequests([]);
+        setSelectedListNomineeChangeDecisions({});
       }
       
       const initialDecisions: Record<number, { decision: ApplicationDecision; rejectReason: string }> = {};
@@ -915,18 +944,61 @@ export default function BoardApprovalsPage() {
                           <div className="mb-4">
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Name Change Requests in this list</h3>
                             <div className="space-y-2">
-                              {selectedListNameChangeRequests.map((ncr) => (
-                                <div key={ncr.nameChangeRequestID} className="flex items-center justify-between rounded border p-2">
-                                  <div>
-                                    <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
-                                      const id = ncr.nameChangeRequestID;
-                                      if (id) router.push(`/membership/name-changes/${id}`);
-                                    }}>{ncr.newFullName || `NCR-${ncr.nameChangeRequestID}`}</div>
-                                    <div className="text-xs text-muted-foreground">{ncr.newNameAsInPayroll || ncr.newNameWithInitials || ''}</div>
+                              {selectedListNameChangeRequests.map((ncr) => {
+                                const requestId = String(ncr.nameChangeRequestID ?? "");
+                                const decisionState = selectedListNameChangeDecisions[requestId] || { decision: "Approve", rejectReason: "" };
+                                return (
+                                  <div key={requestId} className="rounded border p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                          if (requestId) router.push(`/membership/name-changes/${requestId}`);
+                                        }}>{ncr.newFullName || `NCR-${requestId}`}</div>
+                                        <div className="text-xs text-muted-foreground">{ncr.newNameAsInPayroll || ncr.newNameWithInitials || ''}</div>
+                                      </div>
+                                      <div className="text-xs text-gray-500">ID: {requestId}</div>
+                                    </div>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+                                      <div>
+                                        <Select
+                                          value={decisionState.decision}
+                                          onValueChange={(value) =>
+                                            setSelectedListNameChangeDecisions((prev) => ({
+                                              ...prev,
+                                              [requestId]: {
+                                                ...(prev[requestId] || { rejectReason: "" }),
+                                                decision: value as ApplicationDecision,
+                                              },
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-10 w-full">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Approve">Approve</SelectItem>
+                                            <SelectItem value="Reject">Reject</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <Input
+                                        value={decisionState.rejectReason}
+                                        onChange={(e) =>
+                                          setSelectedListNameChangeDecisions((prev) => ({
+                                            ...prev,
+                                            [requestId]: {
+                                              ...(prev[requestId] || { decision: "Approve" }),
+                                              rejectReason: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="Reject reason"
+                                        disabled={decisionState.decision !== "Reject"}
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-gray-500">ID: {ncr.nameChangeRequestID}</div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -935,18 +1007,59 @@ export default function BoardApprovalsPage() {
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Nominee Change Requests in this list</h3>
                             <div className="space-y-2">
                               {selectedListNomineeChangeRequests.map((nmr) => {
-                                const requestId = nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId;
+                                const requestId = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+                                const decisionState = selectedListNomineeChangeDecisions[requestId] || { decision: "Approve", rejectReason: "" };
                                 return (
-                                  <div key={requestId} className="flex items-center justify-between rounded border p-2">
-                                    <div>
-                                      <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
-                                        if (requestId) router.push(`/membership/nommine-changes/${requestId}`);
-                                      }}>
-                                        {nmr.newnommineName || `NMR-${requestId}`}
+                                  <div key={requestId} className="rounded border p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                          if (requestId) router.push(`/membership/nommine-changes/${requestId}`);
+                                        }}>
+                                          {nmr.newnommineName || `NMR-${requestId}`}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">{nmr.newRelationship || nmr.relationship || ''}</div>
                                       </div>
-                                      <div className="text-xs text-muted-foreground">{nmr.newRelationship || nmr.relationship || ''}</div>
+                                      <div className="text-xs text-gray-500">ID: {requestId}</div>
                                     </div>
-                                    <div className="text-xs text-gray-500">ID: {requestId}</div>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+                                      <div>
+                                        <Select
+                                          value={decisionState.decision}
+                                          onValueChange={(value) =>
+                                            setSelectedListNomineeChangeDecisions((prev) => ({
+                                              ...prev,
+                                              [requestId]: {
+                                                ...(prev[requestId] || { rejectReason: "" }),
+                                                decision: value as ApplicationDecision,
+                                              },
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-10 w-full">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Approve">Approve</SelectItem>
+                                            <SelectItem value="Reject">Reject</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <Input
+                                        value={decisionState.rejectReason}
+                                        onChange={(e) =>
+                                          setSelectedListNomineeChangeDecisions((prev) => ({
+                                            ...prev,
+                                            [requestId]: {
+                                              ...(prev[requestId] || { decision: "Approve" }),
+                                              rejectReason: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="Reject reason"
+                                        disabled={decisionState.decision !== "Reject"}
+                                      />
+                                    </div>
                                   </div>
                                 );
                               })}

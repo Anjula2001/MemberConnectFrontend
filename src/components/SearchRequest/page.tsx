@@ -534,7 +534,7 @@ export default function ProfileChangeRequests() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {results.map((row) => {
+              {displayedResults.map((row) => {
                 const rowId = row.id || row.Id || row.ID || row.nameChangeRequestID || row.nomineeChangeID || row.nommineChangeId;
                 const rowIdString = rowId ? String(rowId) : undefined;
                 const statusStr = row.status || row.newStatus || 'SUBMITTED';
