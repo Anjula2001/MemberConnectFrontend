@@ -558,8 +558,8 @@ export default function Grade5ScholarshipPage() {
 
     const statusLabel =
       newStatus === "INACTIVE" ? "Inactive"
-      : newStatus === "NEW" ? "New"
-      : newStatus;
+        : newStatus === "NEW" ? "New"
+          : newStatus;
 
     setStatusConfirmModal({
       isOpen: true,
@@ -1020,11 +1020,10 @@ export default function Grade5ScholarshipPage() {
                               minorAccountExists
                             );
                           }}
-                          className={`border rounded-md px-3 py-2 w-full ${
-                            !minorAccountExists || fundReadOnly
-                              ? "bg-gray-100 cursor-not-allowed text-gray-600"
-                              : ""
-                          }`}
+                          className={`border rounded-md px-3 py-2 w-full ${!minorAccountExists || fundReadOnly
+                            ? "bg-gray-100 cursor-not-allowed text-gray-600"
+                            : ""
+                            }`}
                         />
                       </div>
                     </div>
@@ -1192,16 +1191,15 @@ export default function Grade5ScholarshipPage() {
             </p>
 
             <p className="mt-3 text-sm text-gray-700">
-              Once submitted, the Grade 5 Scholarship Request cannot be edited. The system will choose the approval path automatically based on the eligibility rule.
+              Once submitted, the Grade 5 Scholarship Request cannot be edited.
             </p>
 
             {deviationReason && (
               <div
-                className={`mt-4 rounded-md px-3 py-2 text-sm ${
-                  grade5Request?.hasDeviation
-                    ? "border border-red-200 bg-red-50 text-red-700"
-                    : "border border-orange-200 bg-orange-50 text-orange-700"
-                }`}
+                className={`mt-4 rounded-md px-3 py-2 text-sm ${grade5Request?.hasDeviation
+                  ? "border border-red-200 bg-red-50 text-red-700"
+                  : "border border-orange-200 bg-orange-50 text-orange-700"
+                  }`}
               >
                 {deviationReason}
               </div>
@@ -1213,16 +1211,16 @@ export default function Grade5ScholarshipPage() {
               </p>
             )}
 
-            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
+            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-gray-200 bg-gray-50 text-gray-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
               {submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? (
                 <div>
-                  <p className="font-medium">The request is not within the eligibility period.</p>
-                  <p className="mt-1">It will be submitted as <span className="font-semibold text-red-700">Submitted for Deviation Approval</span>.</p>
+
+                  <p className="mt-1">Grade 5 Scholarship Request will be submitted as <span className="font-semibold text-[#953002]">Submitted for Deviation Approval</span>.</p>
                 </div>
               ) : (
                 <div>
-                  <p className="font-medium">The request is within the eligibility period.</p>
-                  <p className="mt-1">It will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
+
+                  <p className="mt-1">Grade 5 Scholarship Request will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
                 </div>
               )}
             </div>
