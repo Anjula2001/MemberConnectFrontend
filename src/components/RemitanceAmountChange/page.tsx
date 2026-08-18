@@ -93,10 +93,13 @@ export default function RemittanceChangePage({ editId, memberId }: { editId?: st
     setSubmitError(null);
 
     const nextStatus = overrideStatus ?? selectedStatus;
+    const accountType = mutableAccounts[0]?.type || 'Share Account';
 
     const payload: any = {
       newRemittanceAmount: totalNewRemittance.toString(),
       newRemittanceCurrency: 'LKR',
+      remittanceAccountType: accountType,
+      ...(memberId ? { memberId } : {}),
       ...(isEditMode ? (nextStatus ? { newStatus: nextStatus } : {}) : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
     };
 
@@ -142,11 +145,11 @@ export default function RemittanceChangePage({ editId, memberId }: { editId?: st
           setMutableAccounts([
             {
               id: Date.now().toString(),
-              type: data.accountType || 'Share Account',
+              type: data.remittanceAccountType || 'Share Account',
               amount: data.newRemittanceAmount?.toString?.() || '0',
             },
           ]);
-          setSelectedStatus(data.status || data.newStatus || '');
+          setSelectedStatus(data.newStatus || '');
         }
 
         if (memberId) {
