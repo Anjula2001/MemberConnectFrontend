@@ -484,6 +484,10 @@ export default function FundDisbursementRequest() {
     const targetFundRequestId = fundRequestNo || fundRequestId;
     if (!scholarshipRequestId || !targetFundRequestId) return;
 
+    if (documentFiles.length > 0) {
+      await uploadDocuments(targetFundRequestId);
+    }
+
     try {
       const response = await fetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests/${encodeURIComponent(targetFundRequestId)}/submit`,
@@ -519,6 +523,10 @@ export default function FundDisbursementRequest() {
   const handleMarkIncomplete = async (reason: string) => {
     const targetFundRequestId = fundRequestNo || fundRequestId;
     if (!scholarshipRequestId || !targetFundRequestId) return;
+
+    if (documentFiles.length > 0) {
+      await uploadDocuments(targetFundRequestId);
+    }
 
     const currentData = getValues();
 
