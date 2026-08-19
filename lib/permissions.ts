@@ -60,6 +60,15 @@ export const INACTIVE_RIGHTS_ROLES: UserRole[] = [
 // Print Membership Card / Signature Card / Passbook (MR15–17).
 export const CARD_PRINTING_ROLES: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE"];
 
+// Raising a Member Transfer request. Member Registration has no named permission for
+// this, so it is a role list like the rest of that module.
+//
+// Head Office is excluded: a transfer is raised by the branch that holds the
+// membership, and Head Office receives it rather than creating it. Board Secretary is
+// excluded for the same reason, which also keeps this in step with US_REQUEST_CREATE
+// — the equivalent right for raising a University Scholarship.
+export const MEMBER_TRANSFER_ROLES: UserRole[] = ["SUPER_ADMIN", "DISTRICT_OFFICE"];
+
 // Membership Document Dispatch update (MR18).
 export const DISPATCH_ROLES: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE", "DISTRICT_OFFICE"];
 
