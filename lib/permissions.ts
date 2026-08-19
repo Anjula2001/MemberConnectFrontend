@@ -237,7 +237,9 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT],
 
-  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
+  // US_FINANCE_DISBURSE is listed here rather than in UNIVERSITY_BOARD because that
+  // array is shared with BOARD_SECRETARY, which does not hold the finance hand-over.
+  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FINANCE_DISBURSE"],
 
   // The same approval track as Head Office, plus the Grade 5 / University delete
   // privileges that DELETE_RIGHTS_ROLES also grants.

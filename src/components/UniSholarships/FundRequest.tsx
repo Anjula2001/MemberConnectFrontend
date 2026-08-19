@@ -33,6 +33,9 @@ type ScholarshipFundRequest = {
   status?: FundRequestStatus;
   incompleteReason?: string;
   decisionReason?: string;
+  /** MMS48 — non-null once handed to the Finance Module. */
+  financeIntegratedAt?: string | null;
+  financeIntegratedBy?: string | null;
 };
 
 type ScholarshipSummary = {
@@ -89,6 +92,7 @@ export default function FundDisbursementRequest() {
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
   const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
   const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [isIntegratingFinance, setIsIntegratingFinance] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [status, setStatus] = useState<FundRequestStatus>("NEW");
   const isViewMode = Boolean(fundRequestId) && mode !== "edit";
@@ -121,6 +125,10 @@ export default function FundDisbursementRequest() {
 
   // Both rights sit with Super Admin, Head Office and Board Secretary, so District
   // Office — which raises fund requests — never sees this control.
+  // MMS48 — hand-over to the Finance Module. Held by Head Office, Accounts and Super
+  // Admin. Only offered on an approved request, and only until it has been handed over
+  // once; the timestamp comes from the server so a reload cannot re-enable it.
+  const canIntegrateWithFinance = hasPermission(user?.role, "US_FINANCE_DISBURSE");
   const canReopenFundRequest = hasPermission(user?.role, "US_FUND_REOPEN");
   const canSetFundRequestInactive = hasPermission(user?.role, "US_FUND_SET_INACTIVE");
 
@@ -137,6 +145,12 @@ export default function FundDisbursementRequest() {
   const [scholarshipSummary, setScholarshipSummary] = useState<ScholarshipSummary | null>(null);
   const [member, setMember] = useState<MemberSummary | null>(null);
   const [currentFundRequest, setCurrentFundRequest] = useState<ScholarshipFundRequest | null>(null);
+
+  // Derived here rather than with the other permission flags above, because it reads
+  // currentFundRequest and so has to sit after that state is declared.
+  const isFinanceIntegrated = Boolean(currentFundRequest?.financeIntegratedAt);
+  const showFinanceIntegration =
+    isViewMode && status === "APPROVED" && canIntegrateWithFinance;
 
   const hasAllMandatoryDocuments = useMemo(() => {
     if (requiredDocumentTypes.length === 0) return true;
@@ -712,6 +726,43 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // MMS48 — hand this approved fund request to the Finance Module.
+  const handleIntegrateWithFinance = async () => {
+    const targetFundRequestId = fundRequestNo || fundRequestId;
+    if (isIntegratingFinance || isFinanceIntegrated) return;
+    if (!scholarshipRequestId || !targetFundRequestId) return;
+
+    setIsIntegratingFinance(true);
+    try {
+      const response = await authFetch(
+        `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests/${encodeURIComponent(targetFundRequestId)}/finance-integration`,
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = "Failed to integrate with the Finance Module";
+        try {
+          message = JSON.parse(errorText).message || message;
+        } catch { }
+        setPopupMessage(message);
+        setShowPopup(true);
+        return;
+      }
+
+      const updated: ScholarshipFundRequest = await response.json();
+      setCurrentFundRequest(updated);
+      setPopupMessage("Integrated with Finance Module");
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Failed to integrate with Finance Module:", error);
+      setPopupMessage("Failed to integrate with the Finance Module");
+      setShowPopup(true);
+    } finally {
+      setIsIntegratingFinance(false);
+    }
+  };
+
   const handleApproveFundRequest = () => {
     setShowApproveConfirmModal(true);
   };
@@ -761,6 +812,24 @@ export default function FundDisbursementRequest() {
                 </span>
               )}
             </p>
+
+            {/* MMS48 — shown to anyone who can see the request, not just the roles that
+                may perform the hand-over, so the state of the disbursement is legible
+                to everyone reviewing it. */}
+            {isFinanceIntegrated && (
+              <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700">
+                <Check className="h-4 w-4 stroke-[2.5]" />
+                Integrated with Finance Module
+                {currentFundRequest?.financeIntegratedAt && (
+                  <span className="font-normal text-green-600">
+                    on {formatDate(currentFundRequest.financeIntegratedAt)}
+                    {currentFundRequest.financeIntegratedBy
+                      ? ` by ${currentFundRequest.financeIntegratedBy}`
+                      : ""}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -1150,6 +1219,21 @@ export default function FundDisbursementRequest() {
                 onClick={() => setShowRejectModal(true)}
               >
                 Reject
+              </Button>
+            )}
+
+            {showFinanceIntegration && (
+              <Button
+                type="button"
+                onClick={handleIntegrateWithFinance}
+                disabled={isFinanceIntegrated || isIntegratingFinance}
+                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+              >
+                {isFinanceIntegrated
+                  ? "Integrated with Finance Module"
+                  : isIntegratingFinance
+                    ? "Integrating..."
+                    : "Integrate with Finance Module"}
               </Button>
             )}
           </div>
