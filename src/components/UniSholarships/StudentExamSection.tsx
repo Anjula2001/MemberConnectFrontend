@@ -102,6 +102,9 @@ export default function StudentExamSection() {
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Ref mirrors isSubmitting so a double-click in the same tick is rejected before
   // React has re-rendered the disabled button.
@@ -128,6 +131,7 @@ export default function StudentExamSection() {
     | "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL"
     | "APPROVED"
     | "REJECTED"
+    | "INACTIVE"
   >("NEW");
   const [isSaved, setIsSaved] = useState(false);
 
@@ -148,6 +152,30 @@ export default function StudentExamSection() {
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
   const incomplete = status === "INCOMPLETE";
+
+  // MMS25 — status changes available from View Mode, keyed by current status.
+  // Mirrors the closed table enforced in UniversityScholarshipService; APPROVED and
+  // the ADDED_TO_*_LIST states are absent on purpose and so offer nothing.
+  const STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
+    NEW: ["INACTIVE"],
+    INCOMPLETE: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_COMMITTEE_APPROVAL: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_NORMAL_BOARD_APPROVAL: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL: ["NEW", "INACTIVE"],
+    REJECTED: ["NEW", "INACTIVE"],
+    INACTIVE: ["NEW"],
+  };
+
+  // Returning a request to New needs US_REQUEST_REOPEN and deactivating it needs
+  // US_REQUEST_SET_INACTIVE. Both sit with Super Admin, Head Office and Board
+  // Secretary, so District Office never sees this control.
+  const canReopenToNew = hasPermission(user?.role, "US_REQUEST_REOPEN");
+  const canSetInactive = hasPermission(user?.role, "US_REQUEST_SET_INACTIVE");
+
+  const availableStatusTargets = (STATUS_CHANGE_TARGETS[status] || []).filter((target) =>
+    target === "NEW" ? canReopenToNew : canSetInactive
+  );
+  const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
   const canEditApprovedScholarshipDetails = true; // TODO: wire to the user privilege for approved scholarship detail edits.
   const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
@@ -749,6 +777,56 @@ export default function StudentExamSection() {
     }
   };
 
+  // MMS25 — apply a View Mode status change.
+  const executeStatusChange = async () => {
+    if (!statusChangeTarget || isChangingStatus) return;
+
+    const actionId = requestId || loadedRecord?.requestId;
+    if (!actionId) {
+      setExamNoPopupMessage("Request must be saved before its status can be changed");
+      setShowExamNoPopup(true);
+      return;
+    }
+
+    setIsChangingStatus(true);
+    try {
+      const response = await authFetch(
+        `http://localhost:8080/api/university-scholarships/${encodeURIComponent(String(actionId))}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: statusChangeTarget }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = "Failed to change status";
+        try {
+          message = JSON.parse(errorText).message || message;
+        } catch { }
+        setExamNoPopupMessage(message);
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      const updated = await response.json();
+      const nextStatus = updated.status || statusChangeTarget;
+      setStatus(nextStatus);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setShowStatusChangeModal(false);
+      setStatusChangeTarget("");
+      setExamNoPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Status change failed:", error);
+      setExamNoPopupMessage("Failed to change status");
+      setShowExamNoPopup(true);
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
+
   // Validate exam number before saving
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
@@ -1244,6 +1322,8 @@ export default function StudentExamSection() {
       return "bg-amber-100 border-amber-200 text-amber-600";
     } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
       return "bg-emerald-100 border-emerald-200 text-emerald-600";
+    } else if (statusLower === "inactive") {
+      return "bg-gray-100 border-gray-200 text-gray-500";
     }
 
     return "bg-yellow-100 border-yellow-200 text-yellow-500";
@@ -1275,6 +1355,8 @@ export default function StudentExamSection() {
         return "Approved";
       case "REJECTED":
         return "Rejected";
+      case "INACTIVE":
+        return "Inactive";
       default:
         return value.replace(/_/g, " ");
     }
@@ -1383,6 +1465,19 @@ export default function StudentExamSection() {
 
 
           <div className="flex gap-2">
+            {canChangeStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStatusChangeTarget(availableStatusTargets[0]);
+                  setShowStatusChangeModal(true);
+                }}
+              >
+                Change Status
+              </Button>
+            )}
+
             {isViewMode && isEditableStatus && (
               <Button
                 type="button"
@@ -2112,6 +2207,65 @@ export default function StudentExamSection() {
           </div>
         );
       })()}
+
+      {showStatusChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <h3 className="mb-2 text-xl font-bold text-[#953002] text-center">
+              Change Status
+            </h3>
+
+            <p className="mb-4 text-sm text-gray-600 text-center">
+              Current status:{" "}
+              <span className="font-semibold text-gray-800">{formatStatusLabel(status)}</span>
+            </p>
+
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Change to</label>
+              {availableStatusTargets.map((target) => (
+                <label
+                  key={target}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="statusChangeTarget"
+                    value={target}
+                    checked={statusChangeTarget === target}
+                    onChange={() => setStatusChangeTarget(target)}
+                  />
+                  <span className="font-medium text-gray-800">{formatStatusLabel(target)}</span>
+                  {target === "INACTIVE" && (
+                    <span className="ml-auto text-xs text-gray-500">Requires Inactive rights</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-center gap-3 border-t border-gray-100 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowStatusChangeModal(false);
+                  setStatusChangeTarget("");
+                }}
+                className="w-28 rounded-lg text-sm font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeStatusChange}
+                disabled={!statusChangeTarget || isChangingStatus}
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+              >
+                {isChangingStatus ? "Saving..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSubmitConfirmModal && (() => {
         const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;

@@ -131,6 +131,8 @@ export type Permission =
   | "US_FUND_SUBMIT"
   | "US_FUND_INCOMPLETE"
   | "US_FUND_APPROVE"
+  | "US_FUND_SET_INACTIVE"
+  | "US_FUND_REOPEN"
   // ---- University: masters + finance ----
   | "US_MASTER_VIEW"
   | "US_MASTER_MANAGE"
@@ -198,6 +200,10 @@ const UNIVERSITY_BOARD: Permission[] = [
   "US_FUND_SUBMIT",
   "US_FUND_INCOMPLETE",
   "US_FUND_APPROVE",
+  // Fund request View Mode status changes (New <-> Inactive). Withheld from District
+  // Office, which raises fund requests.
+  "US_FUND_SET_INACTIVE",
+  "US_FUND_REOPEN",
   "US_MASTER_VIEW",
 ];
 

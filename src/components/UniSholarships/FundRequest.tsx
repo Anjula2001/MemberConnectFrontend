@@ -86,6 +86,9 @@ export default function FundDisbursementRequest() {
   const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [status, setStatus] = useState<FundRequestStatus>("NEW");
   const isViewMode = Boolean(fundRequestId) && mode !== "edit";
@@ -104,6 +107,27 @@ export default function FundDisbursementRequest() {
   const canChangeSubmittedFundRequestStatus = hasPermission(user?.role, "US_FUND_APPROVE");
   const canReviewSubmittedFundRequest =
     isViewMode && isSubmittedForApproval && canChangeSubmittedFundRequestStatus;
+
+  // MMS45 — status changes available from View Mode, keyed by current status.
+  // Mirrors the closed table enforced in UniversityScholarshipService. INCOMPLETE is
+  // absent as a source status because the spec for this screen does not list it, and
+  // APPROVED is terminal once the money has been released.
+  const FUND_STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
+    NEW: ["INACTIVE"],
+    SUBMITTED_FOR_COMMITTEE_APPROVAL: ["NEW", "INACTIVE"],
+    REJECTED: ["NEW", "INACTIVE"],
+    INACTIVE: ["NEW"],
+  };
+
+  // Both rights sit with Super Admin, Head Office and Board Secretary, so District
+  // Office — which raises fund requests — never sees this control.
+  const canReopenFundRequest = hasPermission(user?.role, "US_FUND_REOPEN");
+  const canSetFundRequestInactive = hasPermission(user?.role, "US_FUND_SET_INACTIVE");
+
+  const availableFundStatusTargets = (FUND_STATUS_CHANGE_TARGETS[status] || []).filter(
+    (target) => (target === "NEW" ? canReopenFundRequest : canSetFundRequestInactive)
+  );
+  const canChangeFundStatus = isViewMode && availableFundStatusTargets.length > 0;
 
   const [isSaved, setIsSaved] = useState(false);
 
@@ -642,6 +666,52 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // MMS45 — apply a View Mode status change.
+  const executeFundStatusChange = async () => {
+    const targetFundRequestId = fundRequestNo || fundRequestId;
+    if (!statusChangeTarget || isChangingStatus) return;
+    if (!scholarshipRequestId || !targetFundRequestId) return;
+
+    setIsChangingStatus(true);
+    try {
+      const response = await authFetch(
+        `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests/${encodeURIComponent(targetFundRequestId)}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: statusChangeTarget }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = "Failed to change status";
+        try {
+          message = JSON.parse(errorText).message || message;
+        } catch { }
+        setPopupMessage(message);
+        setShowPopup(true);
+        return;
+      }
+
+      const updated: ScholarshipFundRequest = await response.json();
+      const nextStatus = (updated.status as FundRequestStatus) || statusChangeTarget;
+      setStatus(nextStatus);
+      setCurrentFundRequest(updated);
+      await fetchScholarshipSummary();
+      setShowStatusChangeModal(false);
+      setStatusChangeTarget("");
+      setPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Failed to change fund request status:", error);
+      setPopupMessage("Failed to change status");
+      setShowPopup(true);
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
+
   const handleApproveFundRequest = () => {
     setShowApproveConfirmModal(true);
   };
@@ -694,6 +764,19 @@ export default function FundDisbursementRequest() {
           </div>
 
           <div className="flex gap-2">
+            {canChangeFundStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStatusChangeTarget(availableFundStatusTargets[0]);
+                  setShowStatusChangeModal(true);
+                }}
+              >
+                Change Status
+              </Button>
+            )}
+
             {isViewMode && isEditableStatus && (
               <Button type="button" variant="outline" onClick={handleEnterEditMode}>
                 Edit
@@ -1079,6 +1162,65 @@ export default function FundDisbursementRequest() {
         onClose={() => setShowIncompleteModal(false)}
         onConfirm={handleMarkIncomplete}
       />
+
+      {showStatusChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <h3 className="mb-2 text-xl font-bold text-[#953002] text-center">
+              Change Status
+            </h3>
+
+            <p className="mb-4 text-sm text-gray-600 text-center">
+              Current status:{" "}
+              <span className="font-semibold text-gray-800">{formatStatusLabel(status)}</span>
+            </p>
+
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Change to</label>
+              {availableFundStatusTargets.map((target) => (
+                <label
+                  key={target}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="fundStatusChangeTarget"
+                    value={target}
+                    checked={statusChangeTarget === target}
+                    onChange={() => setStatusChangeTarget(target)}
+                  />
+                  <span className="font-medium text-gray-800">{formatStatusLabel(target)}</span>
+                  {target === "INACTIVE" && (
+                    <span className="ml-auto text-xs text-gray-500">Requires Inactive rights</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-center gap-3 border-t border-gray-100 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowStatusChangeModal(false);
+                  setStatusChangeTarget("");
+                }}
+                className="w-28 rounded-lg text-sm font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeFundStatusChange}
+                disabled={!statusChangeTarget || isChangingStatus}
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+              >
+                {isChangingStatus ? "Saving..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
