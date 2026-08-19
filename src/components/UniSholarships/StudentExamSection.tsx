@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import { hasPermission } from "@/lib/permissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Eye, Check, AlertCircle } from "lucide-react";
+import { authFetch } from "@/lib/api/authFetch";
 
 type FormData = {
   requestDate: string;
@@ -101,6 +102,10 @@ export default function StudentExamSection() {
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Ref mirrors isSubmitting so a double-click in the same tick is rejected before
+  // React has re-rendered the disabled button.
+  const isSubmittingRef = useRef(false);
   const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
@@ -175,7 +180,7 @@ export default function StudentExamSection() {
   // Load required document types 
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
-      const res = await fetch(
+      const res = await authFetch(
         "http://localhost:8080/api/required-document-types/UNIVERSITY_SCHOLARSHIP"
       );
       const data = await res.json();
@@ -192,7 +197,7 @@ export default function StudentExamSection() {
 
     const fetchMember = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/members/${targetMemberId}`
         );
 
@@ -219,7 +224,7 @@ export default function StudentExamSection() {
 
     const fetchMemberScholarships = async () => {
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
         );
 
@@ -249,7 +254,7 @@ export default function StudentExamSection() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/university-scholarships/${encodeURIComponent(requestKey)}`
         );
 
@@ -310,7 +315,7 @@ export default function StudentExamSection() {
 
     const fetchUploadedDocuments = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
             requestId
           )}`
@@ -400,8 +405,8 @@ export default function StudentExamSection() {
     const fetchInitialData = async () => {
       try {
         const [uniRes, bankRes] = await Promise.all([
-          fetch("http://localhost:8080/api/universities"),
-          fetch("http://localhost:8080/api/banks"),
+          authFetch("http://localhost:8080/api/universities"),
+          authFetch("http://localhost:8080/api/banks"),
         ]);
 
         const uniData = await uniRes.json();
@@ -430,7 +435,7 @@ export default function StudentExamSection() {
 
     const fetchPrograms = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/programs/${selectedUniversity}`
         );
         const data = await res.json();
@@ -454,7 +459,7 @@ export default function StudentExamSection() {
 
     const fetchDuration = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/duration?universityId=${selectedUniversity}&programId=${selectedProgram}`
         );
         const data = await res.json();
@@ -477,7 +482,7 @@ export default function StudentExamSection() {
 
     const fetchBranches = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/branches/${selectedBank}`
         );
         const data = await res.json();
@@ -507,7 +512,7 @@ export default function StudentExamSection() {
     try {
       setIsValidatingExamNo(true);
 
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
           selectedExamNo
         )}`
@@ -570,7 +575,7 @@ export default function StudentExamSection() {
       let savedRequest: any = null;
 
       if (requestId) {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/university-scholarships/${requestId}`,
           {
             method: "PUT",
@@ -591,7 +596,7 @@ export default function StudentExamSection() {
 
         savedRequest = await res.json();
       } else {
-        const response = await fetch(
+        const response = await authFetch(
           "http://localhost:8080/api/university-scholarships",
           {
             method: "POST",
@@ -661,29 +666,44 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    let actionId: string | number | null = requestId;
+    // Only NEW and INCOMPLETE requests may be submitted. The button is disabled for
+    // every other status, but pressing Enter in a field still fires the form submit.
+    if (!isEditableStatus) return;
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      let actionId: string | number | null = requestId;
 
-    if (!isInputsDisabled) {
-      const saved = await performSave(false);
-      if (!saved) {
-        setExamNoPopupMessage("Failed to save request before submitting");
+      if (!isInputsDisabled) {
+        const saved = await performSave(false);
+        if (!saved) {
+          setExamNoPopupMessage("Failed to save request before submitting");
+          setShowExamNoPopup(true);
+          return;
+        }
+        actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+      }
+
+      if (!actionId) {
+        setExamNoPopupMessage("Please save the request before submitting");
         setShowExamNoPopup(true);
         return;
       }
-      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
-    }
 
-    if (!actionId) {
-      setExamNoPopupMessage("Please save the request before submitting");
-      setShowExamNoPopup(true);
-      return;
+      setShowSubmitConfirmModal(true);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
-
-    setShowSubmitConfirmModal(true);
   };
 
   const executeSubmit = async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     setShowSubmitConfirmModal(false);
+
     let actionId: string | number | null = requestId;
     if (!actionId && loadedRecord) {
       actionId = loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null);
@@ -692,11 +712,13 @@ export default function StudentExamSection() {
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/submit/${actionId}`,
         {
           method: "POST",
@@ -721,6 +743,9 @@ export default function StudentExamSection() {
       console.error("Submit failed:", error);
       setExamNoPopupMessage("Failed to submit request");
       setShowExamNoPopup(true);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -734,7 +759,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
           examNo
         )}`
@@ -781,7 +806,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/minor-account/check?birthCertificateNumber=${encodeURIComponent(
           bcNo
         )}`
@@ -849,7 +874,7 @@ export default function StudentExamSection() {
 
     try {
 
-      const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-approve/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/university-scholarships/committee-approve/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: requestId, status: nextStatus }),
@@ -892,7 +917,7 @@ export default function StudentExamSection() {
 
     (async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-reject/${requestId}`, {
+        const res = await authFetch(`http://localhost:8080/api/university-scholarships/committee-reject/${requestId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decisionReason: rejectReason.trim() }),
@@ -941,7 +966,7 @@ export default function StudentExamSection() {
       const formData = new FormData();
       formData.append("file", file.file);
 
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
           savedRequestId
         )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
@@ -970,7 +995,7 @@ export default function StudentExamSection() {
 
     // Refresh the uploaded documents list from backend
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
           savedRequestId
         )}`
@@ -992,7 +1017,7 @@ export default function StudentExamSection() {
   // Perform update request
   const updateScholarship = async (id: string | number, data: any) => {
     try {
-      const res = await fetch(`http://localhost:8080/api/university-scholarships/${id}`, {
+      const res = await authFetch(`http://localhost:8080/api/university-scholarships/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -1026,7 +1051,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/university-scholarships/incomplete/${actionId}`,
         {
           method: "POST",
@@ -1070,7 +1095,7 @@ export default function StudentExamSection() {
   const handleDeleteUploadedDocument = async (docId: number) => {
     if (!requestId) return;
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(requestId)}`,
         { method: "DELETE" }
       );
@@ -1125,7 +1150,7 @@ export default function StudentExamSection() {
     };
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/university-scholarships/${requestId}/approved-details`,
         {
           method: "PUT",
@@ -1297,7 +1322,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
       );
 
@@ -1408,10 +1433,10 @@ export default function StudentExamSection() {
 
             <Button
               type="submit"
-              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted || isApprovedDetailsEditMode}
+              disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
-              Submit
+              {isSubmitting ? "Submitting..." : "Submit"}
             </Button>
           </div>
         </div>
@@ -2122,10 +2147,11 @@ export default function StudentExamSection() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
                   onClick={executeSubmit}
+                  disabled={isSubmitting}
                 >
-                  Submit
+                  {isSubmitting ? "Submitting..." : "Submit"}
                 </Button>
               </div>
             </div>

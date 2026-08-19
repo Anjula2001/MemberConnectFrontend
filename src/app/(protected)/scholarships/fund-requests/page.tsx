@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { authFetch } from "@/lib/api/authFetch";
 
 type ScholarshipFundRequest = {
   id?: number | string;
@@ -372,7 +373,7 @@ export default function UniversityScholarshipFundRequestsPage() {
     try {
       setIsLoading(true);
 
-      const response = await fetch("http://localhost:8080/api/university-scholarships");
+      const response = await authFetch("http://localhost:8080/api/university-scholarships");
       if (!response.ok) {
         throw new Error("Failed to retrieve university scholarship fund requests");
       }

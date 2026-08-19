@@ -14,6 +14,9 @@ import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 
 import { fundRequestSchema } from "@/lib/validators/fundrequestvalidation.schema";
+import { authFetch } from "@/lib/api/authFetch";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
 
 type FundRequestSchema = ReturnType<typeof fundRequestSchema>;
 type FundRequestFormInput = z.input<FundRequestSchema>;
@@ -69,6 +72,7 @@ type MemberSummary = {
 };
 
 export default function FundDisbursementRequest() {
+  const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const scholarshipRequestId = searchParams.get("scholarshipRequestId") || "";
@@ -87,8 +91,17 @@ export default function FundDisbursementRequest() {
   const isViewMode = Boolean(fundRequestId) && mode !== "edit";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isSubmittedForApproval = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
-  const canEditRequest = !isViewMode && isEditableStatus;
-  const canChangeSubmittedFundRequestStatus = true; // TODO: replace with logged-in user's status-change right.
+  // MMS42-MMS46 — preparing a fund request. The save endpoint accepts either right,
+  // so a role holding just one of them can still work on the form.
+  const canPrepareFundRequest =
+    hasPermission(user?.role, "US_FUND_CREATE") || hasPermission(user?.role, "US_FUND_EDIT");
+  const canSubmitFundRequest = hasPermission(user?.role, "US_FUND_SUBMIT");
+  const canMarkFundRequestIncomplete = hasPermission(user?.role, "US_FUND_INCOMPLETE");
+  const canEditRequest = !isViewMode && isEditableStatus && canPrepareFundRequest;
+  // MMS47 — approving or rejecting a disbursement is its own right, held by Head
+  // Office and Board Secretary. Without this check the buttons rendered for every
+  // role and the PATCH came back 403.
+  const canChangeSubmittedFundRequestStatus = hasPermission(user?.role, "US_FUND_APPROVE");
   const canReviewSubmittedFundRequest =
     isViewMode && isSubmittedForApproval && canChangeSubmittedFundRequestStatus;
 
@@ -227,7 +240,7 @@ export default function FundDisbursementRequest() {
       const formData = new FormData();
       formData.append("file", docFile.file);
 
-      const uploadRes = await fetch(
+      const uploadRes = await authFetch(
         `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
           savedFundRequestId
         )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
@@ -252,7 +265,7 @@ export default function FundDisbursementRequest() {
 
     // Refresh the uploaded documents list from backend
     try {
-      const docsRes = await fetch(
+      const docsRes = await authFetch(
         `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(savedFundRequestId)}`
       );
       if (docsRes.ok) {
@@ -268,7 +281,7 @@ export default function FundDisbursementRequest() {
     const targetId = fundRequestNo || fundRequestId || requestId;
     if (!targetId) return;
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
         { method: "DELETE" }
       );
@@ -291,7 +304,7 @@ export default function FundDisbursementRequest() {
 
   const handleSaveFundRequest = async (data: FundRequestFormOutput) => {
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests`,
         {
           method: "POST",
@@ -355,7 +368,7 @@ export default function FundDisbursementRequest() {
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           "http://localhost:8080/api/required-document-types/FUND_REQUEST"
         );
         if (!res.ok) throw new Error("Failed to load document types");
@@ -379,7 +392,7 @@ export default function FundDisbursementRequest() {
 
     const fetchUploadedDocuments = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(targetId)}`
         );
         if (!res.ok) {
@@ -401,7 +414,7 @@ export default function FundDisbursementRequest() {
     if (!scholarshipRequestId) return;
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}`
       );
 
@@ -427,7 +440,7 @@ export default function FundDisbursementRequest() {
 
     const fetchMember = async () => {
       try {
-        const response = await fetch(`http://localhost:8080/api/members/${encodeURIComponent(memberId)}`);
+        const response = await authFetch(`http://localhost:8080/api/members/${encodeURIComponent(memberId)}`);
 
         if (!response.ok) {
           throw new Error("Failed to load member details");
@@ -489,7 +502,7 @@ export default function FundDisbursementRequest() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests/${encodeURIComponent(targetFundRequestId)}/submit`,
         { method: "POST" }
       );
@@ -531,7 +544,7 @@ export default function FundDisbursementRequest() {
     const currentData = getValues();
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests`,
         {
           method: "POST",
@@ -587,7 +600,7 @@ export default function FundDisbursementRequest() {
     if (!scholarshipRequestId || !targetFundRequestId) return;
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/${encodeURIComponent(scholarshipRequestId)}/fund-requests/${encodeURIComponent(targetFundRequestId)}/status`,
         {
           method: "PATCH",
@@ -1015,7 +1028,7 @@ export default function FundDisbursementRequest() {
 
           {/* ACTION BUTTONS */}
           <div className="flex justify-end gap-3">
-            {!isSubmittedForApproval && (
+            {!isSubmittedForApproval && canMarkFundRequestIncomplete && (
               <Button
                 type="button"
                 onClick={() => setShowIncompleteModal(true)}
@@ -1026,7 +1039,7 @@ export default function FundDisbursementRequest() {
               </Button>
             )}
 
-            {!isSubmittedForApproval && (
+            {!isSubmittedForApproval && canSubmitFundRequest && (
               <Button
                 type="button"
                 onClick={handleSubmitFundRequest}

@@ -157,6 +157,10 @@ const GRADE5_BOARD: Permission[] = [
   "G5_EXAM_MASTER_VIEW",
 ];
 
+// Requests (MMS21-MMS25) plus fund request preparation (MMS42-MMS46) as of
+// 2026-08-19. Raises fund requests but cannot decide them: US_FUND_APPROVE stays
+// with Head Office / Board Secretary, so preparation and approval sit in different
+// offices. Mirrors RolePermissions.java on the backend — keep the two in step.
 const UNIVERSITY_DISTRICT: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_CREATE",
@@ -164,13 +168,20 @@ const UNIVERSITY_DISTRICT: Permission[] = [
   "US_REQUEST_SUBMIT",
   "US_REQUEST_INCOMPLETE",
   "US_FUND_VIEW",
+  "US_FUND_CREATE",
+  "US_FUND_EDIT",
+  "US_FUND_SUBMIT",
+  "US_FUND_INCOMPLETE",
   "US_MASTER_VIEW",
 ];
 
 // The University board track. Deliberately WITHOUT US_COMMITTEE_APPROVE — the
-// Committee gate (MMS26) must not be cleared by the office that runs the Board —
-// and WITHOUT US_FUND_APPROVE, so whoever can change a payee's bank account on an
-// approved award (US_APPROVED_EDIT) cannot also release the payment into it.
+// Committee gate (MMS26) must not be cleared by the office that runs the Board.
+//
+// US_FUND_APPROVE is included as of 2026-08-19 by product decision: the office that
+// raises fund requests also decides them. It knowingly pairs US_APPROVED_EDIT
+// (changing a payee's bank account) with releasing payment into that account.
+// Mirrors RolePermissions.java on the backend — keep the two in step.
 const UNIVERSITY_BOARD: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_SET_INACTIVE",
@@ -186,6 +197,7 @@ const UNIVERSITY_BOARD: Permission[] = [
   "US_FUND_EDIT",
   "US_FUND_SUBMIT",
   "US_FUND_INCOMPLETE",
+  "US_FUND_APPROVE",
   "US_MASTER_VIEW",
 ];
 
@@ -197,7 +209,6 @@ const ALL_PERMISSIONS: Permission[] = [
   ...UNIVERSITY_DISTRICT,
   ...UNIVERSITY_BOARD,
   "US_COMMITTEE_APPROVE",
-  "US_FUND_APPROVE",
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
 ];
@@ -222,8 +233,9 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
 
-  // Head Office's rights plus the one withheld from it: releasing a disbursement.
-  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FUND_APPROVE"],
+  // The same approval track as Head Office, plus the Grade 5 / University delete
+  // privileges that DELETE_RIGHTS_ROLES also grants.
+  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
 
   // Seat of the University Scholarship Committee (MMS26), and owner of the exam /
   // university masters.

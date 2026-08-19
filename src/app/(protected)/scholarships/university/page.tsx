@@ -17,6 +17,7 @@ import {
 } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { getEducationalDistricts } from "@/lib/api/education";
+import { authFetch } from "@/lib/api/authFetch";
 
 type RequestRow = {
   id: number;
@@ -460,7 +461,7 @@ export default function Page() {
 
       // The backend scopes this to the caller's own District Office before it
       // returns, so a restricted user never receives another branch's records.
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
 
       if (Array.isArray(data) && data.length > 0) {
@@ -482,7 +483,7 @@ export default function Page() {
 
   const handleOpenBoardMeetingModal = async (deviation = false) => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
+      const res = await authFetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
       if (!res.ok) {
         throw new Error("Failed to fetch board meetings");
       }
@@ -514,7 +515,7 @@ export default function Page() {
         ? "http://localhost:8080/api/university-scholarships/attach-deviation-board-meeting"
         : "http://localhost:8080/api/university-scholarships/attach-board-meeting";
 
-      const res = await fetch(endpoint, {
+      const res = await authFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
