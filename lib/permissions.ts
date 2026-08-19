@@ -1,17 +1,24 @@
 import type { UserRole } from "@/lib/auth-context";
 
 /**
- * Single source of truth for who can do what in the Member Registration module
- * (MR01–MR18: applications, board meetings/approvals, membership profiles,
- * documentation printing, dispatch).
+ * Single source of truth for who can do what, for the two modules that have been
+ * access-controlled so far:
  *
- * Nothing in this file governs other modules (Scholarships, Death Donation,
- * Termination/Retirement, Dormant Membership, Profile Changes) — those are out of
- * scope here and keep whatever access they already have.
+ *   1. Member Registration (MR01–MR18) — expressed as role lists, below.
+ *   2. Grade 5 Scholarships (MMS01–MMS20) — expressed as named permissions, further down.
  *
- * Used by: NavigationSideBar (menu visibility), board-approvals/new-registrations/
- * directory page guards, and button-level gating. Keeping it in one place is what
- * stops a role silently falling into a catch-all "default = full access" branch.
+ * The two use different shapes on purpose. Member Registration shipped with role
+ * lists and works; converting it would be a refactor of live code for no behavioural
+ * gain. Grade 5 needs named permissions because its SRS keeps describing rights that
+ * are held *in addition* to a role ("the user needs Inactive rights", "the authorized
+ * user who has the delete privileges"), which a role list cannot express.
+ *
+ * Still out of scope and unrestricted: University Scholarships, Death Donation,
+ * Termination/Retirement, Dormant Membership, Profile Changes.
+ *
+ * Everything here is UX only — it decides what is shown, never what is allowed. The
+ * backend enforces the same Grade 5 matrix independently in RolePermissions.java, and
+ * that copy is the one that counts. The two must be kept in step.
  */
 
 // The four roles the spec actually names as actors for Member Registration.
@@ -66,4 +73,150 @@ export const ELIGIBILITY_CONFIG_ROLES: UserRole[] = ["SUPER_ADMIN"];
 
 export function hasRole(role: UserRole | undefined | null, allowed: UserRole[]): boolean {
   return !!role && allowed.includes(role);
+}
+
+// ─── Grade 5 Scholarships (MMS01–MMS20) ──────────────────────────────────────
+//
+// Mirror of backend enums/Permission.java + config/RolePermissions.java. If you
+// change a grant here, change it there too — this copy only hides buttons, the
+// backend copy is what actually stops the request.
+
+export type G5Permission =
+  // Requests (MMS01–MMS05) — District Office territory
+  | "G5_REQUEST_VIEW"
+  | "G5_REQUEST_CREATE"
+  | "G5_REQUEST_EDIT"
+  | "G5_REQUEST_SUBMIT"
+  | "G5_REQUEST_INCOMPLETE"
+  | "G5_REQUEST_SET_INACTIVE"
+  | "G5_REQUEST_REOPEN"
+  // Approval lists (MMS06–MMS19) — Head Office territory
+  | "G5_LIST_VIEW"
+  | "G5_LIST_CREATE"
+  | "G5_LIST_PRINT"
+  | "G5_LIST_PROCESS"
+  | "G5_LIST_DELETE"
+  // Masters
+  | "G5_EXAM_MASTER_VIEW"
+  | "G5_EXAM_MASTER_MANAGE"
+  // MMS20 — no endpoint behind this yet
+  | "G5_FINANCE_DISBURSE";
+
+const ALL_G5_PERMISSIONS: G5Permission[] = [
+  "G5_REQUEST_VIEW",
+  "G5_REQUEST_CREATE",
+  "G5_REQUEST_EDIT",
+  "G5_REQUEST_SUBMIT",
+  "G5_REQUEST_INCOMPLETE",
+  "G5_REQUEST_SET_INACTIVE",
+  "G5_REQUEST_REOPEN",
+  "G5_LIST_VIEW",
+  "G5_LIST_CREATE",
+  "G5_LIST_PRINT",
+  "G5_LIST_PROCESS",
+  "G5_LIST_DELETE",
+  "G5_EXAM_MASTER_VIEW",
+  "G5_EXAM_MASTER_MANAGE",
+  "G5_FINANCE_DISBURSE",
+];
+
+/**
+ * Segregation of duties: District Office raises requests, Head Office approves them.
+ *
+ * The SRS actor tables for MMS06/MMS13 name "District Office System User" as the
+ * approver, but every child function beneath them (MMS07–MMS12, MMS14–MMS19) and the
+ * §2.2.1 process narrative put approval at Head Office. Resolved in favour of Head
+ * Office — an office that approves its own requests defeats the Board Meeting control
+ * the whole module is built around.
+ *
+ * DEATH_DONATION_OFFICER is absent deliberately: it previously reached Grade 5 only by
+ * falling through a catch-all branch in the sidebar, which is exactly the failure this
+ * map exists to prevent.
+ */
+const G5_ROLE_PERMISSIONS: Record<UserRole, G5Permission[]> = {
+  SUPER_ADMIN: ALL_G5_PERMISSIONS,
+
+  DISTRICT_OFFICE: [
+    "G5_REQUEST_VIEW",
+    "G5_REQUEST_CREATE",
+    "G5_REQUEST_EDIT",
+    "G5_REQUEST_SUBMIT",
+    "G5_REQUEST_INCOMPLETE",
+    "G5_EXAM_MASTER_VIEW",
+  ],
+
+  HEAD_OFFICE: [
+    "G5_REQUEST_VIEW",
+    "G5_REQUEST_SET_INACTIVE",
+    "G5_REQUEST_REOPEN",
+    "G5_LIST_VIEW",
+    "G5_LIST_CREATE",
+    "G5_LIST_PRINT",
+    "G5_LIST_PROCESS",
+    "G5_LIST_DELETE",
+    "G5_EXAM_MASTER_VIEW",
+  ],
+
+  BOARD_SECRETARY: [
+    "G5_REQUEST_VIEW",
+    "G5_REQUEST_SET_INACTIVE",
+    "G5_REQUEST_REOPEN",
+    "G5_LIST_VIEW",
+    "G5_LIST_CREATE",
+    "G5_LIST_PRINT",
+    "G5_LIST_PROCESS",
+    "G5_LIST_DELETE",
+    "G5_EXAM_MASTER_VIEW",
+  ],
+
+  // Not an actor named in the SRS, but the only role whose name fits ownership of the
+  // Exam Master (exam dates + district cut-off marks).
+  SCHOLARSHIP_OFFICER: [
+    "G5_REQUEST_VIEW",
+    "G5_REQUEST_CREATE",
+    "G5_REQUEST_EDIT",
+    "G5_REQUEST_SUBMIT",
+    "G5_REQUEST_INCOMPLETE",
+    "G5_LIST_VIEW",
+    "G5_EXAM_MASTER_VIEW",
+    "G5_EXAM_MASTER_MANAGE",
+  ],
+
+  // "Head Office – Finance Department" in §2.2.1: read-only until MMS20 exists.
+  ACCOUNTS: ["G5_REQUEST_VIEW", "G5_LIST_VIEW", "G5_FINANCE_DISBURSE"],
+
+  DEATH_DONATION_OFFICER: [],
+};
+
+export function hasG5Permission(
+  role: UserRole | undefined | null,
+  permission: G5Permission
+): boolean {
+  return !!role && G5_ROLE_PERMISSIONS[role].includes(permission);
+}
+
+/** True when the role may reach the Grade 5 module at all — used for page guards. */
+export function canAccessGrade5(role: UserRole | undefined | null): boolean {
+  return (
+    hasG5Permission(role, "G5_REQUEST_VIEW") || hasG5Permission(role, "G5_LIST_VIEW")
+  );
+}
+
+/**
+ * Roles whose remit is national rather than a single District Office.
+ *
+ * Mirrors ALL_LOCATION_ROLES in the backend's CurrentUserService. Anyone not listed
+ * is pinned to their assignedDistrict, and the backend re-pins them regardless of
+ * what the UI sends — this is only here so the Location filter renders correctly.
+ */
+export const G5_ALL_LOCATION_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+  "ACCOUNTS",
+  "SCHOLARSHIP_OFFICER",
+];
+
+export function canSelectAllG5Locations(role: UserRole | undefined | null): boolean {
+  return hasRole(role, G5_ALL_LOCATION_ROLES);
 }

@@ -7,6 +7,9 @@ import DocumentUpload from "@/src/components/ui/documentupload";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { canAccessGrade5, hasG5Permission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 type Grade5Request = Grade5InitialData & {
   id?: number;
@@ -48,6 +51,7 @@ const LOCKED_STATUSES = [
 export default function Grade5ScholarshipPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const formRef = useRef<Grade5FormRef>(null);
 
   const API_BASE_URL = "http://localhost:8080";
@@ -82,7 +86,16 @@ export default function Grade5ScholarshipPage() {
     ? LOCKED_STATUSES.includes(grade5Request.status)
     : false;
 
-  const isEditMode = isEditing && !isRequestLocked;
+  // This screen sits inside the Member Directory, which Head Office can also reach —
+  // so viewing a member is not on its own permission to raise or amend a scholarship
+  // request. Editing needs create rights on a new request, edit rights on a saved one.
+  const canCreateRequest = hasG5Permission(user?.role, "G5_REQUEST_CREATE");
+  const canEditRequest = hasG5Permission(user?.role, "G5_REQUEST_EDIT");
+  const canSubmitRequest = hasG5Permission(user?.role, "G5_REQUEST_SUBMIT");
+  const canMarkIncomplete = hasG5Permission(user?.role, "G5_REQUEST_INCOMPLETE");
+  const canModifyRequest = grade5Request?.id ? canEditRequest : canCreateRequest;
+
+  const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
   const fundReadOnly = !!grade5Request?.id && !isEditMode;
 
   const [openModal, setOpenModal] = useState(false);
@@ -130,9 +143,24 @@ export default function Grade5ScholarshipPage() {
     ],
   };
 
-  const viewModeStatusActions = grade5Request?.status
-    ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
-    : [];
+  // Two of these transitions are privileged above ordinary editing, mirroring
+  // requiredPermissionForStatusChange() on the backend:
+  //   -> INACTIVE       SRS 2.3.4 attaches "the user needs Inactive rights" to it.
+  //   REJECTED -> NEW   reverses a Board decision, so it needs reopen rights.
+  // Every other move to New (INCOMPLETE -> NEW, SUBMITTED -> NEW) stays ordinary.
+  const viewModeStatusActions = (
+    grade5Request?.status
+      ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
+      : []
+  ).filter((action) => {
+    if (action.status === "INACTIVE") {
+      return hasG5Permission(user?.role, "G5_REQUEST_SET_INACTIVE");
+    }
+    if (action.status === "NEW" && grade5Request?.status === "REJECTED") {
+      return hasG5Permission(user?.role, "G5_REQUEST_REOPEN");
+    }
+    return canEditRequest;
+  });
 
   const showViewModeStatusDropdown =
     !!grade5Request?.id &&
@@ -762,6 +790,19 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  // Reached from the Member Directory, which more roles can open than may work with
+  // scholarships — so this screen needs its own guard rather than inheriting the
+  // directory's.
+  if (user && !canAccessGrade5(user.role)) {
+    return (
+      <AccessRestricted
+        message="Grade 5 Scholarship requests are restricted to District Office, Head Office and Scholarship personnel."
+        fallbackHref="/membership/directory"
+        fallbackLabel="Back to Member Directory"
+      />
+    );
+  }
+
   return (
     <>
       <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
@@ -799,7 +840,8 @@ export default function Grade5ScholarshipPage() {
               {isViewRequestMode &&
                 grade5Request?.id &&
                 !isRequestLocked &&
-                !isEditMode && (
+                !isEditMode &&
+                canEditRequest && (
                   <Button
                     onClick={() => {
                       setIsEditing(true);
@@ -844,29 +886,35 @@ export default function Grade5ScholarshipPage() {
 
               {(!isViewRequestMode || isEditMode) && (
                 <>
-                  <Button
-                    onClick={handleSave}
-                    disabled={isRequestLocked}
-                    className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-                  >
-                    Save
-                  </Button>
+                  {canModifyRequest && (
+                    <Button
+                      onClick={handleSave}
+                      disabled={isRequestLocked}
+                      className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    >
+                      Save
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={() => setOpenModal(true)}
-                    disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
+                  {canMarkIncomplete && (
+                    <Button
+                      onClick={() => setOpenModal(true)}
+                      disabled={!grade5Request?.id || isRequestLocked}
+                      className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
+                    >
+                      Mark Incomplete
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={handleSubmitForm}
-                    disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
-                  >
-                    Submit
-                  </Button>
+                  {canSubmitRequest && (
+                    <Button
+                      onClick={handleSubmitForm}
+                      disabled={!grade5Request?.id || isRequestLocked}
+                      className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                    >
+                      Submit
+                    </Button>
+                  )}
                 </>
               )}
             </div>

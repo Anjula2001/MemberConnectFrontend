@@ -36,6 +36,16 @@ function patchGlobalFetch() {
       window.location.href = "/login";
     }
 
+    // 403 is deliberately NOT a logout: the session is valid, the action simply is not
+    // permitted. Pages that call fetch() directly read response.ok themselves, so the
+    // response is passed through untouched and only logged here — logging out on 403
+    // would bounce a legitimately signed-in user to /login for clicking one button.
+    if (response.status === 403) {
+      console.warn(
+        `[permissions] 403 Forbidden for ${typeof input === "string" ? input : String(input)}`
+      );
+    }
+
     return response;
   };
 
