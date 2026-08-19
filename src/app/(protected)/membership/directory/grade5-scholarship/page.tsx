@@ -7,6 +7,9 @@ import DocumentUpload from "@/src/components/ui/documentupload";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { canAccessGrade5, hasPermission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 type Grade5Request = Grade5InitialData & {
   id?: number;
@@ -48,13 +51,11 @@ const LOCKED_STATUSES = [
 export default function Grade5ScholarshipPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const formRef = useRef<Grade5FormRef>(null);
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const NORMAL_DISBURSEMENT_AMOUNT = 5000;
-  const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
-  const ELIGIBLE_MONTH_LIMIT = 36;
   const REQUIRED_MINOR_REMITTANCE_AMOUNT = 250;
 
   const MEMBER_ONLY = "MEMBER_ONLY";
@@ -82,7 +83,16 @@ export default function Grade5ScholarshipPage() {
     ? LOCKED_STATUSES.includes(grade5Request.status)
     : false;
 
-  const isEditMode = isEditing && !isRequestLocked;
+  // This screen sits inside the Member Directory, which Head Office can also reach —
+  // so viewing a member is not on its own permission to raise or amend a scholarship
+  // request. Editing needs create rights on a new request, edit rights on a saved one.
+  const canCreateRequest = hasPermission(user?.role, "G5_REQUEST_CREATE");
+  const canEditRequest = hasPermission(user?.role, "G5_REQUEST_EDIT");
+  const canSubmitRequest = hasPermission(user?.role, "G5_REQUEST_SUBMIT");
+  const canMarkIncomplete = hasPermission(user?.role, "G5_REQUEST_INCOMPLETE");
+  const canModifyRequest = grade5Request?.id ? canEditRequest : canCreateRequest;
+
+  const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
   const fundReadOnly = !!grade5Request?.id && !isEditMode;
 
   const [openModal, setOpenModal] = useState(false);
@@ -130,9 +140,24 @@ export default function Grade5ScholarshipPage() {
     ],
   };
 
-  const viewModeStatusActions = grade5Request?.status
-    ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
-    : [];
+  // Two of these transitions are privileged above ordinary editing, mirroring
+  // requiredPermissionForStatusChange() on the backend:
+  //   -> INACTIVE       SRS 2.3.4 attaches "the user needs Inactive rights" to it.
+  //   REJECTED -> NEW   reverses a Board decision, so it needs reopen rights.
+  // Every other move to New (INCOMPLETE -> NEW, SUBMITTED -> NEW) stays ordinary.
+  const viewModeStatusActions = (
+    grade5Request?.status
+      ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
+      : []
+  ).filter((action) => {
+    if (action.status === "INACTIVE") {
+      return hasPermission(user?.role, "G5_REQUEST_SET_INACTIVE");
+    }
+    if (action.status === "NEW" && grade5Request?.status === "REJECTED") {
+      return hasPermission(user?.role, "G5_REQUEST_REOPEN");
+    }
+    return canEditRequest;
+  });
 
   const showViewModeStatusDropdown =
     !!grade5Request?.id &&
@@ -559,8 +584,8 @@ export default function Grade5ScholarshipPage() {
 
     const statusLabel =
       newStatus === "INACTIVE" ? "Inactive"
-      : newStatus === "NEW" ? "New"
-      : newStatus;
+        : newStatus === "NEW" ? "New"
+          : newStatus;
 
     setStatusConfirmModal({
       isOpen: true,
@@ -659,8 +684,8 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-  //Calculate fund Disbursement
-  const calculateDisbursementAmount = (
+  // Calculate fund Disbursement via backend API
+  const calculateDisbursementAmount = async (
     option: string,
     months: number,
     hasMinorAccount: boolean
@@ -670,46 +695,40 @@ export default function Grade5ScholarshipPage() {
       return;
     }
 
-    const isDouble = months >= ELIGIBLE_MONTH_LIMIT;
-    const totalAmount = isDouble
-      ? DOUBLE_DISBURSEMENT_AMOUNT
-      : NORMAL_DISBURSEMENT_AMOUNT;
-    const resolvedOption = hasMinorAccount ? option : MEMBER_ONLY;
+    try {
+      const url = `${API_BASE_URL}/api/grade5/calculate-disbursement?months=${months}&option=${encodeURIComponent(
+        option
+      )}&hasMinorAccount=${hasMinorAccount}`;
 
-    setFundError("");
-    setIsDoubleAmount(isDouble);
-    setDisbursementOption(resolvedOption);
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error("Failed to calculate disbursement");
+      }
 
-    if (resolvedOption === MEMBER_ONLY) {
-      setMemberAmount(totalAmount);
-      setMinorAmount(0);
-      return;
-    }
-
-    if (resolvedOption === MEMBER_AND_MINOR) {
-      setMemberAmount(totalAmount / 2);
-      setMinorAmount(totalAmount / 2);
-      return;
-    }
-
-    if (resolvedOption === MINOR_ONLY) {
-      setMemberAmount(0);
-      setMinorAmount(totalAmount);
+      const data = await res.json();
+      setFundError("");
+      setIsDoubleAmount(!!data.isDoubleAmount);
+      setDisbursementOption(data.disbursementOption);
+      setMemberAmount(data.memberAmount || 0);
+      setMinorAmount(data.minorAmount || 0);
+    } catch (err) {
+      console.error(err);
+      setFundError("Failed to calculate disbursement amount.");
     }
   };
 
-  const handleMinorAccountExistsChange = (value: string) => {
+  const handleMinorAccountExistsChange = async (value: string) => {
     const exists = value === "YES";
 
     setMinorAccountExists(exists);
 
     if (!exists) {
       setMinorAccountNumber("");
-      calculateDisbursementAmount(MEMBER_ONLY, eligibleMonths, false);
+      await calculateDisbursementAmount(MEMBER_ONLY, eligibleMonths, false);
       return;
     }
 
-    calculateDisbursementAmount(MEMBER_AND_MINOR, eligibleMonths, true);
+    await calculateDisbursementAmount(MEMBER_AND_MINOR, eligibleMonths, true);
   };
 
   const handleRefreshFund = async () => {
@@ -747,20 +766,30 @@ export default function Grade5ScholarshipPage() {
       setMinorAccountNumber(data.minorAccountNo || "");
       setEligibleMonths(data.eligibleMonths || 0);
 
-      const defaultOption = data.hasMinorAccount
-        ? MEMBER_AND_MINOR
-        : MEMBER_ONLY;
-
-      calculateDisbursementAmount(
-        defaultOption,
-        data.eligibleMonths || 0,
-        data.hasMinorAccount
+      setIsDoubleAmount(!!data.isDoubleAmount);
+      setDisbursementOption(
+        data.disbursementOption || (data.hasMinorAccount ? MEMBER_AND_MINOR : MEMBER_ONLY)
       );
+      setMemberAmount(data.memberAmount || 0);
+      setMinorAmount(data.minorAmount || 0);
     } catch (err) {
       console.error(err);
       setFundError("Failed to load fund details");
     }
   };
+
+  // Reached from the Member Directory, which more roles can open than may work with
+  // scholarships — so this screen needs its own guard rather than inheriting the
+  // directory's.
+  if (user && !canAccessGrade5(user.role)) {
+    return (
+      <AccessRestricted
+        message="Grade 5 Scholarship requests are restricted to District Office, Head Office and Scholarship personnel."
+        fallbackHref="/membership/directory"
+        fallbackLabel="Back to Member Directory"
+      />
+    );
+  }
 
   return (
     <>
@@ -799,7 +828,8 @@ export default function Grade5ScholarshipPage() {
               {isViewRequestMode &&
                 grade5Request?.id &&
                 !isRequestLocked &&
-                !isEditMode && (
+                !isEditMode &&
+                canEditRequest && (
                   <Button
                     onClick={() => {
                       setIsEditing(true);
@@ -844,29 +874,35 @@ export default function Grade5ScholarshipPage() {
 
               {(!isViewRequestMode || isEditMode) && (
                 <>
-                  <Button
-                    onClick={handleSave}
-                    disabled={isRequestLocked}
-                    className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-                  >
-                    Save
-                  </Button>
+                  {canModifyRequest && (
+                    <Button
+                      onClick={handleSave}
+                      disabled={isRequestLocked}
+                      className="bg-white text-black hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    >
+                      Save
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={() => setOpenModal(true)}
-                    disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
+                  {canMarkIncomplete && (
+                    <Button
+                      onClick={() => setOpenModal(true)}
+                      disabled={!grade5Request?.id || isRequestLocked}
+                      className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
+                    >
+                      Mark Incomplete
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={handleSubmitForm}
-                    disabled={!grade5Request?.id || isRequestLocked}
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
-                  >
-                    Submit
-                  </Button>
+                  {canSubmitRequest && (
+                    <Button
+                      onClick={handleSubmitForm}
+                      disabled={!grade5Request?.id || isRequestLocked}
+                      className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                    >
+                      Submit
+                    </Button>
+                  )}
                 </>
               )}
             </div>
@@ -1021,11 +1057,10 @@ export default function Grade5ScholarshipPage() {
                               minorAccountExists
                             );
                           }}
-                          className={`border rounded-md px-3 py-2 w-full ${
-                            !minorAccountExists || fundReadOnly
-                              ? "bg-gray-100 cursor-not-allowed text-gray-600"
-                              : ""
-                          }`}
+                          className={`border rounded-md px-3 py-2 w-full ${!minorAccountExists || fundReadOnly
+                            ? "bg-gray-100 cursor-not-allowed text-gray-600"
+                            : ""
+                            }`}
                         />
                       </div>
                     </div>
@@ -1123,11 +1158,7 @@ export default function Grade5ScholarshipPage() {
                           </p>
                           <p className="text-sm text-gray-600">
                             Total scholarship amount:{" "}
-                            {currencyFormatter.format(
-                              isDoubleAmount
-                                ? DOUBLE_DISBURSEMENT_AMOUNT
-                                : NORMAL_DISBURSEMENT_AMOUNT
-                            )}
+                            {currencyFormatter.format(memberAmount + minorAmount)}
                           </p>
                         </div>
                       </div>
@@ -1193,16 +1224,15 @@ export default function Grade5ScholarshipPage() {
             </p>
 
             <p className="mt-3 text-sm text-gray-700">
-              Once submitted, the Grade 5 Scholarship Request cannot be edited. The system will choose the approval path automatically based on the eligibility rule.
+              Once submitted, the Grade 5 Scholarship Request cannot be edited.
             </p>
 
             {deviationReason && (
               <div
-                className={`mt-4 rounded-md px-3 py-2 text-sm ${
-                  grade5Request?.hasDeviation
-                    ? "border border-red-200 bg-red-50 text-red-700"
-                    : "border border-orange-200 bg-orange-50 text-orange-700"
-                }`}
+                className={`mt-4 rounded-md px-3 py-2 text-sm ${grade5Request?.hasDeviation
+                  ? "border border-red-200 bg-red-50 text-red-700"
+                  : "border border-orange-200 bg-orange-50 text-orange-700"
+                  }`}
               >
                 {deviationReason}
               </div>
@@ -1214,16 +1244,16 @@ export default function Grade5ScholarshipPage() {
               </p>
             )}
 
-            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
+            <div className={`mt-5 rounded-md px-4 py-3 text-sm ${submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? 'border border-gray-200 bg-gray-50 text-gray-700' : 'border border-gray-200 bg-gray-50 text-gray-700'}`}>
               {submitStatus === SUBMITTED_FOR_DEVIATION_APPROVAL ? (
                 <div>
-                  <p className="font-medium">The request is not within the eligibility period.</p>
-                  <p className="mt-1">It will be submitted as <span className="font-semibold text-red-700">Submitted for Deviation Approval</span>.</p>
+
+                  <p className="mt-1">Grade 5 Scholarship Request will be submitted as <span className="font-semibold text-[#953002]">Submitted for Deviation Approval</span>.</p>
                 </div>
               ) : (
                 <div>
-                  <p className="font-medium">The request is within the eligibility period.</p>
-                  <p className="mt-1">It will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
+
+                  <p className="mt-1">Grade 5 Scholarship Request will be submitted as <span className="font-semibold text-[#953002]">Submitted for Normal Approval</span>.</p>
                 </div>
               )}
             </div>

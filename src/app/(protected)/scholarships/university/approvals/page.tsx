@@ -7,6 +7,9 @@ import { Button } from "@/src/components/ui/button";
 import { Card } from "@/src/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Upload, X } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,7 @@ type RowDecision = {
 function ApprovalsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   // Tab state — reads ?tab=deviation from URL
   const [activeTab, setActiveTab] = useState<"normal" | "deviation">(
@@ -122,7 +126,11 @@ function ApprovalsPageInner() {
   const [processSuccess, setProcessSuccess] = useState(false);
 
   // Delete list state
-  const canDelete = true; // TODO: wire to user role/privilege check
+  // MMS37 calls delete out as a separate "delete privilege", narrower than ordinary
+  // access to the approval list screens.
+  const canDelete = hasPermission(user?.role, "US_LIST_DELETE");
+  const canPrint = hasPermission(user?.role, "US_LIST_PRINT");
+  const canProcess = hasPermission(user?.role, "US_LIST_PROCESS");
   const [pendingDeleteListId, setPendingDeleteListId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -511,6 +519,16 @@ function ApprovalsPageInner() {
   const firstRequest = retrievedRequests[0];
 
   // ─────────────────────────────────────────────────────────────────────────
+  if (user && !hasPermission(user.role, "US_LIST_VIEW")) {
+    return (
+      <AccessRestricted
+        message="University Scholarship Approval Lists are restricted to Head Office and Board Secretariat personnel."
+        fallbackHref="/scholarships/university"
+        fallbackLabel="Back to University Scholarships"
+      />
+    );
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -745,7 +763,7 @@ function ApprovalsPageInner() {
                     Delete List
                   </Button>
                 )}
-                {!isProcessed && (
+                {!isProcessed && canPrint && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -891,7 +909,7 @@ function ApprovalsPageInner() {
               </div>
 
               {/* ── PROCEED BUTTON ── */}
-              {!isProcessed && (
+              {!isProcessed && canProcess && (
                 <div className="mt-5 flex justify-end">
                   <Button
                     onClick={handleProceed}

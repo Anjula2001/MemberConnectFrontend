@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
+import ProgressTimeline from "@/src/components/membership/ProgressTimeline";
+import RemittanceSavingsTab from "@/src/components/membership/RemittanceSavingsTab";
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
@@ -731,7 +733,15 @@ export default function MemberProfilePage({
 						</Card>
 					)}
 
-					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Loans" && activeTab !== "Scholarships" && (
+					{activeTab === "Remittance & Savings" && profile.id && (
+						<RemittanceSavingsTab memberId={profile.id} />
+					)}
+
+					{activeTab === "Progress" && profile.id && (
+						<ProgressTimeline memberId={profile.id} />
+					)}
+
+					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Loans" && activeTab !== "Scholarships" && activeTab !== "Progress" && activeTab !== "Remittance & Savings" && (
 						<div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
 							<p>This tab is currently under construction.</p>
 						</div>

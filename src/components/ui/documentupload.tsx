@@ -15,7 +15,6 @@ const SUBMITTED_STATUSES = [
   "APPROVED",
   "REJECTED",
 ];
-const MAX_FILE_SIZE_MB = 5;
 
 interface RequiredDocument {
   id: number;
@@ -45,10 +44,6 @@ interface DocumentUploadProps {
 const validateSelectedFile = (file: File | null) => {
   if (!file) {
     return "Please select a file.";
-  }
-
-  if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-    return `File size must be less than ${MAX_FILE_SIZE_MB}MB.`;
   }
 
   return "";
@@ -94,7 +89,7 @@ export default function DocumentUpload({
     }
   }, [requestNo, requestType, memberId]);
 
-  
+
   // Fetches the list of documents required for this request type.
   const fetchRequiredDocuments = async () => {
     try {
@@ -123,7 +118,7 @@ export default function DocumentUpload({
     }
   };
 
-  
+
   //Fetches already uploaded documents for the current request.
   const fetchUploadedDocuments = async () => {
     if (!requestNo) {
@@ -273,7 +268,17 @@ export default function DocumentUpload({
 
   return (
     <div className="space-y-6">
-      {message && <p className="text-sm text-red-500">{message}</p>}
+      {message && (
+        <p
+          className={`text-sm ${
+            message.toLowerCase().includes("success")
+              ? "text-green-600"
+              : "text-red-500"
+          }`}
+        >
+          {message}
+        </p>
+      )}
 
       <div className="border rounded-lg p-4 space-y-4">
         <p className="font-semibold">Upload Document</p>

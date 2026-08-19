@@ -64,6 +64,7 @@ import {
   TabsTrigger,
 } from "@/src/components/ui/tabs";
 import DocumentUploadCard from "@/src/components/membership/DocumentUploadCard";
+import ProgressTimeline from "@/src/components/membership/ProgressTimeline";
 
 const identificationTypeValues = [
   "NIC",
@@ -201,7 +202,7 @@ export function NewMemberRegistrationForm({
   const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
   const addToastRef = useRef(addToast);
   const isEditMode = !!applicationId;
-  const [currentTab, setCurrentTab] = useState<"application" | "documents">(
+  const [currentTab, setCurrentTab] = useState<"application" | "documents" | "progress">(
     "application"
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -869,11 +870,11 @@ export function NewMemberRegistrationForm({
     <Tabs
       value={currentTab}
       onValueChange={(val: string) =>
-        setCurrentTab(val as "application" | "documents")
+        setCurrentTab(val as "application" | "documents" | "progress")
       }
       className="w-full"
     >
-      <TabsList className="grid w-full grid-cols-2 rounded-md bg-gray-100 p-1">
+      <TabsList className="grid w-full grid-cols-3 rounded-md bg-gray-100 p-1">
         <TabsTrigger
           value="application"
           className="inline-flex h-9 w-full items-center justify-center rounded-sm px-3 text-sm font-medium text-gray-700 transition-colors data-[state=active]:bg-[#953002] data-[state=active]:text-white"
@@ -893,7 +894,29 @@ export function NewMemberRegistrationForm({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger
+          value="progress"
+          className="inline-flex h-9 w-full items-center justify-center rounded-sm px-3 text-sm font-medium text-gray-700 transition-colors data-[state=active]:bg-[#953002] data-[state=active]:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!savedApplicationId}
+        >
+          Progress
+        </TabsTrigger>
       </TabsList>
+
+      {/* Spec 4.2: history of the application record — created, updated, status
+          changes, and when it was added to a Board Approval List. Only meaningful
+          once the application has been saved and therefore has an id. */}
+      <TabsContent value="progress" className="space-y-4">
+        {savedApplicationId ? (
+          <ProgressTimeline applicationId={savedApplicationId} />
+        ) : (
+          <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50">
+            <p className="text-sm text-neutral-500">
+              Save the application to start recording its progress.
+            </p>
+          </div>
+        )}
+      </TabsContent>
 
       <TabsContent value="application" className="space-y-4">
         {isLoadingApplication ? (
