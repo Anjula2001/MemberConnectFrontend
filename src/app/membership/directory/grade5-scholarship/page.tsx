@@ -52,9 +52,6 @@ export default function Grade5ScholarshipPage() {
 
   const API_BASE_URL = "http://localhost:8080";
 
-  const NORMAL_DISBURSEMENT_AMOUNT = 5000;
-  const DOUBLE_DISBURSEMENT_AMOUNT = 10000;
-  const ELIGIBLE_MONTH_LIMIT = 36;
   const REQUIRED_MINOR_REMITTANCE_AMOUNT = 250;
 
   const MEMBER_ONLY = "MEMBER_ONLY";
@@ -658,8 +655,8 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-  //Calculate fund Disbursement
-  const calculateDisbursementAmount = (
+  // Calculate fund Disbursement via backend API
+  const calculateDisbursementAmount = async (
     option: string,
     months: number,
     hasMinorAccount: boolean
@@ -669,46 +666,40 @@ export default function Grade5ScholarshipPage() {
       return;
     }
 
-    const isDouble = months >= ELIGIBLE_MONTH_LIMIT;
-    const totalAmount = isDouble
-      ? DOUBLE_DISBURSEMENT_AMOUNT
-      : NORMAL_DISBURSEMENT_AMOUNT;
-    const resolvedOption = hasMinorAccount ? option : MEMBER_ONLY;
+    try {
+      const url = `${API_BASE_URL}/api/grade5/calculate-disbursement?months=${months}&option=${encodeURIComponent(
+        option
+      )}&hasMinorAccount=${hasMinorAccount}`;
 
-    setFundError("");
-    setIsDoubleAmount(isDouble);
-    setDisbursementOption(resolvedOption);
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error("Failed to calculate disbursement");
+      }
 
-    if (resolvedOption === MEMBER_ONLY) {
-      setMemberAmount(totalAmount);
-      setMinorAmount(0);
-      return;
-    }
-
-    if (resolvedOption === MEMBER_AND_MINOR) {
-      setMemberAmount(totalAmount / 2);
-      setMinorAmount(totalAmount / 2);
-      return;
-    }
-
-    if (resolvedOption === MINOR_ONLY) {
-      setMemberAmount(0);
-      setMinorAmount(totalAmount);
+      const data = await res.json();
+      setFundError("");
+      setIsDoubleAmount(!!data.isDoubleAmount);
+      setDisbursementOption(data.disbursementOption);
+      setMemberAmount(data.memberAmount || 0);
+      setMinorAmount(data.minorAmount || 0);
+    } catch (err) {
+      console.error(err);
+      setFundError("Failed to calculate disbursement amount.");
     }
   };
 
-  const handleMinorAccountExistsChange = (value: string) => {
+  const handleMinorAccountExistsChange = async (value: string) => {
     const exists = value === "YES";
 
     setMinorAccountExists(exists);
 
     if (!exists) {
       setMinorAccountNumber("");
-      calculateDisbursementAmount(MEMBER_ONLY, eligibleMonths, false);
+      await calculateDisbursementAmount(MEMBER_ONLY, eligibleMonths, false);
       return;
     }
 
-    calculateDisbursementAmount(MEMBER_AND_MINOR, eligibleMonths, true);
+    await calculateDisbursementAmount(MEMBER_AND_MINOR, eligibleMonths, true);
   };
 
   const handleRefreshFund = async () => {
@@ -746,15 +737,12 @@ export default function Grade5ScholarshipPage() {
       setMinorAccountNumber(data.minorAccountNo || "");
       setEligibleMonths(data.eligibleMonths || 0);
 
-      const defaultOption = data.hasMinorAccount
-        ? MEMBER_AND_MINOR
-        : MEMBER_ONLY;
-
-      calculateDisbursementAmount(
-        defaultOption,
-        data.eligibleMonths || 0,
-        data.hasMinorAccount
+      setIsDoubleAmount(!!data.isDoubleAmount);
+      setDisbursementOption(
+        data.disbursementOption || (data.hasMinorAccount ? MEMBER_AND_MINOR : MEMBER_ONLY)
       );
+      setMemberAmount(data.memberAmount || 0);
+      setMinorAmount(data.minorAmount || 0);
     } catch (err) {
       console.error(err);
       setFundError("Failed to load fund details");
@@ -1121,11 +1109,7 @@ export default function Grade5ScholarshipPage() {
                           </p>
                           <p className="text-sm text-gray-600">
                             Total scholarship amount:{" "}
-                            {currencyFormatter.format(
-                              isDoubleAmount
-                                ? DOUBLE_DISBURSEMENT_AMOUNT
-                                : NORMAL_DISBURSEMENT_AMOUNT
-                            )}
+                            {currencyFormatter.format(memberAmount + minorAmount)}
                           </p>
                         </div>
                       </div>
