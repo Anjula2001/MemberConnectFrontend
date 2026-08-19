@@ -41,6 +41,8 @@ type ScholarshipRow = {
   universityName?: string;
   nic?: string;
   address?: string;
+  /** District Office that owns the request — what the Location filter matches on. */
+  submissionLocation?: string;
   fundRequests?: ScholarshipFundRequest[];
 };
 
@@ -186,12 +188,20 @@ function MultiSelect({
     );
   };
 
+  // A single selection shows its own name rather than "1 Selected": a District
+  // Office user is pinned to exactly one district and needs to see which one.
+  // Compared case-insensitively because the option values are lowercase slugs while
+  // a pinned value comes straight from the account as a display-cased district name.
   const label =
     selected.length === 0
       ? placeholder
-      : selected.length === options.length
-        ? "All Selected"
-        : `${selected.length} Selected`;
+      : selected.length === 1
+        ? (options.find(
+          (o) => o.value.toLowerCase() === selected[0].toLowerCase()
+        )?.label ?? selected[0])
+        : selected.length === options.length
+          ? "All Selected"
+          : `${selected.length} Selected`;
 
   return (
     <div ref={ref} className="relative">
@@ -266,8 +276,16 @@ export default function UniversityScholarshipFundRequestsPage() {
 
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((request) => {
-        const location = (request.location || "").toLowerCase().trim();
-        return selectedLocations.some((selected) => location.includes(selected.toLowerCase().trim()));
+        const requestLocation = (request.location || "").toLowerCase().trim();
+        if (!requestLocation) {
+          // Untagged request matches no district. Mirrors matchesScope on the backend.
+          return false;
+        }
+        // Exact match, not substring: this reads a district name now, so "Colombo"
+        // must not be matched by an address that merely contains the word.
+        return selectedLocations.some(
+          (selected) => requestLocation === selected.toLowerCase().trim()
+        );
       });
     }
 
@@ -391,7 +409,10 @@ export default function UniversityScholarshipFundRequestsPage() {
           memberId: scholarship.memberId,
           universityName: scholarship.universityName,
           nic: scholarship.nic,
-          location: scholarship.address,
+          // Was scholarship.address — the student's free-text address, which could
+          // never equal a district name. The Location filter needs the owning
+          // District Office, the same field the backend scopes on.
+          location: scholarship.submissionLocation,
         }));
       });
 

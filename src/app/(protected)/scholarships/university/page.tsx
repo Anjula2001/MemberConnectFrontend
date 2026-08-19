@@ -239,8 +239,10 @@ export default function Page() {
       filtered = filtered.filter((r) => {
         const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
         if (!requestLocation) {
-          // Legacy rows with no location stay visible rather than vanishing.
-          return true;
+          // An untagged request matches no district. It used to fall through as
+          // visible, which meant a District Office user saw every untagged request
+          // in the system on top of their own. Mirrors matchesScope on the backend.
+          return false;
         }
         return selectedLocations.some(
           (loc) => requestLocation === loc.toLowerCase().trim()
@@ -357,12 +359,21 @@ export default function Page() {
       );
     };
 
+    // A single selection shows its own name rather than "1 Selected": a District
+    // Office user is pinned to exactly one district and the whole point of the
+    // control is to tell them which one they are filtered to. Checked before the
+    // "All Selected" branch so a one-option list still names the option.
+    //
+    // Falls back to the raw value when the district master has not loaded yet, so
+    // the pinned district is never rendered as a bare count.
     const label =
       selected.length === 0
         ? placeholder
-        : selected.length === options.length
-          ? "All Selected"
-          : `${selected.length} Selected`;
+        : selected.length === 1
+          ? (options.find((o) => o.value === selected[0])?.label ?? selected[0])
+          : selected.length === options.length
+            ? "All Selected"
+            : `${selected.length} Selected`;
 
     return (
       <div ref={ref} className="relative">
