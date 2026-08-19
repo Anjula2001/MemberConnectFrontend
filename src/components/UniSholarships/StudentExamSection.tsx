@@ -147,7 +147,18 @@ export default function StudentExamSection() {
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  const isApprovedDetailsEditMode = isExistingRequest && mode === "approved-edit" && status === "APPROVED";
+  // MMS41 — amending an approved award (academic start date, special degree flag,
+  // disbursement bank account) is "a special authorization", held by Head Office and
+  // Board Secretary but not District Office.
+  const canEditApprovedScholarshipDetails = hasPermission(user?.role, "US_APPROVED_EDIT");
+  // The right is part of the mode, not just the button: without it, a District Office
+  // user could enter the edit form by putting ?mode=approved-edit in the URL and only
+  // discover the 403 on save.
+  const isApprovedDetailsEditMode =
+    isExistingRequest
+    && mode === "approved-edit"
+    && status === "APPROVED"
+    && canEditApprovedScholarshipDetails;
   const isViewMode = isExistingRequest && !isEditMode && !isApprovedDetailsEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
@@ -176,7 +187,6 @@ export default function StudentExamSection() {
     target === "NEW" ? canReopenToNew : canSetInactive
   );
   const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
-  const canEditApprovedScholarshipDetails = true; // TODO: wire to the user privilege for approved scholarship detail edits.
   const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
   const {
@@ -1293,7 +1303,12 @@ export default function StudentExamSection() {
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =
     (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
-  const canAddFundRequest = isApprovedScholarship && availableBalance > 0;
+  // District Office holds no fund request rights at all, so it can neither open the
+  // Fund Requests tab nor raise one from an approved scholarship it can otherwise see.
+  const canViewFundRequests = hasPermission(user?.role, "US_FUND_VIEW");
+  const canCreateFundRequest = hasPermission(user?.role, "US_FUND_CREATE");
+  const canAddFundRequest =
+    isApprovedScholarship && availableBalance > 0 && canCreateFundRequest;
 
   const formatCurrency = (amount?: number | null) =>
     typeof amount === "number"
@@ -1664,7 +1679,7 @@ export default function StudentExamSection() {
             </TabsTrigger>
             <TabsTrigger
               value="funds"
-              disabled={!isApprovedScholarship}
+              disabled={!isApprovedScholarship || !canViewFundRequests}
               className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               Fund Requests

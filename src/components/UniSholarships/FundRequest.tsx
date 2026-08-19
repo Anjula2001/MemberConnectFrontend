@@ -1180,22 +1180,26 @@ export default function FundDisbursementRequest() {
 
           {/* ACTION BUTTONS */}
           <div className="flex justify-end gap-3">
-            {!isSubmittedForApproval && canMarkFundRequestIncomplete && (
+            {/* Preparation actions, so they exist only while the request is still being
+                prepared (New / Incomplete). Previously keyed off !isSubmittedForApproval,
+                which left them rendered-but-greyed on a decided request — an Approved or
+                Rejected fund request is finished and has nothing left to submit. */}
+            {isEditableStatus && canMarkFundRequestIncomplete && (
               <Button
                 type="button"
                 onClick={() => setShowIncompleteModal(true)}
-                disabled={!isSaved || !isEditableStatus}
+                disabled={!isSaved}
                 className="bg-[#D4183D] text-white hover:bg-[#a3152f] disabled:opacity-50"
               >
                 Incomplete
               </Button>
             )}
 
-            {!isSubmittedForApproval && canSubmitFundRequest && (
+            {isEditableStatus && canSubmitFundRequest && (
               <Button
                 type="button"
                 onClick={handleSubmitFundRequest}
-                disabled={!isSaved || !isEditableStatus || !hasAllMandatoryDocuments}
+                disabled={!isSaved || !hasAllMandatoryDocuments}
                 className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
               >
                 Submit for Approval

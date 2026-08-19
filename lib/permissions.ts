@@ -168,21 +168,18 @@ const GRADE5_BOARD: Permission[] = [
   "G5_EXAM_MASTER_VIEW",
 ];
 
-// Requests (MMS21-MMS25) plus fund request preparation (MMS42-MMS46) as of
-// 2026-08-19. Raises fund requests but cannot decide them: US_FUND_APPROVE stays
-// with Head Office / Board Secretary, so preparation and approval sit in different
-// offices. Mirrors RolePermissions.java on the backend — keep the two in step.
+// University scholarship requests (MMS21-MMS25) only.
+//
+// No fund request rights at all, not even US_FUND_VIEW — briefly granted on
+// 2026-08-19 and revoked on 2026-08-20. Since canAccessFundRequests() keys on
+// US_FUND_VIEW, its absence both hides the sidebar item and makes the Fund Requests
+// page render AccessRestricted. Mirrors RolePermissions.java — keep the two in step.
 const UNIVERSITY_DISTRICT: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_CREATE",
   "US_REQUEST_EDIT",
   "US_REQUEST_SUBMIT",
   "US_REQUEST_INCOMPLETE",
-  "US_FUND_VIEW",
-  "US_FUND_CREATE",
-  "US_FUND_EDIT",
-  "US_FUND_SUBMIT",
-  "US_FUND_INCOMPLETE",
   "US_MASTER_VIEW",
 ];
 
