@@ -17,6 +17,14 @@ export interface MemberDTO {
   applicationId?: number;         // FK to Member_Application — link approved application to member
   memberType?: string;
   status?: MemberStatus;
+  // The District Office branch this member registered/is administered through —
+  // distinct from educationalDistrict (the member's working district).
+  submissionLocation?: string;
+  // Membership documentation tracking (MR15-18). Null means not yet done.
+  membershipCardPrintedAt?: string | null;
+  signatureCardPrintedAt?: string | null;
+  passbookPrintedAt?: string | null;
+  documentsDispatchedAt?: string | null;
   membershipStartDate?: string;   // ISO date string from backend
   title?: string;
   fullName?: string;
@@ -92,6 +100,11 @@ export interface MemberSearchParams {
   locations?: string[];
   workingLocationType?: string;
   educationalZone?: string;
+  /** The member's WORKING district — distinct from `locations` (the District Office). */
+  educationalDistrict?: string;
+  /** Membership Start Date period, ISO dates. */
+  membershipStartFrom?: string;
+  membershipStartTo?: string;
 }
 
 export async function searchMembers(params: MemberSearchParams) {
@@ -101,6 +114,9 @@ export async function searchMembers(params: MemberSearchParams) {
   if (params.locations && params.locations.length > 0) searchParams.locations = params.locations;
   if (params.workingLocationType) searchParams.workingLocationType = params.workingLocationType;
   if (params.educationalZone) searchParams.educationalZone = params.educationalZone;
+  if (params.educationalDistrict) searchParams.educationalDistrict = params.educationalDistrict;
+  if (params.membershipStartFrom) searchParams.membershipStartFrom = params.membershipStartFrom;
+  if (params.membershipStartTo) searchParams.membershipStartTo = params.membershipStartTo;
 
   const { data } = await apiClient.get<MemberDTO[]>(`${BASE_PATH}/search`, {
     params: searchParams,

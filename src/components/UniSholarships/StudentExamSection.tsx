@@ -9,6 +9,8 @@ import { Input } from "../ui/input";
 import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Eye, Check, AlertCircle } from "lucide-react";
 
@@ -85,6 +87,7 @@ type FundRequestRow = {
 
 export default function StudentExamSection() {
   const router = useRouter();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const memberId = searchParams.get("memberId") || "";
   const requestKey = searchParams.get("requestId");
@@ -846,7 +849,7 @@ export default function StudentExamSection() {
 
     try {
 
-      const res = await fetch(`http://localhost:8080/api/university-scholarships/approve/${requestId}`, {
+      const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-approve/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: requestId, status: nextStatus }),
@@ -889,7 +892,7 @@ export default function StudentExamSection() {
 
     (async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/university-scholarships/reject/${requestId}`, {
+        const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-reject/${requestId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decisionReason: rejectReason.trim() }),
@@ -1177,7 +1180,12 @@ export default function StudentExamSection() {
     : isExistingRequest
       ? "University Scholarship"
       : "New University Scholarship";
-  const canReviewSubmission = isViewMode && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
+  // MMS26 — only the University Scholarship Committee decides at this gate. Being
+  // able to view a submitted request is not the same as being able to clear it.
+  const canReviewSubmission =
+    isViewMode
+    && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL"
+    && hasPermission(user?.role, "US_COMMITTEE_APPROVE");
   const isApprovedScholarship = status === "APPROVED";
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =

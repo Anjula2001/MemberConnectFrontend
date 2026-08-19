@@ -4,7 +4,7 @@ import path from "node:path";
 export const runtime = "nodejs";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
@@ -17,10 +17,14 @@ export async function GET(
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       "http://localhost:8080";
 
+    const authHeader = request.headers.get("Authorization");
+    const headers: HeadersInit = authHeader ? { Authorization: authHeader } : {};
+
     // Backend authenticates and streams the file from S3.
     // Files are never publicly exposed; URLs never expire; access is controlled server-side.
     const response = await fetch(
-      `${backendBaseUrl}/api/file/download?fileName=${encodeURIComponent(s3Key)}`
+      `${backendBaseUrl}/api/file/download?fileName=${encodeURIComponent(s3Key)}`,
+      { headers }
     );
 
     if (!response.ok) {
