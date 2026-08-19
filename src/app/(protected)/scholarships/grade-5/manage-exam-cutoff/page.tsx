@@ -5,6 +5,9 @@ import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { useToast } from "@/lib/toast-context";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { hasG5Permission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 const API_BASE_URL = "http://localhost:8080";
 
@@ -44,7 +47,12 @@ interface CutoffDetail {
 
 export default function Grade5ExamCutoffManagementPage() {
   const { addToast } = useToast();
+  const { user } = useAuth();
   const currentYear = new Date().getFullYear();
+
+  // Exam dates and cut-off marks decide the outcome of every eligibility check in the
+  // module, so write access is held far more narrowly than the rest of Grade 5.
+  const canManageExamMaster = hasG5Permission(user?.role, "G5_EXAM_MASTER_MANAGE");
 
   // Form states
   const [examYear, setExamYear] = useState<number>(currentYear);
@@ -250,6 +258,16 @@ export default function Grade5ExamCutoffManagementPage() {
       setSaving(false);
     }
   };
+
+  if (user && !canManageExamMaster) {
+    return (
+      <AccessRestricted
+        message="Managing Grade 5 exam dates and district cut-off marks is restricted to Scholarship personnel."
+        fallbackHref="/scholarships/grade-5"
+        fallbackLabel="Back to Grade 5 Requests"
+      />
+    );
+  }
 
   return (
     <div className="w-full px-6 py-6 space-y-6">

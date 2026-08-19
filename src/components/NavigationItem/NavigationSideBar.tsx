@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import type { UserRole } from "@/lib/auth-context";
+import { canAccessGrade5, hasG5Permission } from "@/lib/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -62,6 +64,46 @@ export default function NavigationSideBar() {
   const pathname = usePathname();
   const { user } = useAuth();
 
+  /**
+   * Builds the Scholarships menu for a role, or null when the role has nothing in it.
+   *
+   * Grade 5 is permission-gated (MMS01–MMS20). University and Fund Requests are not
+   * access-controlled yet, so they are only offered to the roles that already had
+   * them — this function must not quietly widen access to an ungoverned module.
+   *
+   * Previously District Office and Head Office had no Scholarships menu at all, while
+   * Death Donation Officer got the whole thing by falling through a catch-all branch.
+   * That is backwards: those first two are the SRS's named actors for the module.
+   */
+  const buildScholarshipsMenu = (
+    role: UserRole | undefined,
+    options: { includeUniversity: boolean }
+  ): MenuItem | null => {
+    const subMenu: SubMenuItem[] = [];
+
+    if (canAccessGrade5(role)) {
+      subMenu.push({ title: "Grade 5", url: "/scholarships/grade-5" });
+    }
+
+    if (hasG5Permission(role, "G5_EXAM_MASTER_MANAGE")) {
+      subMenu.push({
+        title: "Grade 5 Exam & Cut-offs",
+        url: "/scholarships/grade-5/manage-exam-cutoff",
+      });
+    }
+
+    if (options.includeUniversity) {
+      subMenu.push({ title: "University", url: "/scholarships/university" });
+      subMenu.push({ title: "Fund Requests", url: "/scholarships/fund-requests" });
+    }
+
+    if (subMenu.length === 0) {
+      return null;
+    }
+
+    return { title: "Scholarships", icon: GraduationCap, subMenu };
+  };
+
   const getFilteredMenuItems = (): MenuItem[] => {
     const role = user?.role;
 
@@ -94,6 +136,11 @@ export default function NavigationSideBar() {
             },
           ],
         },
+        // District Office is the SRS's named actor for creating Grade 5 requests
+        // (MMS01–MMS05), so the module belongs in this menu.
+        ...([buildScholarshipsMenu(role, { includeUniversity: false })].filter(
+          Boolean
+        ) as MenuItem[]),
       ];
     }
 
@@ -161,6 +208,11 @@ export default function NavigationSideBar() {
             },
           ],
         },
+        // Head Office / Board Secretary own the Grade 5 approval track
+        // (MMS06–MMS19) — the module was previously unreachable for them.
+        ...([buildScholarshipsMenu(role, { includeUniversity: false })].filter(
+          Boolean
+        ) as MenuItem[]),
         { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
@@ -229,15 +281,9 @@ export default function NavigationSideBar() {
             },
           ],
         },
-        {
-          title: "Scholarships",
-          icon: GraduationCap,
-          subMenu: [
-            { title: "Grade 5", url: "/scholarships/grade-5" },
-            { title: "University", url: "/scholarships/university" },
-            { title: "Fund Requests", url: "/scholarships/fund-requests" },
-          ],
-        },
+        ...([buildScholarshipsMenu(role, { includeUniversity: true })].filter(
+          Boolean
+        ) as MenuItem[]),
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
         { title: "Reports", icon: BarChart, url: "/reports" },
         {
@@ -298,21 +344,19 @@ export default function NavigationSideBar() {
     // not explicitly handled above) — these roles are not actors in the Member
     // Registration spec, so they get no Membership access at all rather than silently
     // inheriting it from a catch-all branch. They keep access to their own modules only.
+    //
+    // Grade 5 is no longer part of that inheritance: it appears here only if the role
+    // actually holds a Grade 5 permission, so Death Donation Officer now sees the
+    // University items it already had and nothing more.
     return [
       {
         title: "Dashboard",
         icon: Home,
         url: "/",
       },
-      {
-        title: "Scholarships",
-        icon: GraduationCap,
-        subMenu: [
-          { title: "Grade 5", url: "/scholarships/grade-5" },
-          { title: "University", url: "/scholarships/university" },
-          { title: "Fund Requests", url: "/scholarships/fund-requests" },
-        ],
-      },
+      ...([buildScholarshipsMenu(role, { includeUniversity: true })].filter(
+        Boolean
+      ) as MenuItem[]),
       { title: "Death Donation", icon: Heart, url: "/death-donation" },
       { title: "Reports", icon: BarChart, url: "/reports" },
     ];
