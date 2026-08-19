@@ -8,9 +8,36 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+// Auto-attach JWT token to every request
+apiClient.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("auth_token");
+    if (token) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+  return config;
+});
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    // If 401 Unauthorized, clear auth and redirect to login
+    if (error?.response?.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("auth_user");
+      window.location.href = "/login";
+    }
+
+    // 403 means authenticated but not permitted — the opposite of 401, so it must not
+    // log the user out. Give it a readable message: the backend sends a raw permission
+    // name ("Missing permission: G5_LIST_PROCESS"), which is not for end users.
+    if (error?.response?.status === 403) {
+      return Promise.reject(
+        new Error("You do not have permission to perform this action.")
+      );
+    }
+
     const message =
       error?.response?.data?.message ??
       error?.response?.data?.error ??
@@ -20,3 +47,5 @@ apiClient.interceptors.response.use(
     return Promise.reject(new Error(message));
   }
 );
+
+export default apiClient;

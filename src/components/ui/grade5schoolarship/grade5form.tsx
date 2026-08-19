@@ -419,19 +419,18 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       },
     }));
 
-    return (
-      <form className="space-y-6">
-        {popupError && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-            <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
-
-              <button
-                type="button"
-                onClick={() => setPopupError("")}
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
+  return (
+    <form className="space-y-6">
+      {popupError && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+            <button
+              type="button"
+              onClick={() => setPopupError("")}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
 
               <h2 className="text-lg font-semibold text-[#953002]">
                 Cannot Create Request
