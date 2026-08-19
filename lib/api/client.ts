@@ -38,6 +38,18 @@ apiClient.interceptors.response.use(
       );
     }
 
+    // 403 means authenticated but not permitted. Without this the backend's
+    // AccessDeniedException message surfaces raw, or as a blank failure, which reads
+    // as a bug rather than as a permission boundary.
+    if (error?.response?.status === 403) {
+      return Promise.reject(
+        new Error(
+          error?.response?.data?.message ??
+            "You do not have permission to perform this action."
+        )
+      );
+    }
+
     const message =
       error?.response?.data?.message ??
       error?.response?.data?.error ??

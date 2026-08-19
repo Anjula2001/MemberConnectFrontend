@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { hasG5Permission } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 
 const API_BASE_URL = "http://localhost:8080";
@@ -54,10 +54,10 @@ export default function Grade5ApprovalListsPage() {
   // MMS08/MMS15 view the list; MMS10/MMS17 print it; MMS11/MMS18 process it;
   // MMS09/MMS16 delete it. Delete is deliberately the narrowest of the four —
   // the SRS calls it out as a separate "delete privilege".
-  const canViewLists = hasG5Permission(user?.role, "G5_LIST_VIEW");
-  const canPrintList = hasG5Permission(user?.role, "G5_LIST_PRINT");
-  const canProcessList = hasG5Permission(user?.role, "G5_LIST_PROCESS");
-  const canDeleteList = hasG5Permission(user?.role, "G5_LIST_DELETE");
+  const canViewLists = hasPermission(user?.role, "G5_LIST_VIEW");
+  const canPrintList = hasPermission(user?.role, "G5_LIST_PRINT");
+  const canProcessList = hasPermission(user?.role, "G5_LIST_PROCESS");
+  const canDeleteList = hasPermission(user?.role, "G5_LIST_DELETE");
 
   // Active list type tab (NORMAL vs DEVIATION)
   const [activeTypeTab, setActiveTypeTab] = useState<"NORMAL" | "DEVIATION">("NORMAL");

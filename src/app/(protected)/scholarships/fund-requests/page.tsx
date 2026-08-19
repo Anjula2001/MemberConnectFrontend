@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ChevronDown, Eye, Pencil, RotateCcw, Search } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { canAccessFundRequests, canSelectAllLocations } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -227,6 +230,9 @@ function MultiSelect({
 }
 
 export default function UniversityScholarshipFundRequestsPage() {
+  const { user } = useAuth();
+  const canViewFundRequests = canAccessFundRequests(user?.role);
+
   const [requests, setRequests] = useState<FundRequestRow[]>([]);
   const [displayed, setDisplayed] = useState<FundRequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -241,8 +247,10 @@ export default function UniversityScholarshipFundRequestsPage() {
   const [sortBy, setSortBy] = useState("requested-date");
   const [sortAsc, setSortAsc] = useState(true);
 
-  const hasMultipleLocationAccess = true;
-  const currentLocation = "colombo";
+  // Previously hardcoded to `true` / "colombo", which pinned every user to a district
+  // they may have nothing to do with and let restricted users browse all locations.
+  const hasMultipleLocationAccess = canSelectAllLocations(user?.role);
+  const currentLocation = user?.assignedDistrict ?? "";
   const isLocationFilterDisabled = !hasMultipleLocationAccess;
   const hasEditRights = true;
 
@@ -397,6 +405,16 @@ export default function UniversityScholarshipFundRequestsPage() {
       setIsLoading(false);
     }
   };
+
+  if (user && !canViewFundRequests) {
+    return (
+      <AccessRestricted
+        message="University Scholarship Fund Requests are restricted to Head Office, Board Secretariat, Scholarship and Accounts personnel."
+        fallbackHref="/scholarships/university"
+        fallbackLabel="Back to University Scholarships"
+      />
+    );
+  }
 
   return (
     <div className="p-6">

@@ -1,24 +1,26 @@
 import type { UserRole } from "@/lib/auth-context";
 
 /**
- * Single source of truth for who can do what, for the two modules that have been
+ * Single source of truth for who can do what, for the modules that have been
  * access-controlled so far:
  *
  *   1. Member Registration (MR01–MR18) — expressed as role lists, below.
- *   2. Grade 5 Scholarships (MMS01–MMS20) — expressed as named permissions, further down.
+ *   2. Grade 5 Scholarships (MMS01–MMS20)   — named permissions, further down.
+ *   3. University Scholarships (MMS21–MMS48) — named permissions, same map.
  *
- * The two use different shapes on purpose. Member Registration shipped with role
- * lists and works; converting it would be a refactor of live code for no behavioural
- * gain. Grade 5 needs named permissions because its SRS keeps describing rights that
- * are held *in addition* to a role ("the user needs Inactive rights", "the authorized
- * user who has the delete privileges"), which a role list cannot express.
+ * The two shapes coexist on purpose. Member Registration shipped with role lists and
+ * works; converting it would be a refactor of live code for no behavioural gain. The
+ * scholarship modules need named permissions because their SRS keeps describing
+ * rights held *in addition* to a role ("the user needs Inactive rights", "the
+ * authorized user who has the delete privileges", MMS41's "special authorization"),
+ * which a role list cannot express.
  *
- * Still out of scope and unrestricted: University Scholarships, Death Donation,
- * Termination/Retirement, Dormant Membership, Profile Changes.
+ * Still out of scope and unrestricted: Death Donation, Termination/Retirement,
+ * Dormant Membership, Profile Changes.
  *
  * Everything here is UX only — it decides what is shown, never what is allowed. The
- * backend enforces the same Grade 5 matrix independently in RolePermissions.java, and
- * that copy is the one that counts. The two must be kept in step.
+ * backend enforces the same matrix independently in RolePermissions.java, and that
+ * copy is the one that counts. The two must be kept in step.
  */
 
 // The four roles the spec actually names as actors for Member Registration.
@@ -75,14 +77,19 @@ export function hasRole(role: UserRole | undefined | null, allowed: UserRole[]):
   return !!role && allowed.includes(role);
 }
 
-// ─── Grade 5 Scholarships (MMS01–MMS20) ──────────────────────────────────────
+// ─── Scholarships: Grade 5 (MMS01–MMS20) and University (MMS21–MMS48) ────────
 //
 // Mirror of backend enums/Permission.java + config/RolePermissions.java. If you
 // change a grant here, change it there too — this copy only hides buttons, the
 // backend copy is what actually stops the request.
+//
+// One map covers both modules rather than two parallel ones, because the roles
+// overlap heavily and two maps drift. The namespaces stay separate (G5_* / US_*)
+// because the modules are not interchangeable: University has a Committee level
+// and a Fund Request entity that Grade 5 has no equivalent of.
 
-export type G5Permission =
-  // Requests (MMS01–MMS05) — District Office territory
+export type Permission =
+  // ---- Grade 5: requests (MMS01–MMS05) ----
   | "G5_REQUEST_VIEW"
   | "G5_REQUEST_CREATE"
   | "G5_REQUEST_EDIT"
@@ -90,24 +97,56 @@ export type G5Permission =
   | "G5_REQUEST_INCOMPLETE"
   | "G5_REQUEST_SET_INACTIVE"
   | "G5_REQUEST_REOPEN"
-  // Approval lists (MMS06–MMS19) — Head Office territory
+  // ---- Grade 5: approval lists (MMS06–MMS19) ----
   | "G5_LIST_VIEW"
   | "G5_LIST_CREATE"
   | "G5_LIST_PRINT"
   | "G5_LIST_PROCESS"
   | "G5_LIST_DELETE"
-  // Masters
+  // ---- Grade 5: masters + finance ----
   | "G5_EXAM_MASTER_VIEW"
   | "G5_EXAM_MASTER_MANAGE"
-  // MMS20 — no endpoint behind this yet
-  | "G5_FINANCE_DISBURSE";
+  | "G5_FINANCE_DISBURSE"
+  // ---- University: requests (MMS21–MMS25) ----
+  | "US_REQUEST_VIEW"
+  | "US_REQUEST_CREATE"
+  | "US_REQUEST_EDIT"
+  | "US_REQUEST_SUBMIT"
+  | "US_REQUEST_INCOMPLETE"
+  | "US_REQUEST_SET_INACTIVE"
+  | "US_REQUEST_REOPEN"
+  // ---- University: Committee (MMS26) ----
+  | "US_COMMITTEE_APPROVE"
+  // ---- University: board approval lists (MMS27–MMS40) ----
+  | "US_LIST_VIEW"
+  | "US_LIST_CREATE"
+  | "US_LIST_PRINT"
+  | "US_LIST_PROCESS"
+  | "US_LIST_DELETE"
+  // ---- University: approved record + fund requests (MMS41–MMS47) ----
+  | "US_APPROVED_EDIT"
+  | "US_FUND_VIEW"
+  | "US_FUND_CREATE"
+  | "US_FUND_EDIT"
+  | "US_FUND_SUBMIT"
+  | "US_FUND_INCOMPLETE"
+  | "US_FUND_APPROVE"
+  // ---- University: masters + finance ----
+  | "US_MASTER_VIEW"
+  | "US_MASTER_MANAGE"
+  | "US_FINANCE_DISBURSE";
 
-const ALL_G5_PERMISSIONS: G5Permission[] = [
+const GRADE5_DISTRICT: Permission[] = [
   "G5_REQUEST_VIEW",
   "G5_REQUEST_CREATE",
   "G5_REQUEST_EDIT",
   "G5_REQUEST_SUBMIT",
   "G5_REQUEST_INCOMPLETE",
+  "G5_EXAM_MASTER_VIEW",
+];
+
+const GRADE5_BOARD: Permission[] = [
+  "G5_REQUEST_VIEW",
   "G5_REQUEST_SET_INACTIVE",
   "G5_REQUEST_REOPEN",
   "G5_LIST_VIEW",
@@ -116,90 +155,133 @@ const ALL_G5_PERMISSIONS: G5Permission[] = [
   "G5_LIST_PROCESS",
   "G5_LIST_DELETE",
   "G5_EXAM_MASTER_VIEW",
+];
+
+const UNIVERSITY_DISTRICT: Permission[] = [
+  "US_REQUEST_VIEW",
+  "US_REQUEST_CREATE",
+  "US_REQUEST_EDIT",
+  "US_REQUEST_SUBMIT",
+  "US_REQUEST_INCOMPLETE",
+  "US_FUND_VIEW",
+  "US_MASTER_VIEW",
+];
+
+// The University board track. Deliberately WITHOUT US_COMMITTEE_APPROVE — the
+// Committee gate (MMS26) must not be cleared by the office that runs the Board —
+// and WITHOUT US_FUND_APPROVE, so whoever can change a payee's bank account on an
+// approved award (US_APPROVED_EDIT) cannot also release the payment into it.
+const UNIVERSITY_BOARD: Permission[] = [
+  "US_REQUEST_VIEW",
+  "US_REQUEST_SET_INACTIVE",
+  "US_REQUEST_REOPEN",
+  "US_LIST_VIEW",
+  "US_LIST_CREATE",
+  "US_LIST_PRINT",
+  "US_LIST_PROCESS",
+  "US_LIST_DELETE",
+  "US_APPROVED_EDIT",
+  "US_FUND_VIEW",
+  "US_FUND_CREATE",
+  "US_FUND_EDIT",
+  "US_FUND_SUBMIT",
+  "US_FUND_INCOMPLETE",
+  "US_MASTER_VIEW",
+];
+
+const ALL_PERMISSIONS: Permission[] = [
+  ...GRADE5_DISTRICT,
+  ...GRADE5_BOARD,
   "G5_EXAM_MASTER_MANAGE",
   "G5_FINANCE_DISBURSE",
+  ...UNIVERSITY_DISTRICT,
+  ...UNIVERSITY_BOARD,
+  "US_COMMITTEE_APPROVE",
+  "US_FUND_APPROVE",
+  "US_MASTER_MANAGE",
+  "US_FINANCE_DISBURSE",
 ];
 
 /**
  * Segregation of duties: District Office raises requests, Head Office approves them.
  *
- * The SRS actor tables for MMS06/MMS13 name "District Office System User" as the
- * approver, but every child function beneath them (MMS07–MMS12, MMS14–MMS19) and the
- * §2.2.1 process narrative put approval at Head Office. Resolved in favour of Head
- * Office — an office that approves its own requests defeats the Board Meeting control
- * the whole module is built around.
+ * Both SRS sections name "District Office System User" as the approver in their
+ * parent Approve/Reject function (MMS06/MMS13, MMS27/MMS34), while every child
+ * function beneath them says Head Office. Those actor cells are copy-paste artefacts
+ * and were resolved in favour of Head Office — an office that approves its own
+ * requests defeats the Board Meeting control both modules are built around.
  *
- * DEATH_DONATION_OFFICER is absent deliberately: it previously reached Grade 5 only by
- * falling through a catch-all branch in the sidebar, which is exactly the failure this
- * map exists to prevent.
+ * DEATH_DONATION_OFFICER holds nothing here. It previously reached both modules only
+ * by falling through a catch-all branch in the sidebar, which is the failure this map
+ * exists to prevent.
  */
-const G5_ROLE_PERMISSIONS: Record<UserRole, G5Permission[]> = {
-  SUPER_ADMIN: ALL_G5_PERMISSIONS,
+const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  SUPER_ADMIN: ALL_PERMISSIONS,
 
-  DISTRICT_OFFICE: [
-    "G5_REQUEST_VIEW",
-    "G5_REQUEST_CREATE",
-    "G5_REQUEST_EDIT",
-    "G5_REQUEST_SUBMIT",
-    "G5_REQUEST_INCOMPLETE",
-    "G5_EXAM_MASTER_VIEW",
-  ],
+  DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT],
 
-  HEAD_OFFICE: [
-    "G5_REQUEST_VIEW",
-    "G5_REQUEST_SET_INACTIVE",
-    "G5_REQUEST_REOPEN",
-    "G5_LIST_VIEW",
-    "G5_LIST_CREATE",
-    "G5_LIST_PRINT",
-    "G5_LIST_PROCESS",
-    "G5_LIST_DELETE",
-    "G5_EXAM_MASTER_VIEW",
-  ],
+  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
 
-  BOARD_SECRETARY: [
-    "G5_REQUEST_VIEW",
-    "G5_REQUEST_SET_INACTIVE",
-    "G5_REQUEST_REOPEN",
-    "G5_LIST_VIEW",
-    "G5_LIST_CREATE",
-    "G5_LIST_PRINT",
-    "G5_LIST_PROCESS",
-    "G5_LIST_DELETE",
-    "G5_EXAM_MASTER_VIEW",
-  ],
+  // Head Office's rights plus the one withheld from it: releasing a disbursement.
+  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FUND_APPROVE"],
 
-  // Not an actor named in the SRS, but the only role whose name fits ownership of the
-  // Exam Master (exam dates + district cut-off marks).
+  // Seat of the University Scholarship Committee (MMS26), and owner of the exam /
+  // university masters.
+  //
+  // Note the asymmetry between the modules, which is deliberate: on Grade 5 this role
+  // may raise requests, because Grade 5 has no committee step for it to then approve.
+  // On University it may not, since holding US_REQUEST_CREATE together with
+  // US_COMMITTEE_APPROVE would let one person create a request and clear the very
+  // gate that exists to scrutinise it.
   SCHOLARSHIP_OFFICER: [
-    "G5_REQUEST_VIEW",
-    "G5_REQUEST_CREATE",
-    "G5_REQUEST_EDIT",
-    "G5_REQUEST_SUBMIT",
-    "G5_REQUEST_INCOMPLETE",
+    ...GRADE5_DISTRICT,
     "G5_LIST_VIEW",
-    "G5_EXAM_MASTER_VIEW",
     "G5_EXAM_MASTER_MANAGE",
+    "US_REQUEST_VIEW",
+    "US_COMMITTEE_APPROVE",
+    "US_LIST_VIEW",
+    "US_FUND_VIEW",
+    "US_MASTER_VIEW",
+    "US_MASTER_MANAGE",
   ],
 
-  // "Head Office – Finance Department" in §2.2.1: read-only until MMS20 exists.
-  ACCOUNTS: ["G5_REQUEST_VIEW", "G5_LIST_VIEW", "G5_FINANCE_DISBURSE"],
+  // "Head Office – Finance Department": read-only until the Finance integrations
+  // (MMS20 / MMS48) exist.
+  ACCOUNTS: [
+    "G5_REQUEST_VIEW",
+    "G5_LIST_VIEW",
+    "G5_FINANCE_DISBURSE",
+    "US_REQUEST_VIEW",
+    "US_LIST_VIEW",
+    "US_FUND_VIEW",
+    "US_FINANCE_DISBURSE",
+  ],
 
   DEATH_DONATION_OFFICER: [],
 };
 
-export function hasG5Permission(
+export function hasPermission(
   role: UserRole | undefined | null,
-  permission: G5Permission
+  permission: Permission
 ): boolean {
-  return !!role && G5_ROLE_PERMISSIONS[role].includes(permission);
+  return !!role && ROLE_PERMISSIONS[role].includes(permission);
 }
 
-/** True when the role may reach the Grade 5 module at all — used for page guards. */
+/** True when the role may open the Grade 5 module at all — used for page guards. */
 export function canAccessGrade5(role: UserRole | undefined | null): boolean {
-  return (
-    hasG5Permission(role, "G5_REQUEST_VIEW") || hasG5Permission(role, "G5_LIST_VIEW")
-  );
+  return hasPermission(role, "G5_REQUEST_VIEW") || hasPermission(role, "G5_LIST_VIEW");
+}
+
+/** True when the role may open the University Scholarship module at all. */
+export function canAccessUniversityScholarships(
+  role: UserRole | undefined | null
+): boolean {
+  return hasPermission(role, "US_REQUEST_VIEW") || hasPermission(role, "US_LIST_VIEW");
+}
+
+/** True when the role may open the University Scholarship Fund Request screens. */
+export function canAccessFundRequests(role: UserRole | undefined | null): boolean {
+  return hasPermission(role, "US_FUND_VIEW");
 }
 
 /**
@@ -209,7 +291,7 @@ export function canAccessGrade5(role: UserRole | undefined | null): boolean {
  * is pinned to their assignedDistrict, and the backend re-pins them regardless of
  * what the UI sends — this is only here so the Location filter renders correctly.
  */
-export const G5_ALL_LOCATION_ROLES: UserRole[] = [
+export const ALL_LOCATION_ROLES: UserRole[] = [
   "SUPER_ADMIN",
   "HEAD_OFFICE",
   "BOARD_SECRETARY",
@@ -217,6 +299,6 @@ export const G5_ALL_LOCATION_ROLES: UserRole[] = [
   "SCHOLARSHIP_OFFICER",
 ];
 
-export function canSelectAllG5Locations(role: UserRole | undefined | null): boolean {
-  return hasRole(role, G5_ALL_LOCATION_ROLES);
+export function canSelectAllLocations(role: UserRole | undefined | null): boolean {
+  return hasRole(role, ALL_LOCATION_ROLES);
 }

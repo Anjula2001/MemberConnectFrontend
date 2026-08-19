@@ -9,6 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/c
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  canAccessUniversityScholarships,
+  canSelectAllLocations,
+  hasPermission,
+} from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
+import { getEducationalDistricts } from "@/lib/api/education";
 
 type RequestRow = {
   id: number;
@@ -25,9 +33,21 @@ type RequestRow = {
   examNumber?: string;
   requestDate?: string;
   approvalListId?: string;
+  /** District Office that owns the request — what the Location filter matches on. */
+  submissionLocation?: string;
 };
 
 export default function Page() {
+  const { user } = useAuth();
+
+  // This screen serves two audiences at once — District Office searching their own
+  // requests, and Head Office assembling board approval lists — so the page guard
+  // only asks "may you open University Scholarships at all", and each control is
+  // gated separately.
+  const canViewPage = canAccessUniversityScholarships(user?.role);
+  const canCreateApprovalLists = hasPermission(user?.role, "US_LIST_CREATE");
+  const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
+
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [displayed, setDisplayed] = useState<RequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +73,8 @@ export default function Page() {
   const [createdCount, setCreatedCount] = useState(0);
   const [confirmedIsDeviation, setConfirmedIsDeviation] = useState(false);
 
-  const hasRights = true; // rights to create University Scholarship Approval List
+  // Rights to create a University Scholarship Approval List (MMS28/MMS35).
+  const hasRights = canCreateApprovalLists;
 
   const isSelectable = (item: RequestRow) => {
     const status = (item.status || "").toUpperCase();
@@ -101,33 +122,41 @@ export default function Page() {
     return dt;
   };
 
-  const locationOptions = [
-    { value: "colombo", label: "Colombo" },
-    { value: "kandy", label: "Kandy" },
-    { value: "galle", label: "Galle" },
-    { value: "matara", label: "Matara" },
-    { value: "jaffna", label: "Jaffna" },
-    { value: "kilinochchi", label: "Kilinochchi" },
-    { value: "mannar", label: "Mannar" },
-    { value: "mullaitivu", label: "Mullaitivu" },
-    { value: "vavuniya", label: "Vavuniya" },
-    { value: "puttalam", label: "Puttalam" },
-    { value: "kurunagala", label: "Kurunagala" },
-    { value: "kaluthara", label: "Kaluthara" },
-    { value: "Gampaha", label: "Gampaha" },
-    { value: "anuradhapura", label: "Anuradhapura" },
-    { value: "polonnaruwa", label: "Polonnaruwa" },
-    { value: "mathale", label: "Mathale" },
-    { value: "nuwaraeliya", label: "Nuwara Eliya" },
-    { value: "kegalla", label: "Kegalla" },
-    { value: "rathnapura", label: "Rathnapura" },
-    { value: "Trincomalee", label: "Trincomalee" },
-    { value: "batticaloa", label: "Batticaloa" },
-    { value: "ampara", label: "Ampara" },
-    { value: "badulla", label: "Badulla" },
-    { value: "monaragala", label: "Monaragala" },
-    { value: "hambantota", label: "Hambantota" }
-  ];
+  // Loaded from the District Office master at runtime rather than hardcoded. The
+  // previous inline list used invented lowercase slugs ("kurunagala", "kaluthara",
+  // "mathale") that matched neither the district master nor anything stored against
+  // a member, so no value in it could ever have matched a record.
+  const [locationOptions, setLocationOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+
+  // Same District Office master the Member Directory and the Grade 5 list filter on,
+  // so a location selected here matches the value actually stored on a request.
+  useEffect(() => {
+    let cancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (cancelled) return;
+        setLocationOptions(
+          districts.map((district) => ({ value: district, label: district }))
+        );
+      })
+      .catch(() => {
+        /* leave empty on failure — the filter simply offers no options */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A location-restricted user (District Office) is pinned to their own branch. The
+  // backend re-pins them regardless of what is sent; this only keeps the filter
+  // honest on screen.
+  useEffect(() => {
+    if (!canSelectAllLocationOptions && user?.assignedDistrict) {
+      setSelectedLocations([user.assignedDistrict]);
+    }
+  }, [canSelectAllLocationOptions, user?.assignedDistrict]);
 
   const statusOptions = [
     { value: "new", label: "New" },
@@ -196,19 +225,26 @@ export default function Page() {
 
     let filtered = [...requests];
 
-    console.log("Total requests:", requests.length);
-    console.log("Selected locations:", selectedLocations);
-    console.log("Sample request data:", requests[0]);
-
-    // Filter by location
+    // Filter by location (District Office that owns the request).
+    //
+    // This used to compare the student's free-text permanent address against a
+    // district name with exact string equality — "No 12, Galle Road, Colombo 03"
+    // never equals "colombo", so the filter could not match anything. It now reads
+    // submissionLocation, the field the backend actually scopes on.
+    //
+    // The backend already restricts a District Office user to their own branch
+    // before the data leaves the server; this only narrows within what they received.
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((r) => {
-        const requestAddress = (r.address || "").toLowerCase().trim();
-        return selectedLocations.some(loc =>
-          requestAddress === loc.toLowerCase().trim()
+        const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
+        if (!requestLocation) {
+          // Legacy rows with no location stay visible rather than vanishing.
+          return true;
+        }
+        return selectedLocations.some(
+          (loc) => requestLocation === loc.toLowerCase().trim()
         );
       });
-      console.log("After location filter:", filtered.length, "records");
     }
 
     // Filter by status
@@ -290,11 +326,13 @@ export default function Page() {
     selected,
     onChange,
     placeholder = "Select...",
+    disabled = false,
   }: {
     options: { value: string; label: string }[];
     selected: string[];
     onChange: (values: string[]) => void;
     placeholder?: string;
+    disabled?: boolean;
   }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -329,6 +367,7 @@ export default function Page() {
       <div ref={ref} className="relative">
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen((o) => !o)}
           className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -338,7 +377,7 @@ export default function Page() {
           <ChevronDown size={14} className="text-muted-foreground shrink-0" />
         </button>
 
-        {open && (
+        {open && !disabled && (
           <div className="absolute z-50 mt-1 w-full min-w-[8rem] rounded-md border border-border bg-popover shadow-md">
             <div className="p-1 flex flex-col gap-0.5">
               {options.map((opt) => (
@@ -419,29 +458,12 @@ export default function Page() {
     try {
       setIsLoading(true);
 
+      // The backend scopes this to the caller's own District Office before it
+      // returns, so a restricted user never receives another branch's records.
       const res = await fetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
 
-      console.log("Retrieved fresh data from backend:", data);
-
       if (Array.isArray(data) && data.length > 0) {
-        const fieldNames = Object.keys(data[0]);
-        console.log("Available fields in the data:", fieldNames);
-
-        // Check for location-related fields
-        const locationFields = fieldNames.filter(f =>
-          f.toLowerCase().includes('location') ||
-          f.toLowerCase().includes('district') ||
-          f.toLowerCase().includes('area')
-        );
-        console.log("Location-related fields found:", locationFields);
-
-        // Get all unique values for each field
-        fieldNames.forEach(field => {
-          const uniqueValues = [...new Set(data.map(r => r[field]))].slice(0, 5);
-          console.log(`${field}:`, uniqueValues);
-        });
-
         setRequests(data);
       } else {
         setRequests([]);
@@ -525,6 +547,14 @@ export default function Page() {
     }
   };
 
+  // Allow-list: a role reaches this page only by holding a University Scholarship
+  // right explicitly. Waits for `user` so the guard does not flash before auth loads.
+  if (user && !canViewPage) {
+    return (
+      <AccessRestricted message="University Scholarships are restricted to District Office, Head Office and Scholarship personnel." />
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -571,6 +601,7 @@ export default function Page() {
                   selected={selectedLocations}
                   onChange={setSelectedLocations}
                   placeholder="Select Locations"
+                  disabled={!canSelectAllLocationOptions}
                 />
               </div>
 

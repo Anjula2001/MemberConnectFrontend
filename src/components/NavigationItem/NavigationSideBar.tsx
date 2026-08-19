@@ -4,7 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import type { UserRole } from "@/lib/auth-context";
-import { canAccessGrade5, hasG5Permission } from "@/lib/permissions";
+import {
+  canAccessFundRequests,
+  canAccessGrade5,
+  canAccessUniversityScholarships,
+  hasPermission,
+} from "@/lib/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -67,33 +72,33 @@ export default function NavigationSideBar() {
   /**
    * Builds the Scholarships menu for a role, or null when the role has nothing in it.
    *
-   * Grade 5 is permission-gated (MMS01–MMS20). University and Fund Requests are not
-   * access-controlled yet, so they are only offered to the roles that already had
-   * them — this function must not quietly widen access to an ungoverned module.
+   * Every entry is now permission-gated — Grade 5 (MMS01–MMS20) and University
+   * (MMS21–MMS48) alike — so the menu is derived from the matrix rather than from
+   * which branch of this function a role happens to land in.
    *
    * Previously District Office and Head Office had no Scholarships menu at all, while
    * Death Donation Officer got the whole thing by falling through a catch-all branch.
-   * That is backwards: those first two are the SRS's named actors for the module.
+   * That is backwards: those first two are the SRS's named actors for both modules.
    */
-  const buildScholarshipsMenu = (
-    role: UserRole | undefined,
-    options: { includeUniversity: boolean }
-  ): MenuItem | null => {
+  const buildScholarshipsMenu = (role: UserRole | undefined): MenuItem | null => {
     const subMenu: SubMenuItem[] = [];
 
     if (canAccessGrade5(role)) {
       subMenu.push({ title: "Grade 5", url: "/scholarships/grade-5" });
     }
 
-    if (hasG5Permission(role, "G5_EXAM_MASTER_MANAGE")) {
+    if (hasPermission(role, "G5_EXAM_MASTER_MANAGE")) {
       subMenu.push({
         title: "Grade 5 Exam & Cut-offs",
         url: "/scholarships/grade-5/manage-exam-cutoff",
       });
     }
 
-    if (options.includeUniversity) {
+    if (canAccessUniversityScholarships(role)) {
       subMenu.push({ title: "University", url: "/scholarships/university" });
+    }
+
+    if (canAccessFundRequests(role)) {
       subMenu.push({ title: "Fund Requests", url: "/scholarships/fund-requests" });
     }
 
@@ -138,7 +143,7 @@ export default function NavigationSideBar() {
         },
         // District Office is the SRS's named actor for creating Grade 5 requests
         // (MMS01–MMS05), so the module belongs in this menu.
-        ...([buildScholarshipsMenu(role, { includeUniversity: false })].filter(
+        ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
       ];
@@ -210,7 +215,7 @@ export default function NavigationSideBar() {
         },
         // Head Office / Board Secretary own the Grade 5 approval track
         // (MMS06–MMS19) — the module was previously unreachable for them.
-        ...([buildScholarshipsMenu(role, { includeUniversity: false })].filter(
+        ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
         { title: "Reports", icon: BarChart, url: "/reports" },
@@ -281,7 +286,7 @@ export default function NavigationSideBar() {
             },
           ],
         },
-        ...([buildScholarshipsMenu(role, { includeUniversity: true })].filter(
+        ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
@@ -354,7 +359,7 @@ export default function NavigationSideBar() {
         icon: Home,
         url: "/",
       },
-      ...([buildScholarshipsMenu(role, { includeUniversity: true })].filter(
+      ...([buildScholarshipsMenu(role)].filter(
         Boolean
       ) as MenuItem[]),
       { title: "Death Donation", icon: Heart, url: "/death-donation" },
