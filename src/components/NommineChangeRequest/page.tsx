@@ -39,18 +39,28 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   const [relationships, setRelationships] = useState<{ id: number; name: string }[]>([]);
 
   const [mounted, setMounted] = useState(false);
-  const [fetchedMemberId, setFetchedMemberId] = useState<string | null>(null);
 
   // --- 2. State Management ---
   // currentData stores the nominee information currently on file.
   // formData stores the requested updated nominee values that the user can edit.
   const [formData, setFormData] = useState({ ...EMPTY_NOMINEE });
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  // The membership number (MEM-2026-001). Distinct from the memberId route param,
+  // which is the Member table's numeric primary key - sending that as the request's
+  // memberId is what produced rows the list could not resolve a member for.
+  const [membershipNo, setMembershipNo] = useState<string | null>(null);
+  const [memberInitials, setMemberInitials] = useState<string | null>(null);
+  const [memberNic, setMemberNic] = useState<string | null>(null);
+  const [submissionLocation, setSubmissionLocation] = useState<string | null>(null);
+  // MMC18 locks a submitted record. Editing it in place is enabled at the product
+  // owner's direction; re-submitting returns the request to Submitted for Approval so
+  // it re-enters the approval-list queue.
+  const [isEditing, setIsEditing] = useState(false);
   const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // MMC18: "Once submitted, the user cannot edit the record."
-  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW';
+  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW' && !isEditing;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,32 +87,27 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
           const data = response.data.data || response.data;
 
           if (data) {
-            const requestData = {
+            setFormData({
               newnommineName: data.newnommineName || "",
               relationship: data.relationship || "",
               nic: data.nic || "",
               address: data.address || "",
-            };
-            setFormData(requestData);
+            });
+            // The Current Value column is the snapshot stored when the request was
+            // raised. It used to be re-read from the member on every view, so an
+            // already-approved request compared against itself and showed no change.
+            setCurrentData({
+              newnommineName: data.oldNommineName || "",
+              relationship: data.oldRelationship || "",
+              nic: data.oldNic || "",
+              address: data.oldAddress || "",
+            });
             setRequestStatus(data.status ?? null);
             setRequestNo(data.requestNo ?? null);
-
-            const resolvedMemberId = data.memberId || data.memberID || data.memberid || memberId;
-            if (resolvedMemberId) {
-              setFetchedMemberId(resolvedMemberId.toString());
-              const member = await getMemberById(Number(resolvedMemberId));
-              const currentNomineeData = {
-                newnommineName: member.nomineeFullName || member.nameWithInitials || member.fullName || "",
-                relationship: member.nomineeRelationship || "",
-                nic: member.identificationNumber || member.nic || "",
-                address: member.nomineeAddress || member.permanentPrivateAddress || "",
-              };
-              setCurrentData(currentNomineeData);
-              setMemberName(member.fullName || member.nameWithInitials || null);
-            } else {
-              setCurrentData(requestData);
-              setMemberName(data.fullName || data.nameWithInitials || null);
-            }
+            setMembershipNo(data.memberId ?? null);
+            setMemberName(data.memberFullName ?? null);
+            setMemberInitials(data.memberNameWithInitials ?? null);
+            setMemberNic(data.memberNic ?? null);
           }
         } else if (memberId) {
           const member = await getMemberById(Number(memberId));
@@ -113,8 +118,13 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             address: member.nomineeAddress || member.permanentPrivateAddress || "",
           };
           setCurrentData(nomineeData);
+          // MMC18: the New Value section defaults to the current values.
           setFormData(nomineeData);
+          setMembershipNo(member.memberId ?? null);
           setMemberName(member.fullName || member.nameWithInitials || null);
+          setMemberInitials(member.nameWithInitials ?? null);
+          setMemberNic(member.nic ?? null);
+          setSubmissionLocation(member.submissionLocation ?? member.educationalDistrict ?? null);
         }
       } catch (err: unknown) {
         setLoadError(err instanceof Error ? err.message : "Could not load this nominee change request.");
@@ -168,7 +178,6 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
     setIsSubmitting(true);
 
     // Data mapped to match your Spring Boot DTO
-    const currentMemberId = memberId || fetchedMemberId;
     const payload: Record<string, unknown> = {
       newnommineName: formData.newnommineName,
       relationship: formData.relationship,
@@ -176,8 +185,11 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
       address: formData.address,
     };
 
-    if (currentMemberId) {
-      payload.memberId = currentMemberId;
+    if (membershipNo) {
+      payload.memberId = membershipNo;
+    }
+    if (submissionLocation) {
+      payload.submissionLocation = submissionLocation;
     }
 
 
@@ -217,6 +229,23 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
       <div className="max-w-5xl mx-auto space-y-6">
 
         {/* Header Section */}
+        {(membershipNo || memberName) && (
+          <div className="mb-4 grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Member ID</p>
+              <p className="font-mono font-medium text-gray-800">{membershipNo ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Name with Initials</p>
+              <p className="font-medium text-gray-800">{memberInitials ?? memberName ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">NIC</p>
+              <p className="font-medium text-gray-800">{memberNic ?? '—'}</p>
+            </div>
+          </div>
+        )}
+
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <button className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
@@ -227,7 +256,9 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
                 {isEditMode ? `Nominee Change Request ${requestNo ?? 'NEW'}` : "New Nominee Change Request"}
               </h1>
               <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono inline-block mt-1">
-                {memberName ? `${memberName} (${memberId})` : "Member details unavailable"}
+                {memberName
+                  ? `${memberName}${membershipNo ? ` (${membershipNo})` : ''}`
+                  : "Member details unavailable"}
               </span>
             </div>
           </div>
@@ -237,15 +268,37 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
                 {requestStatus.replace(/_/g, ' ')}
               </span>
             )}
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || isLocked}
-              className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
-                } text-white`}
-            >
-              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-              {isSubmitting ? "Updating..." : isEditMode ? "💾 Update Request" : "💾 Submit Request"}
-            </button>
+            {isEditMode && !isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                disabled={isSubmitting}
+                className="px-4 py-2 rounded-lg border border-[#8A4C27] text-[#8A4C27] font-semibold hover:bg-[#8A4C27]/5 transition-colors disabled:opacity-60"
+              >
+                ✏️ Edit
+              </button>
+            )}
+            {isEditMode && isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-gray-700 font-semibold"
+              >
+                Cancel
+              </button>
+            )}
+            {(!isEditMode || isEditing) && (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
+                  } text-white`}
+              >
+                {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+                {isSubmitting ? "Saving..." : "💾 Submit Request"}
+              </button>
+            )}
           </div>
         </header>
 

@@ -28,14 +28,28 @@ export interface BoardApprovalListCreatePayload {
   status?: string;
 }
 
+/** One request's decision inside a Name or Nominee Change Approval List. */
+export interface ProfileChangeItemDecision {
+  requestId: number;
+  decision: "Approve" | "Reject";
+  rejectReason?: string;
+}
+
 export interface ProcessBoardApprovalListPayload {
   actualMeetingDate: string;
-  decision: "Approve" | "Reject";
+  /**
+   * The list-wide decision for membership applications. Omitted for a list that holds
+   * only Name or Nominee change requests — those are decided per request below.
+   */
+  decision?: "Approve" | "Reject";
   rejectReason?: string;
   boardRemarks?: string;
   processedBy?: string;
   /** S3 key of the scanned, signed board approval sheet. */
   approvedListDocument?: string;
+  /** MMC12 / MMC25: the board decides each change request individually. */
+  nameChangeDecisions?: ProfileChangeItemDecision[];
+  nomineeChangeDecisions?: ProfileChangeItemDecision[];
 }
 
 const BASE_PATH = "/api/board-approval-lists";

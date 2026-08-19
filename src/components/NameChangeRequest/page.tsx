@@ -74,11 +74,22 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
   // values by default." formData is seeded from the member, not left blank.
   const [formData, setFormData] = useState({ ...EMPTY_NAMES });
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  // The membership number (MEM-2026-001). Distinct from the memberId route param,
+  // which is the Member table's numeric primary key - sending that as the request's
+  // memberId is what produced rows the list could not resolve a member for.
+  const [membershipNo, setMembershipNo] = useState<string | null>(null);
+  const [memberInitials, setMemberInitials] = useState<string | null>(null);
+  const [memberNic, setMemberNic] = useState<string | null>(null);
+  const [submissionLocation, setSubmissionLocation] = useState<string | null>(null);
+  // MMC05 locks a submitted record. Editing it in place is enabled at the product
+  // owner's direction; re-submitting returns the request to Submitted for Approval so
+  // it re-enters the approval-list queue.
+  const [isEditing, setIsEditing] = useState(false);
   const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // MMC05: "Once submitted, the user cannot edit the record."
-  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW';
+  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW' && !isEditing;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -107,16 +118,27 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
           const data = response.data.data || response.data;
 
           if (data) {
-            const requestData = {
+            setFormData({
               newTitle: data.newTitle || "",
               newNameWithInitials: data.newNameWithInitials || "",
               newFullName: data.newFullName || "",
               newNameInPayroll: data.newNameAsInPayroll || "",
-            };
-            setFormData(requestData);
-            setCurrentData(requestData);
+            });
+            // The Current Value column is the snapshot stored when the request was
+            // raised. It used to be a copy of the New Value, so both columns always
+            // matched and the requested change was invisible.
+            setCurrentData({
+              newTitle: data.oldTitle || "",
+              newNameWithInitials: data.oldNameWithInitials || "",
+              newFullName: data.oldFullName || "",
+              newNameInPayroll: data.oldNameAsInPayroll || "",
+            });
             setRequestStatus(data.status ?? null);
             setRequestNo(data.requestNo ?? null);
+            setMembershipNo(data.memberId ?? null);
+            setMemberName(data.memberFullName ?? null);
+            setMemberInitials(data.memberNameWithInitials ?? null);
+            setMemberNic(data.memberNic ?? null);
           }
         } catch (err: unknown) {
           setLoadError(err instanceof Error ? err.message : "Could not load this name change request.");
@@ -140,7 +162,11 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
           setCurrentData(memberData);
           // MMC05: the New Value section defaults to the current values.
           setFormData(memberData);
+          setMembershipNo(member.memberId ?? null);
           setMemberName(member.fullName || member.nameWithInitials || null);
+          setMemberInitials(member.nameWithInitials ?? null);
+          setMemberNic(member.nic ?? null);
+          setSubmissionLocation(member.submissionLocation ?? member.educationalDistrict ?? null);
         } catch (err: unknown) {
           setLoadError(err instanceof Error ? err.message : "Unable to load member data for name change.");
         } finally {
@@ -186,12 +212,15 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
       newNameAsInPayroll: formData.newNameInPayroll,
     };
 
-    if (memberId) payload.memberId = memberId;
+    if (membershipNo) payload.memberId = membershipNo;
+    if (submissionLocation) payload.submissionLocation = submissionLocation;
 
     try {
       if (isEditMode) {
         await apiClient.put(`/api5/namechange/updatenamechange/${editId}`, payload);
-        alert("Updated successfully!");
+        setIsEditing(false);
+        setRequestStatus('SUBMITTED_FOR_APPROVAL');
+        alert("Request updated and sent back for approval.");
       } else {
         await apiClient.post('/api5/namechange/savenamechange', payload);
         alert("Request submitted successfully to MemberConnect!");
@@ -218,6 +247,23 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-gray-800">
+      {(membershipNo || memberName) && (
+        <div className="max-w-5xl mx-auto mb-4 grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:grid-cols-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Member ID</p>
+            <p className="font-mono font-medium text-gray-800">{membershipNo ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Name with Initials</p>
+            <p className="font-medium text-gray-800">{memberInitials ?? memberName ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">NIC</p>
+            <p className="font-medium text-gray-800">{memberNic ?? '—'}</p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
           <button onClick={() => router.back()} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
@@ -229,7 +275,7 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
             </h1>
             <span className="bg-gray-200 px-2 py-0.5 rounded text-[12px] text-gray-600 font-mono inline-block mt-1">
               {memberName
-                ? `${memberName} (${memberId})`
+                ? `${memberName}${membershipNo ? ` (${membershipNo})` : ''}`
                 : currentData.newFullName || "Member details unavailable"
               }
             </span>
@@ -241,14 +287,34 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
               {requestStatus.replace(/_/g, ' ')}
             </span>
           )}
-          {!isLocked && (
+          {isEditMode && !isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              disabled={isSubmitting}
+              className="px-4 py-2 border border-orange-800 text-orange-800 rounded-md hover:bg-orange-50 font-medium transition-colors disabled:opacity-60"
+            >
+              ✏️ Edit
+            </button>
+          )}
+          {isEditMode && isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-gray-700 font-medium"
+            >
+              Cancel
+            </button>
+          )}
+          {(!isEditMode || isEditing) && (
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
               className="px-6 py-2 bg-orange-800 text-white rounded-md hover:bg-orange-900 flex items-center gap-2 font-medium transition-colors disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-              {isEditMode ? "💾 Update Request" : "💾 Submit Request"}
+              💾 Submit Request
             </button>
           )}
         </div>

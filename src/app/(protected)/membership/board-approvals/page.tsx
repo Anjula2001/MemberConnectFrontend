@@ -661,8 +661,54 @@ export default function BoardApprovalsPage() {
     try {
       const now = new Date();
       const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+      // The list-wide decision applies to membership applications only. Deriving it
+      // from an empty set made a change-request-only list resolve to "Reject" with no
+      // reason, which the backend refused — such a list could never be processed.
       const decisionsArray = Object.values(applicationDecisions).map(d => d.decision);
-      const listDecision: ApplicationDecision = decisionsArray.includes("Approve") ? "Approve" : "Reject";
+      const listDecision: ApplicationDecision | undefined =
+        decisionsArray.length === 0
+          ? undefined
+          : decisionsArray.includes("Approve")
+            ? "Approve"
+            : "Reject";
+
+      // MMC12 / MMC25: each change request carries its own decision and reason.
+      const nameChangeDecisions = selectedListNameChangeRequests
+        .map((ncr) => {
+          const key = String(ncr.nameChangeRequestID ?? "");
+          const state = selectedListNameChangeDecisions[key];
+          return key
+            ? {
+                requestId: Number(key),
+                decision: state?.decision ?? "Approve",
+                rejectReason: state?.rejectReason ?? "",
+              }
+            : null;
+        })
+        .filter((d): d is { requestId: number; decision: ApplicationDecision; rejectReason: string } => d !== null);
+
+      const nomineeChangeDecisions = selectedListNomineeChangeRequests
+        .map((nmr) => {
+          const key = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+          const state = selectedListNomineeChangeDecisions[key];
+          return key
+            ? {
+                requestId: Number(key),
+                decision: state?.decision ?? "Approve",
+                rejectReason: state?.rejectReason ?? "",
+              }
+            : null;
+        })
+        .filter((d): d is { requestId: number; decision: ApplicationDecision; rejectReason: string } => d !== null);
+
+      // The reason is mandatory on any rejected row, so catch it before the round trip.
+      const missingReason = [...nameChangeDecisions, ...nomineeChangeDecisions]
+        .find((d) => d.decision === "Reject" && !d.rejectReason.trim());
+      if (missingReason) {
+        setToastMessage("Enter a reject reason for every rejected request before proceeding.");
+        setShowProcessToast(true);
+        return;
+      }
 
       // Upload the scanned, signed approval sheet first (if attached) so the stored
       // key can be saved alongside the decision. A failed upload must not lose the
@@ -687,10 +733,12 @@ export default function BoardApprovalsPage() {
 
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
-        decision: listDecision,
+        ...(listDecision ? { decision: listDecision } : {}),
         boardRemarks,
         processedBy: "Super Admin User",
         ...(approvedListDocument ? { approvedListDocument } : {}),
+        ...(nameChangeDecisions.length > 0 ? { nameChangeDecisions } : {}),
+        ...(nomineeChangeDecisions.length > 0 ? { nomineeChangeDecisions } : {}),
       };
 
       const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
@@ -779,7 +827,7 @@ export default function BoardApprovalsPage() {
           processedBy: processedList.processedBy ?? "Head Office User",
           processedAt: formatted,
           actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
-          decision: listDecision,
+          decision: listDecision ?? "Approve",
           rejectReason: "",
           boardRemarks: processedList.boardRemarks ?? boardRemarks,
         },
