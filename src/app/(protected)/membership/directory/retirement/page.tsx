@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
-import RetirementForm, { RetirementFormRef, } from "@/src/components/ui/retirement/retirementform";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
+import RetirementForm, { RetirementFormRef } from "@/src/components/ui/retirement/retirementform";
 import DocumentUpload from "@/src/components/ui/documentupload";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
-import AddBankDetails, { AddBankDetailsRef, } from "@/src/components/ui/retirement/addbankdetails";
+import AddBankDetails, { AddBankDetailsRef } from "@/src/components/ui/retirement/addbankdetails";
+import { SubmitSuccessModal } from "@/src/components/ui/termination/SubmitConfirmationModal";
 
 interface BankAccountRow {
   id: number;
@@ -90,6 +91,11 @@ export default function RetirementPage() {
 
   const [validation, setValidation] = useState<RetirementValidation | null>(null);
 
+  const [openSubmitConfirm, setOpenSubmitConfirm] = useState(false);
+  const [openSubmitSuccess, setOpenSubmitSuccess] = useState(false);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const isRequestLocked = retirementRequest?.status
     ? LOCKED_STATUSES.includes(retirementRequest.status)
     : false;
@@ -102,7 +108,6 @@ export default function RetirementPage() {
 
   const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
     NEW: [
-      { status: "INCOMPLETE", label: "Mark Incomplete" },
       { status: "INACTIVE", label: "Mark Inactive" },
     ],
     INCOMPLETE: [
@@ -413,6 +418,39 @@ export default function RetirementPage() {
     }
   };
 
+  // Validates that all mandatory documents are uploaded before submitting.
+  const validateMandatoryDocuments = async (): Promise<boolean> => {
+    if (!retirementRequest?.requestNo) {
+      setSaveError("Please save retirement request before submitting.");
+      return false;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/required-documents?memberId=${encodeURIComponent(selectedMemberId)}`
+      );
+
+      if (!response.ok) {
+        setSaveError("Failed to validate required documents.");
+        return false;
+      }
+
+      const docs: { id: number; documentName: string; mandatory: boolean; uploaded: boolean }[] = await response.json();
+      const hasMissingMandatory = docs.some((doc) => doc.mandatory && !doc.uploaded);
+
+      if (hasMissingMandatory) {
+        setSaveError("Cannot submit. Mandatory documents are missing.");
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Document validation error:", error);
+      setSaveError("Failed to validate mandatory documents.");
+      return false;
+    }
+  };
+
   // Submits a saved retirement request for approval.
   const handleSubmitForm = async () => {
     setSaveError("");
@@ -421,6 +459,9 @@ export default function RetirementPage() {
       setSaveError("Please save retirement request before submitting.");
       return;
     }
+
+    const isDocsValid = await validateMandatoryDocuments();
+    if (!isDocsValid) return;
 
     if (minorSavingsAccounts.length > 0 && bankAccounts.length === 0) {
       const missingBankDetailsMessage = "Please add disbursement bank details before submitting.";
@@ -433,11 +474,20 @@ export default function RetirementPage() {
       return;
     }
 
-    const confirmed = window.confirm("After submitting, this retirement request cannot be edited. Do you want to continue?");
+    setOpenSubmitConfirm(true);
+  };
 
-    if (!confirmed) return;
+  const handleConfirmSubmit = async () => {
+    if (!retirementRequest?.requestNo) {
+      setSaveError("Please save retirement request before submitting.");
+      setOpenSubmitConfirm(false);
+      return;
+    }
 
     try {
+      setIsSubmitting(true);
+      setSaveError("");
+
       const response = await fetch(
         `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/submit`,
         {
@@ -448,6 +498,7 @@ export default function RetirementPage() {
       if (!response.ok) {
         const errorData = await response.json();
         setSaveError(errorData.message || "Cannot submit request.");
+        setOpenSubmitConfirm(false);
         return;
       }
 
@@ -455,9 +506,14 @@ export default function RetirementPage() {
 
       setRetirementRequest(submittedRequest);
       setSaveError("");
+      setOpenSubmitConfirm(false);
+      setOpenSubmitSuccess(true);
     } catch (error) {
       console.error("Submit request error:", error);
       setSaveError("Failed to submit retirement request.");
+      setOpenSubmitConfirm(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -543,13 +599,7 @@ export default function RetirementPage() {
       return;
     }
 
-    if (action === "approve") {
-      const confirmed = window.confirm(
-        "Do you want to approve this retirement request?"
-      );
 
-      if (!confirmed) return;
-    }
 
     if (action === "reject" && !comment.trim()) {
       setSaveError("Reject comment is required.");
@@ -662,7 +712,7 @@ export default function RetirementPage() {
               {showApprovalActions && (
                 <>
                   <Button
-                    onClick={() => handleApprovalAction("approve")}
+                    onClick={() => setApproveModalOpen(true)}
                     disabled={approvalAction !== null}
                     className="bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
@@ -1013,6 +1063,53 @@ export default function RetirementPage() {
         onConfirm={handleConfirm}
       />
 
+      {approveModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+            <button
+              type="button"
+              onClick={() => setApproveModalOpen(false)}
+              disabled={approvalAction === "approve"}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+              aria-label="Close modal"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-lg font-bold text-[#953002]">
+              Approve Retirement Request
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-1">
+              Do you want to approve this retirement request?
+            </p>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setApproveModalOpen(false)}
+                disabled={approvalAction === "approve"}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                onClick={async () => {
+                  await handleApprovalAction("approve");
+                  setApproveModalOpen(false);
+                }}
+                disabled={approvalAction === "approve"}
+                className="bg-[#953002] text-white hover:bg-[#672102] disabled:opacity-70"
+              >
+                {approvalAction === "approve" ? "Approving..." : "OK"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
           <div className="bg-white w-[450px] rounded-lg shadow-lg p-6">
@@ -1113,6 +1210,58 @@ export default function RetirementPage() {
           </div>
         </div>
       )}
+
+      {openSubmitConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+            <button
+              type="button"
+              onClick={() => !isSubmitting && setOpenSubmitConfirm(false)}
+              disabled={isSubmitting}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+              aria-label="Close modal"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-lg font-bold text-[#953002]">
+              Submit Retirement Request
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-1">
+              After submitting, this retirement request cannot be edited. Do you want to continue?
+            </p>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setOpenSubmitConfirm(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleConfirmSubmit}
+                disabled={isSubmitting}
+                className="bg-[#953002] text-white hover:bg-[#672102] disabled:opacity-70"
+              >
+                {isSubmitting ? "Submitting..." : "OK"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SubmitSuccessModal
+        open={openSubmitSuccess}
+        title="Submitted for Approval"
+        description="The retirement request has been submitted for approval and can no longer be edited."
+        requestId={retirementRequest?.requestNo}
+        onClose={() => setOpenSubmitSuccess(false)}
+      />
     </>
   );
 }
