@@ -1115,7 +1115,7 @@ export default function FundDisbursementRequest() {
         const isError =
           msgLower.includes("failed") ||
           msgLower.includes("error") ||
-          msgLower.includes("duplicate") ||
+          msgLower.includes("duplicat") ||
           msgLower.includes("required") ||
           msgLower.includes("please");
 

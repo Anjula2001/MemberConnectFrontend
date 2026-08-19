@@ -1168,7 +1168,10 @@ export default function StudentExamSection() {
       : status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
-  const isFollowingDeviation = !!(loadedRecord?.followDeviationProcess);
+  const isFollowingDeviation =
+    !!(loadedRecord?.followDeviationProcess) &&
+    status !== "NEW" &&
+    status !== "INCOMPLETE";
   const pageTitle = isApprovedDetailsEditMode
     ? "Edit University Scholarship Details"
     : isExistingRequest
@@ -1390,7 +1393,7 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || (!isDirty && isSaved) || isApprovedDetailsEditMode}
+              disabled={isInputsDisabled || (!isSaved && !isValid) || (!isDirty && documentFiles.length === 0 && isSaved) || isApprovedDetailsEditMode}
             >
               Save
             </Button>
@@ -1614,7 +1617,7 @@ export default function StudentExamSection() {
                   <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
                     Exam Year <span className="text-red-500">*</span>
                   </label>
-                  <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  <Input id="examYear" maxLength={4} placeholder="YYYY (1950 - Present)" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
                   {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
                 </div>
 
@@ -2021,8 +2024,9 @@ export default function StudentExamSection() {
         const isError =
           msgLower.includes("failed") ||
           msgLower.includes("error") ||
-          msgLower.includes("duplicate") ||
-          msgLower.includes("please");
+          msgLower.includes("duplicat") ||
+          msgLower.includes("please") ||
+          isExamNoDuplicate;
 
         let popupTitle = "Notification";
         if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
@@ -2030,7 +2034,7 @@ export default function StudentExamSection() {
         else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
         else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
         else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
-        else if (msgLower.includes("duplicate")) popupTitle = "Validation Error";
+        else if (msgLower.includes("duplicat") || isExamNoDuplicate) popupTitle = "Notification";
         else if (isError) popupTitle = "Notice";
 
         const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
