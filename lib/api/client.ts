@@ -16,6 +16,15 @@ apiClient.interceptors.request.use((config) => {
       config.headers["Authorization"] = `Bearer ${token}`;
     }
   }
+
+  // A FormData body must set its own Content-Type, because only the browser knows the
+  // multipart boundary it generated. The instance-wide "application/json" default above
+  // overrode it, so multipart uploads reached the backend announced as JSON and were
+  // rejected with: Content-Type 'application/json' is not supported.
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
+
   return config;
 });
 

@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api/client';
 import { z } from "zod";
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
+import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 
 export const nameChangeSchema = z.object({
   newTitle: z.string().min(1, "Title is required"),
@@ -85,6 +86,12 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
   // owner's direction; re-submitting returns the request to Submitted for Approval so
   // it re-enters the approval-list queue.
   const [isEditing, setIsEditing] = useState(false);
+  // MMC05's supporting document. existingStoragePath is the S3 key already on the
+  // request; it is sent back unchanged on an ordinary edit so the file is not dropped.
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [existingUrl, setExistingUrl] = useState<string | null>(null);
+  const [existingFileName, setExistingFileName] = useState<string | null>(null);
+  const [existingStoragePath, setExistingStoragePath] = useState<string | null>(null);
   const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -139,6 +146,13 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
             setMemberName(data.memberFullName ?? null);
             setMemberInitials(data.memberNameWithInitials ?? null);
             setMemberNic(data.memberNic ?? null);
+
+            if (data.documentStoragePath) {
+              setExistingStoragePath(data.documentStoragePath);
+              setExistingFileName(data.documentFileName ?? data.documentStoragePath);
+              // Served by the backend from S3; the file is never publicly exposed.
+              setExistingUrl(`/api/documents/file/${data.documentStoragePath}`);
+            }
           }
         } catch (err: unknown) {
           setLoadError(err instanceof Error ? err.message : "Could not load this name change request.");
@@ -214,15 +228,31 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
 
     if (membershipNo) payload.memberId = membershipNo;
     if (submissionLocation) payload.submissionLocation = submissionLocation;
+    // No new file and no existing key means "no document"; sending the existing key
+    // back tells the backend to leave the stored file alone.
+    if (!selectedFile && existingStoragePath) {
+      payload.documentStoragePath = existingStoragePath;
+    }
+
+    // The JSON goes as a "request" part so the backend's DTO validation still applies
+    // on a multipart submit — the same shape Basic Profile and Nominee use.
+    const body = new FormData();
+    body.append(
+      'request',
+      new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    );
+    if (selectedFile) {
+      body.append('file', selectedFile);
+    }
 
     try {
       if (isEditMode) {
-        await apiClient.put(`/api5/namechange/updatenamechange/${editId}`, payload);
+        await apiClient.put(`/api5/namechange/updatenamechangeWithDocument/${editId}`, body);
         setIsEditing(false);
         setRequestStatus('SUBMITTED_FOR_APPROVAL');
         alert("Request updated and sent back for approval.");
       } else {
-        await apiClient.post('/api5/namechange/savenamechange', payload);
+        await apiClient.post('/api5/namechange/savenamechangeWithDocument', body);
         alert("Request submitted successfully to MemberConnect!");
       }
       router.push('/membership/profile-changes');
@@ -406,9 +436,26 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
             ))}
           </ul>
 
-          <div className="w-full border-2 border-dashed border-gray-200 rounded-lg py-12 flex flex-col justify-center items-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer group">
-            <p className="text-gray-400 italic text-sm group-hover:text-gray-500">Document upload functionality (Mock)</p>
-          </div>
+          <DocumentUploadCard
+            label="Supporting document"
+            disabled={isLocked}
+            existingUrl={existingUrl}
+            existingFileName={existingFileName}
+            onFileSelected={(file) => {
+              setSelectedFile(file);
+              setExistingFileName(file.name);
+              // The file is uploaded with the request, not on selection, so there is
+              // nothing to preview from the server until it has been submitted.
+              setExistingUrl(null);
+            }}
+            onDelete={async () => {
+              // Clearing both is what tells the backend to remove the stored document.
+              setSelectedFile(null);
+              setExistingUrl(null);
+              setExistingFileName(null);
+              setExistingStoragePath(null);
+            }}
+          />
         </section>
       </div>
     </div>

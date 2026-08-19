@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
+import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 
 // --- 1. Zod Schema Definition ---
 // Validates the nominee change request payload before sending to the backend.
@@ -56,6 +57,12 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   // owner's direction; re-submitting returns the request to Submitted for Approval so
   // it re-enters the approval-list queue.
   const [isEditing, setIsEditing] = useState(false);
+  // MMC18's supporting document. existingStoragePath is the S3 key already on the
+  // request; it is sent back unchanged on an ordinary edit so the file is not dropped.
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [existingUrl, setExistingUrl] = useState<string | null>(null);
+  const [existingFileName, setExistingFileName] = useState<string | null>(null);
+  const [existingStoragePath, setExistingStoragePath] = useState<string | null>(null);
   const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -108,6 +115,13 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             setMemberName(data.memberFullName ?? null);
             setMemberInitials(data.memberNameWithInitials ?? null);
             setMemberNic(data.memberNic ?? null);
+
+            if (data.documentStoragePath) {
+              setExistingStoragePath(data.documentStoragePath);
+              setExistingFileName(data.documentFileName ?? data.documentStoragePath);
+              // Served by the backend from S3; the file is never publicly exposed.
+              setExistingUrl(`/api/documents/file/${data.documentStoragePath}`);
+            }
           }
         } else if (memberId) {
           const member = await getMemberById(Number(memberId));
@@ -158,6 +172,24 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   };
 
   // --- 4. Submit to Backend ---
+  /**
+   * Leaves the screen for wherever it was opened from.
+   *
+   * The button had no onClick at all, so it did nothing. An explicit destination is
+   * used rather than router.back(): this screen is opened from two places, and history
+   * has no entry to return to when a request is opened directly by URL or after a
+   * refresh — which is exactly the case when reviewing a created request.
+   */
+  const handleBack = () => {
+    if (isEditMode) {
+      // Opened from the All Member Profile Change Requests list.
+      router.push('/membership/profile-changes');
+      return;
+    }
+    // Opened from the member's profile Actions menu.
+    router.push(memberId ? `/membership/directory/${memberId}` : '/membership/directory');
+  };
+
   // Builds the nominee change payload and sends it to the backend.
   // Edit mode reuses the same save endpoint with an Id and status if needed.
   const handleSubmit = async () => {
@@ -191,16 +223,33 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
     if (submissionLocation) {
       payload.submissionLocation = submissionLocation;
     }
+    // No new file and no existing key means "no document"; sending the existing key
+    // back tells the backend to leave the stored file alone.
+    if (!selectedFile && existingStoragePath) {
+      payload.documentStoragePath = existingStoragePath;
+    }
 
+    // The JSON goes as a "request" part so the backend's DTO validation still applies
+    // on a multipart submit — the same shape Basic Profile uses.
+    const body = new FormData();
+    body.append(
+      'request',
+      new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    );
+    if (selectedFile) {
+      body.append('file', selectedFile);
+    }
 
     try {
       if (isEditMode) {
         // Edits used to be re-posted to the create endpoint, relying on the id in the
         // body making save() behave as an upsert. This is the update endpoint.
-        await apiClient.put(`/api/v3/updateNommine/${editId}`, payload);
-        alert("Nominee change request updated successfully!");
+        await apiClient.put(`/api/v3/updateNommineWithDocument/${editId}`, body);
+        setIsEditing(false);
+        setRequestStatus('SUBMITTED_FOR_APPROVAL');
+        alert("Request updated and sent back for approval.");
       } else {
-        await apiClient.post('/api/v3/saveNommine', payload);
+        await apiClient.post('/api/v3/saveNommineWithDocument', body);
         alert("Nominee change request submitted successfully!");
       }
       router.push('/membership/profile-changes');
@@ -248,7 +297,12 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
 
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <button className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back"
+              className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+            >
               <ArrowLeft size={20} />
             </button>
             <div>
@@ -382,9 +436,26 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
               Nominee's NIC / Birth Certificate Copy
             </li>
           </ul>
-          <div className="w-full border-2 border-dashed border-slate-200 rounded-xl py-10 bg-slate-50 flex justify-center items-center hover:bg-white hover:border-[#8A4C27]/30 transition-all cursor-pointer group">
-            <span className="text-slate-400 italic text-sm group-hover:text-slate-500">Document upload functionality (Mock)</span>
-          </div>
+          <DocumentUploadCard
+            label="Nominee's NIC / Birth Certificate Copy"
+            disabled={isLocked}
+            existingUrl={existingUrl}
+            existingFileName={existingFileName}
+            onFileSelected={(file) => {
+              setSelectedFile(file);
+              setExistingFileName(file.name);
+              // The file is uploaded with the request, not on selection, so there is
+              // nothing to preview from the server until it has been submitted.
+              setExistingUrl(null);
+            }}
+            onDelete={async () => {
+              // Clearing both is what tells the backend to remove the stored document.
+              setSelectedFile(null);
+              setExistingUrl(null);
+              setExistingFileName(null);
+              setExistingStoragePath(null);
+            }}
+          />
         </SectionCard>
       </div>
     </div>
