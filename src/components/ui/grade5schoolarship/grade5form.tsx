@@ -423,7 +423,7 @@ useEffect(() => {
     <form className="space-y-6">
       {popupError && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-          <div className="bg-white w-[450px] rounded-lg shadow-lg p-6 relative">
+          <div className="bg-white w-112.5 rounded-lg shadow-lg p-6 relative">
             
             <button
               type="button"

@@ -34,6 +34,8 @@ export interface ProcessBoardApprovalListPayload {
   rejectReason?: string;
   boardRemarks?: string;
   processedBy?: string;
+  /** S3 key of the scanned, signed board approval sheet. */
+  approvedListDocument?: string;
 }
 
 const BASE_PATH = "/api/board-approval-lists";

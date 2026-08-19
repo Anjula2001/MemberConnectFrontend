@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Send, ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
-import axios from 'axios';
+import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
 
@@ -28,26 +28,15 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   const isEditMode = Boolean(editId);
 
   const [memberName, setMemberName] = useState<string | null>(null);
-  const [currentData, setCurrentData] = useState({
-    newnommineName: 'Vihanga',
+  const EMPTY_NOMINEE = {
+    newnommineName: '',
     relationship: '',
     nic: '',
-    address: ''
-  });
-
-  const INTIAL_NOMINEE_DATA = {
-    newnommineName: 'Vihanga',
-    relationship: '',
-    nic: '',
-    address: ''
+    address: '',
   };
 
-  const STATUS_OPTIONS = [
-    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
-    { value: 'REJECTED', label: 'Rejected' },
-    { value: 'INACTIVE', label: 'Inactive' },
-    { value: 'PENDING', label: 'Pending' },
-  ];
+  const [currentData, setCurrentData] = useState({ ...EMPTY_NOMINEE });
+  const [relationships, setRelationships] = useState<{ id: number; name: string }[]>([]);
 
   const [mounted, setMounted] = useState(false);
   const [fetchedMemberId, setFetchedMemberId] = useState<string | null>(null);
@@ -55,12 +44,23 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   // --- 2. State Management ---
   // currentData stores the nominee information currently on file.
   // formData stores the requested updated nominee values that the user can edit.
-  const [formData, setFormData] = useState({ ...INTIAL_NOMINEE_DATA });
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [formData, setFormData] = useState({ ...EMPTY_NOMINEE });
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // MMC18: "Once submitted, the user cannot edit the record."
+  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient
+      .get('/api/masters/nominee-relationships')
+      .then((res) => setRelationships(res.data ?? []))
+      .catch(() => setRelationships([]));
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -73,7 +73,7 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
 
       try {
         if (editId) {
-          const response = await axios.get(`http://localhost:8080/api/v3/getnommineById/${editId}`);
+          const response = await apiClient.get(`/api/v3/getnommineById/${editId}`);
           const data = response.data.data || response.data;
 
           if (data) {
@@ -84,7 +84,8 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
               address: data.address || "",
             };
             setFormData(requestData);
-            setSelectedStatus(data.newStatus || data.Status || '');
+            setRequestStatus(data.status ?? null);
+            setRequestNo(data.requestNo ?? null);
 
             const resolvedMemberId = data.memberId || data.memberID || data.memberid || memberId;
             if (resolvedMemberId) {
@@ -112,14 +113,11 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             address: member.nomineeAddress || member.permanentPrivateAddress || "",
           };
           setCurrentData(nomineeData);
+          setFormData(nomineeData);
           setMemberName(member.fullName || member.nameWithInitials || null);
         }
-      } catch (err: any) {
-        console.error("API Error details:", err.response || err);
-        const status = err.response?.status;
-        const url = editId ? `http://localhost:8080/api/v3/getnommineById/${editId}` : `memberId=${memberId}`;
-        const msg = `Failed to fetch ${url} (Status: ${status}). Please check your Spring Boot console for exact parameter mismatch errors.`;
-        setLoadError(msg);
+      } catch (err: unknown) {
+        setLoadError(err instanceof Error ? err.message : "Could not load this nominee change request.");
       } finally {
         setLoadingRequest(false);
       }
@@ -171,7 +169,7 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
 
     // Data mapped to match your Spring Boot DTO
     const currentMemberId = memberId || fetchedMemberId;
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       newnommineName: formData.newnommineName,
       relationship: formData.relationship,
       nic: formData.nic,
@@ -182,28 +180,22 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
       payload.memberId = currentMemberId;
     }
 
-    if (isEditMode) {
-      payload.id = editId;
-      if (selectedStatus) {
-        payload.status = selectedStatus;
-        payload.newStatus = selectedStatus;
-      }
-    } else {
-      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
-    }
 
     try {
       if (isEditMode) {
-        await axios.post('http://localhost:8080/api/v3/saveNommine', payload);
+        // Edits used to be re-posted to the create endpoint, relying on the id in the
+        // body making save() behave as an upsert. This is the update endpoint.
+        await apiClient.put(`/api/v3/updateNommine/${editId}`, payload);
         alert("Nominee change request updated successfully!");
-        router.push('/membership/profile-changes');
       } else {
-        await axios.post('http://localhost:8080/api/v3/saveNommine', payload);
+        await apiClient.post('/api/v3/saveNommine', payload);
         alert("Nominee change request submitted successfully!");
       }
-    } catch (error: any) {
-      console.error(error);
-      alert("Submission failed: " + (error.response?.data?.message || "Server error"));
+      router.push('/membership/profile-changes');
+    } catch (error: unknown) {
+      // apiClient's interceptor already unwraps the backend message into an Error.
+      const message = error instanceof Error ? error.message : "Server error";
+      alert("Submission failed: " + message);
     } finally {
       setIsSubmitting(false);
     }
@@ -232,29 +224,22 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             </button>
             <div>
               <h1 className="text-2xl font-bold text-[#8A4C27]">
-                {isEditMode ? "Edit Nominee Change Request" : "New Nominee Change Request"}
+                {isEditMode ? `Nominee Change Request ${requestNo ?? 'NEW'}` : "New Nominee Change Request"}
               </h1>
               <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono inline-block mt-1">
-                {memberName ? `${memberName} (${memberId})` : "Johnathan Doe (MB-2023001)"}
+                {memberName ? `${memberName} (${memberId})` : "Member details unavailable"}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {isEditMode && (
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
-              >
-                <option value="">Change status</option>
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+            {requestStatus && (
+              <span className="rounded-full bg-[#EDE0D6] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#8A4C27]">
+                {requestStatus.replace(/_/g, ' ')}
+              </span>
             )}
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLocked}
               className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
                 } text-white`}
             >
@@ -299,14 +284,14 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
                 <select
                   value={formData.relationship}
                   onChange={(e) => handleFieldChange('relationship', e.target.value)}
+                  disabled={isLocked}
                   className={`w-full px-4 py-2.5 rounded-lg border appearance-none bg-white focus:outline-none transition-all ${errors.relationship ? 'border-red-500 ring-1 ring-red-50' : 'border-slate-200 focus:border-[#8A4C27]'
                     }`}
                 >
                   <option value="">Select relationship</option>
-                  <option value="spouse">Spouse</option>
-                  <option value="child">Child</option>
-                  <option value="parent">Parent</option>
-                  <option value="sibling">Sibling</option>
+                  {relationships.map((r) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
               </div>

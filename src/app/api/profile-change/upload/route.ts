@@ -62,12 +62,14 @@ export async function POST(request: Request) {
     const nic = formData.get("nic");
     const gender = formData.get("gender");
     const address = formData.get("address");
+    const privateTelephone = formData.get("privateTelephone");
     const mobile = formData.get("mobile");
     const email = formData.get("email");
     const language = formData.get("language");
     const designation = formData.get("designation");
     const occupation = formData.get("occupation");
     const status = formData.get("status");
+    const submissionLocation = formData.get("submissionLocation");
     const documentStoragePath = formData.get("documentStoragePath");
     const file = formData.get("file");
 
@@ -83,12 +85,13 @@ export async function POST(request: Request) {
       newGender: gender ? String(gender) : null,
       newPreferredLanguage: language ? String(language) : null,
       newPermanentPrivateAddress: address ? String(address) : null,
+      newPrivateTelephone: privateTelephone ? String(privateTelephone) : null,
       newMobileNumber: mobile ? String(mobile) : null,
       newEmailAddress: email ? String(email) : null,
       newDesignation: designation ? String(designation) : null,
       newNatureOfOccupation: occupation ? String(occupation) : null,
-      status: status ? String(status) : "SUBMITTED_FOR_APPROVAL",
-      newStatus: status ? String(status) : "SUBMITTED_FOR_APPROVAL",
+      status: status ? String(status) : null,
+      submissionLocation: submissionLocation ? String(submissionLocation) : null,
       documentStoragePath: documentStoragePath ? String(documentStoragePath) : null,
     };
 
@@ -125,8 +128,14 @@ export async function POST(request: Request) {
       ? `${backendBaseUrl}/api/v2/updateRequestWithDocument/${editId}`
       : `${backendBaseUrl}/api/v2/saveRequestWithDocument`;
 
+    // Every backend route except the public ones requires a bearer token. This handler
+    // called the backend with no Authorization header at all, so the save was rejected
+    // with 401 before it ever reached the service.
+    const authHeader = request.headers.get("Authorization");
+
     const response = await fetch(url, {
       method: isEditMode ? "PUT" : "POST",
+      headers: authHeader ? { Authorization: authHeader } : undefined,
       body: backendFormData,
     });
 

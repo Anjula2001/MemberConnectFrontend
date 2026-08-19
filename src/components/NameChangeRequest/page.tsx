@@ -2,12 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { apiClient } from '@/lib/api/client';
 import { z } from "zod";
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
 
 export const nameChangeSchema = z.object({
+  newTitle: z.string().min(1, "Title is required"),
   newNameWithInitials: z.string().min(3, "Name with initials must be at least 3 characters"),
   newFullName: z.string().min(3, "Full name must be at least 3 characters"),
   newNameInPayroll: z.string().min(3, "Name in payroll must be at least 3 characters"),
@@ -58,39 +59,39 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
   // memberName is used for the page header display.
   // currentData holds the member's current name values, while formData holds the requested values.
   const [memberName, setMemberName] = useState<string | null>(null);
-  const [currentData, setCurrentData] = useState({
-    newNameWithInitials: "J. Doe",
-    newFullName: "Johnathan Doe",
-    newNameInPayroll: "J. Doe",
-  });
-
-  const INITIAL_MEMBER_DATA = {
-    newNameWithInitials: "J. Doe",
-    newFullName: "Johnathan Doe",
-    newNameInPayroll: "J. Doe",
-  };
-
-  const STATUS_OPTIONS = [
-    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
-    { value: 'REJECTED', label: 'Rejected' },
-    { value: 'INACTIVE', label: 'Inactive' },
-    { value: 'PENDING', label: 'Pending' },
-  ];
-
-  const [mounted, setMounted] = useState(false);
-  const [formData, setFormData] = useState({
+  const EMPTY_NAMES = {
+    newTitle: "",
     newNameWithInitials: "",
     newFullName: "",
-    newNameInPayroll: ""
-  });
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+    newNameInPayroll: "",
+  };
+
+  const [currentData, setCurrentData] = useState({ ...EMPTY_NAMES });
+
+  const [mounted, setMounted] = useState(false);
+  const [titles, setTitles] = useState<{ id: number; name: string }[]>([]);
+  // MMC05: "The fields in the New Value section will be populated with the existing
+  // values by default." formData is seeded from the member, not left blank.
+  const [formData, setFormData] = useState({ ...EMPTY_NAMES });
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // MMC05: "Once submitted, the user cannot edit the record."
+  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    apiClient
+      .get('/api/masters/titles')
+      .then((res) => setTitles(res.data ?? []))
+      .catch(() => setTitles([]));
   }, []);
 
   // 2. Load initial form data.
@@ -102,21 +103,23 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
         setLoadingRequest(true);
         setLoadError(null);
         try {
-          const response = await axios.get(`http://localhost:8080/api5/namechange/getnamebyid/${editId}`);
+          const response = await apiClient.get(`/api5/namechange/getnamebyid/${editId}`);
           const data = response.data.data || response.data;
 
           if (data) {
             const requestData = {
+              newTitle: data.newTitle || "",
               newNameWithInitials: data.newNameWithInitials || "",
               newFullName: data.newFullName || "",
-              newNameInPayroll: data.newNameAsInPayroll || data.newNameInPayroll || "",
+              newNameInPayroll: data.newNameAsInPayroll || "",
             };
             setFormData(requestData);
             setCurrentData(requestData);
-            setSelectedStatus(data.status || data.newStatus || '');
+            setRequestStatus(data.status ?? null);
+            setRequestNo(data.requestNo ?? null);
           }
-        } catch (err: any) {
-          setLoadError("Could not load data. Check backend connection.");
+        } catch (err: unknown) {
+          setLoadError(err instanceof Error ? err.message : "Could not load this name change request.");
         } finally {
           setLoadingRequest(false);
         }
@@ -129,14 +132,17 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
         try {
           const member = await getMemberById(Number(memberId));
           const memberData = {
-            newNameWithInitials: member.nameWithInitials || member.nameAsInPayroll || member.fullName || "",
+            newTitle: member.title || "",
+            newNameWithInitials: member.nameWithInitials || "",
             newFullName: member.fullName || "",
-            newNameInPayroll: member.nameAsInPayroll || member.nameWithInitials || member.fullName || "",
+            newNameInPayroll: member.nameAsInPayroll || "",
           };
           setCurrentData(memberData);
+          // MMC05: the New Value section defaults to the current values.
+          setFormData(memberData);
           setMemberName(member.fullName || member.nameWithInitials || null);
-        } catch (err: any) {
-          setLoadError("Unable to load member data for name change.");
+        } catch (err: unknown) {
+          setLoadError(err instanceof Error ? err.message : "Unable to load member data for name change.");
         } finally {
           setLoadingRequest(false);
         }
@@ -173,31 +179,27 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
 
     setIsSubmitting(true);
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
+      newTitle: formData.newTitle,
       newNameWithInitials: formData.newNameWithInitials,
       newFullName: formData.newFullName,
       newNameAsInPayroll: formData.newNameInPayroll,
-      newNameInPayroll: formData.newNameInPayroll,
     };
 
-    if (isEditMode) {
-      if (selectedStatus) payload.status = selectedStatus;
-    } else {
-      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
-    }
+    if (memberId) payload.memberId = memberId;
 
     try {
       if (isEditMode) {
-        await axios.put(`http://localhost:8080/api5/namechange/updatenamechange/${editId}`, payload);
+        await apiClient.put(`/api5/namechange/updatenamechange/${editId}`, payload);
         alert("Updated successfully!");
       } else {
-        await axios.post('http://localhost:8080/api5/namechange/savenamechange', payload);
+        await apiClient.post('/api5/namechange/savenamechange', payload);
         alert("Request submitted successfully to MemberConnect!");
       }
       router.push('/membership/profile-changes');
-    } catch (error: any) {
-      console.error("Error submitting name change request:", error);
-      const errorMessage = error.response?.data?.message || "An unexpected error occurred. Please try again.";
+    } catch (error: unknown) {
+      // apiClient's interceptor already unwraps the backend message into an Error.
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred. Please try again.";
       alert(`Failed to submit request: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
@@ -223,39 +225,32 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
           </button>
           <div>
             <h1 className="text-2xl font-bold text-orange-900 leading-tight">
-              {isEditMode ? `Update Name Change Request NCR-${editId}` : "New Name Change Request"}
+              {isEditMode ? `Name Change Request ${requestNo ?? 'NEW'}` : "New Name Change Request"}
             </h1>
             <span className="bg-gray-200 px-2 py-0.5 rounded text-[12px] text-gray-600 font-mono inline-block mt-1">
               {memberName
                 ? `${memberName} (${memberId})`
-                : currentData.newFullName
-                  ? `${currentData.newFullName} ${isEditMode ? `(${editId})` : "(MB-2023001)"}`
-                  : "Johnathan Doe (MB-2023001)"
+                : currentData.newFullName || "Member details unavailable"
               }
             </span>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {isEditMode && (
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
-            >
-              <option value="">Change status</option>
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+          {requestStatus && (
+            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-orange-900">
+              {requestStatus.replace(/_/g, ' ')}
+            </span>
           )}
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="px-6 py-2 bg-orange-800 text-white rounded-md hover:bg-orange-900 flex items-center gap-2 font-medium transition-colors"
-          >
-            {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-            {isEditMode ? "💾 Update Request" : "💾 Submit Request"}
-          </button>
+          {!isLocked && (
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="px-6 py-2 bg-orange-800 text-white rounded-md hover:bg-orange-900 flex items-center gap-2 font-medium transition-colors disabled:opacity-60"
+            >
+              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+              {isEditMode ? "💾 Update Request" : "💾 Submit Request"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -271,12 +266,38 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
           <p className="text-gray-500 text-sm mb-8 font-medium">Update member name details (marriage, deed poll, etc.)</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
+            <InputGroup label="TITLE (CURRENT)" value={currentData.newTitle} disabled />
+            <div className="flex flex-col gap-2">
+              <label className={`text-[11px] font-bold tracking-wider uppercase ${errors.newTitle ? 'text-red-500' : 'text-gray-500'}`}>
+                TITLE (NEW) *
+              </label>
+              <select
+                value={formData.newTitle}
+                onChange={(e) => handleFieldChange('newTitle', e.target.value)}
+                disabled={isLocked}
+                className={`px-4 py-3 rounded-md border bg-white text-gray-700 focus:outline-none transition-all ${
+                  isLocked
+                    ? 'bg-gray-100 border-gray-200 cursor-not-allowed text-gray-500'
+                    : errors.newTitle
+                      ? 'border-red-500 bg-red-50 focus:ring-red-400'
+                      : 'border-gray-200 focus:ring-1 focus:ring-blue-400'
+                }`}
+              >
+                <option value="">Select title</option>
+                {titles.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+              {errors.newTitle && <p className="text-[11px] text-red-600 mt-1 font-medium italic">⚠️ {errors.newTitle}</p>}
+            </div>
+
             <InputGroup label="NAME WITH INITIALS (CURRENT)" value={currentData.newNameWithInitials} disabled />
             <InputGroup
               label="NAME WITH INITIALS (NEW) *"
               placeholder="J. Doe"
               value={formData.newNameWithInitials}
               onChange={(v) => handleFieldChange('newNameWithInitials', v)}
+              disabled={isLocked}
               error={errors.newNameWithInitials}
             />
 
@@ -286,6 +307,7 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
               placeholder="Johnathan Doe"
               value={formData.newFullName}
               onChange={(v) => handleFieldChange('newFullName', v)}
+              disabled={isLocked}
               error={errors.newFullName}
             />
 
@@ -295,6 +317,7 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
               placeholder="J. Doe"
               value={formData.newNameInPayroll}
               onChange={(v) => handleFieldChange('newNameInPayroll', v)}
+              disabled={isLocked}
               error={errors.newNameInPayroll}
             />
           </div>

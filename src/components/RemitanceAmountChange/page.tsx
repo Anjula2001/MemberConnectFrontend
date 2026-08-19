@@ -100,7 +100,8 @@ export default function RemittanceChangePage({ editId, memberId }: { editId?: st
       newRemittanceCurrency: 'LKR',
       remittanceAccountType: accountType,
       ...(memberId ? { memberId } : {}),
-      ...(isEditMode ? (nextStatus ? { newStatus: nextStatus } : {}) : { newStatus: 'SUBMITTED_FOR_APPROVAL' }),
+      // Status is owned by the backend: it stamps Submitted for Approval on submit,
+      // and decisions go through the approve/reject endpoint rather than this payload.
     };
 
     try {
@@ -149,7 +150,7 @@ export default function RemittanceChangePage({ editId, memberId }: { editId?: st
               amount: data.newRemittanceAmount?.toString?.() || '0',
             },
           ]);
-          setSelectedStatus(data.newStatus || '');
+          setSelectedStatus(data.status || '');
         }
 
         if (memberId) {
