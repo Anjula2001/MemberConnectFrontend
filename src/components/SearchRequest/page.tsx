@@ -5,6 +5,9 @@ import { Search, Loader2, FileCheck2, ListChecks, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { apiClient } from '@/lib/api/client';
+import { getEducationalDistricts } from '@/lib/api/education';
+import MultiSelect from './MultiSelect';
+import ConfirmDialog from '@/src/components/membership/ConfirmDialog';
 import { useAuth } from '@/lib/auth-context';
 import {
   hasRole,
@@ -67,6 +70,9 @@ const humanStatus = (status: string | null) => (status ?? '—').replace(/_/g, '
 /** Sentinel for the Status filter's "All" entry — sending no statuses means all. */
 const ALL_STATUSES = 'ALL';
 
+/** Same idea for Location: "All" means send no location filter at all. */
+const ALL_LOCATIONS = 'ALL';
+
 export default function ProfileChangeRequests() {
   const router = useRouter();
   const { user } = useAuth();
@@ -81,6 +87,11 @@ export default function ProfileChangeRequests() {
   // ascending.
   const [requestType, setRequestType] = useState<ProfileChangeType | 'MEMBER_TRANSFER'>('BASIC_PROFILE');
   const [statusFilter, setStatusFilter] = useState<string[]>(['SUBMITTED_FOR_APPROVAL']);
+  // MMC02's Location filter. It is a plain filter for every role: the district lock was
+  // removed at the client's direction, so a District Office user searches all locations
+  // like everyone else and simply picks one when they want to narrow.
+  const [locationFilter, setLocationFilter] = useState<string[]>([ALL_LOCATIONS]);
+  const [locations, setLocations] = useState<string[]>([]);
   const [receivedOn, setReceivedOn] = useState<RequestReceivedOn>('ALL_DAYS');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -99,6 +110,7 @@ export default function ProfileChangeRequests() {
   const [savingList, setSavingList] = useState(false);
   const [createdList, setCreatedList] = useState<{ listId?: string; count: number } | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProfileChangeListItem | null>(null);
 
   const isSupportedType = requestType !== 'MEMBER_TRANSFER';
   const supportsApprovalList = requestType === 'NAME' || requestType === 'NOMINEE';
@@ -109,6 +121,14 @@ export default function ProfileChangeRequests() {
     getBoardMeetings()
       .then(setBoardMeetings)
       .catch(() => setBoardMeetings([]));
+  }, []);
+
+  useEffect(() => {
+    // An empty list just leaves the filter showing "All locations"; it is a convenience,
+    // not something the screen depends on.
+    getEducationalDistricts()
+      .then(setLocations)
+      .catch(() => setLocations([]));
   }, []);
 
   // The available statuses depend on the type: only Name and Nominee pass through a
@@ -148,11 +168,14 @@ export default function ProfileChangeRequests() {
         ? undefined
         : (statusFilter as ProfileChangeStatus[]);
 
+      const selectedLocations = locationFilter.includes(ALL_LOCATIONS)
+        ? undefined
+        : locationFilter;
+
       const data = await searchProfileChanges({
         types: [requestType],
         statuses: selectedStatuses && selectedStatuses.length > 0 ? selectedStatuses : undefined,
-        // Location is not a filter on this screen. District users are still confined to
-        // their own district — the backend enforces that on every request.
+        locations: selectedLocations && selectedLocations.length > 0 ? selectedLocations : undefined,
         receivedOn,
         from: receivedOn === 'DATE_PERIOD' && fromDate ? fromDate : undefined,
         to: receivedOn === 'DATE_PERIOD' && toDate ? toDate : undefined,
@@ -172,6 +195,7 @@ export default function ProfileChangeRequests() {
     isSupportedType,
     requestType,
     statusFilter,
+    locationFilter,
     receivedOn,
     fromDate,
     toDate,
@@ -216,7 +240,6 @@ export default function ProfileChangeRequests() {
   const handleDelete = async (row: ProfileChangeListItem) => {
     if (row.requestId == null) return;
     const label = row.requestNo ?? 'this request';
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
 
     setDeletingKey(rowKey(row));
     setError(null);
@@ -282,8 +305,8 @@ export default function ProfileChangeRequests() {
 
       <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
         <h2 className="text-lg font-bold text-[#8B3205] mb-6">Search &amp; Filter</h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Filters, in the order the SRS lists them: what, where, when, which status. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-600">Type</label>
             <select
@@ -291,7 +314,7 @@ export default function ProfileChangeRequests() {
               onChange={(e) =>
                 setRequestType(e.target.value as ProfileChangeType | 'MEMBER_TRANSFER')
               }
-              className="w-full p-2.5 border border-gray-300 rounded-lg bg-white"
+              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
             >
               {TYPE_OPTIONS.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -301,12 +324,22 @@ export default function ProfileChangeRequests() {
             </select>
           </div>
 
+          <MultiSelect
+            label="Location"
+            allValue={ALL_LOCATIONS}
+            allLabel="All locations"
+            options={locations.map((d) => ({ value: d, label: d }))}
+            selected={locationFilter}
+            onChange={setLocationFilter}
+            emptyText="No districts configured"
+          />
+
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-600">Request Received On</label>
             <select
               value={receivedOn}
               onChange={(e) => setReceivedOn(e.target.value as RequestReceivedOn)}
-              className="w-full p-2.5 border border-gray-300 rounded-lg bg-white"
+              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
             >
               {RECEIVED_ON_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -314,72 +347,67 @@ export default function ProfileChangeRequests() {
                 </option>
               ))}
             </select>
-            {receivedOn === 'DATE_PERIOD' && (
-              <div className="flex gap-2 pt-1">
+          </div>
+
+          <MultiSelect
+            label="Status"
+            allValue={ALL_STATUSES}
+            allLabel="All statuses"
+            options={availableStatuses.map((st) => ({ value: st, label: humanStatus(st) }))}
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            disabled={!isSupportedType}
+            emptyText="Pick a type first"
+          />
+
+          {/* Only shown for Date Period, so the row does not sit empty the rest of the time. */}
+          {receivedOn === 'DATE_PERIOD' && (
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-semibold text-gray-600">Date range</label>
+              <div className="flex items-center gap-2">
                 <input
                   type="date"
                   aria-label="From date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  className="w-full rounded-lg border border-gray-300 p-2 text-sm"
                 />
+                <span className="text-sm text-gray-400">to</span>
                 <input
                   type="date"
                   aria-label="To date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  className="w-full rounded-lg border border-gray-300 p-2 text-sm"
                 />
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-600">Status</label>
-            <select
-              multiple
-              value={statusFilter}
-              onChange={(e) => {
-                const picked = Array.from(e.target.selectedOptions, (o) => o.value);
-                // "All" is exclusive: choosing it clears the individual statuses.
-                setStatusFilter(picked.includes(ALL_STATUSES) ? [ALL_STATUSES] : picked);
-              }}
-              disabled={!isSupportedType}
-              className="w-full p-2.5 border border-gray-300 rounded-lg bg-white h-[116px] disabled:bg-gray-100"
-            >
-              <option value={ALL_STATUSES}>All</option>
-              {availableStatuses.map((s) => (
-                <option key={s} value={s}>
-                  {humanStatus(s)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-semibold text-gray-600">Search Member</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Name, Member No. or NIC…"
-                className="w-full pl-10 pr-4 p-2.5 border border-gray-300 rounded-lg"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void handleRetrieve();
                 }}
+                placeholder="Name, Member No. or NIC…"
+                className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3 text-sm"
               />
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-semibold text-gray-600">Sort By</label>
             <div className="flex gap-2">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as ProfileChangeSortBy)}
-                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white"
+                className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -391,10 +419,10 @@ export default function ProfileChangeRequests() {
                 aria-label="Sort direction"
                 value={descending ? 'desc' : 'asc'}
                 onChange={(e) => setDescending(e.target.value === 'desc')}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white"
+                className="w-32 shrink-0 rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
               >
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
               </select>
             </div>
           </div>
@@ -527,7 +555,7 @@ export default function ProfileChangeRequests() {
                     <td className="p-4 text-right">
                       {canDelete && (
                       <button
-                        onClick={() => void handleDelete(row)}
+                        onClick={() => setPendingDelete(row)}
                         disabled={deletingKey === key}
                         title={`Delete ${row.requestNo ?? 'request'}`}
                         className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 disabled:opacity-50"
@@ -655,6 +683,29 @@ export default function ProfileChangeRequests() {
           </div>
         </div>
       )}
-    </div>
+    
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        destructive
+        busy={deletingKey !== null}
+        title="Delete this request?"
+        message={
+          <>
+            <span className="font-medium text-gray-900">
+              {pendingDelete?.requestNo ?? 'This request'}
+            </span>{' '}
+            for {pendingDelete?.fullName ?? 'this member'} will be removed permanently.
+            An audit record is kept, but the request itself cannot be recovered.
+          </>
+        }
+        confirmLabel="Delete request"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const row = pendingDelete;
+          setPendingDelete(null);
+          if (row) void handleDelete(row);
+        }}
+      />
+</div>
   );
 }
