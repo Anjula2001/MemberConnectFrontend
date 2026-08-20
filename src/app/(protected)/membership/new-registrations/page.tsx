@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { BOARD_GOVERNANCE_ROLES, hasRole } from "@/lib/permissions";
 import {
   Search,
   RotateCcw,
@@ -181,6 +182,7 @@ export default function NewRegistrationsPage() {
   const { user } = useAuth();
 
   const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
+  const canLoadBoardMeetings = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
   const userDistrict = user?.assignedDistrict || "Colombo";
 
   const applicationIdParam = searchParams.get("applicationId");
@@ -265,6 +267,13 @@ export default function NewRegistrationsPage() {
   }, [openMenuId]);
 
   useEffect(() => {
+    // BoardMeetingController is restricted to HEAD_OFFICE/BOARD_SECRETARY/SUPER_ADMIN,
+    // so fetching this for anyone else guarantees a 403. The meetings are only used to
+    // populate boardMeetingOptions, which those other roles never see anyway.
+    if (!canLoadBoardMeetings) {
+      return;
+    }
+
     let isCancelled = false;
 
     const loadBoardMeetings = async () => {
@@ -283,7 +292,7 @@ export default function NewRegistrationsPage() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [canLoadBoardMeetings]);
 
   const mapToRegistration = (
     item: MemberApplicationDTO,
@@ -794,13 +803,19 @@ export default function NewRegistrationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {hasRetrieved && displayData.length === 0 && (
+            {displayData.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={8}
                   className="px-4 py-8 text-center text-gray-400 text-sm"
                 >
-                  No records found. Adjust your filters and click Retrieve.
+                  {/* Before the first Retrieve the table is empty because nothing has
+                      been asked for yet, not because nothing matched. Gating this row
+                      on hasRetrieved left the body completely blank on arrival, with no
+                      hint that Retrieve had to be pressed. Mirrors the Member Directory. */}
+                  {hasRetrieved
+                    ? "No records found. Adjust your filters and click Retrieve."
+                    : "Click Retrieve to load registrations."}
                 </TableCell>
               </TableRow>
             )}

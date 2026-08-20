@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Loader2, Edit3, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation'; // Added for navigation
-import axios from 'axios';
+import apiClient from '@/lib/api/client';
 
 interface RequestData {
   id?: number;
@@ -49,36 +49,41 @@ export default function ProfileChangeRequests() {
     setResults([]); // Clear previous results
     try {
       if (requestType === 'Basic Profile Changes') {
-        const response = await axios.get('http://localhost:8080/api/v2/getRequests', {
+        const response = await apiClient.get('/api/v2/getRequests', {
           params: { sortBy: 'id', direction: 'desc' }
         });
         setResults(response.data);
         setHasSearched(true);
       } else if (requestType === 'Name Changes') {
-        const response = await axios.get('http://localhost:8080/api5/namechange/getnamechange', {
+        const response = await apiClient.get('/api5/namechange/getnamechange', {
           params: { sortBy: 'id', direction: 'desc' }
         });
         setResults(response.data);
         setHasSearched(true);
-      } else if (requestType === 'Nomminne Changes') {
-        const response = await axios.get('http://localhost:8080/api/v3/getnommine', {
+      } else if (requestType === 'Nominee Changes') {
+        const response = await apiClient.get('/api/v3/getnommine', {
           params: { sortBy: 'id', direction: 'desc' }
         });
         setResults(response.data);
         setHasSearched(true);
       } else if (requestType === 'Remittance Amount Changes') {
-        const response = await axios.get('http://localhost:8080/api4/remitance/getRemitance', {
+        const response = await apiClient.get('/api4/remitance/getRemitance', {
           params: { sortBy: 'id', direction: 'desc' }
         });
         setResults(response.data);
         setHasSearched(true);
+      } else if (requestType === 'Member Transfer') {
+        router.push('/membership/MemberTransfer');
+        return;
       } else {
         alert("This request type is not yet connected to the backend.");
         setHasSearched(false);
       }
     } catch (error: unknown) {
+      // apiClient rejects with a plain Error carrying the backend's message, so a 403
+      // reads as "no permission" instead of a generic failure.
       console.error("API Error:", error);
-      alert("Failed to fetch data.");
+      alert(error instanceof Error ? error.message : "Failed to fetch data.");
     } finally {
       setLoading(false);
     }
@@ -90,13 +95,13 @@ export default function ProfileChangeRequests() {
 
     try {
       if (requestType === 'Basic Profile Changes') {
-        await axios.delete(`http://localhost:8080/api/v2/deletRequest/${id}`);
+        await apiClient.delete(`/api/v2/deletRequest/${id}`);
       } else if (requestType === 'Name Changes') {
-        await axios.delete(`http://localhost:8080/api5/namechange/deletnameChange/${id}`);
-      } else if (requestType === 'Nomminne Changes') {
-        await axios.delete(`http://localhost:8080/api/v3/deleteNommine/${id}`);
+        await apiClient.delete(`/api5/namechange/deletnameChange/${id}`);
+      } else if (requestType === 'Nominee Changes') {
+        await apiClient.delete(`/api/v3/deleteNommine/${id}`);
       } else if (requestType === 'Remittance Amount Changes') {
-        await axios.delete(`http://localhost:8080/api4/remitance/deleteRemitance/${id}`);
+        await apiClient.delete(`/api4/remitance/deleteRemitance/${id}`);
       }
 
 
@@ -107,7 +112,7 @@ export default function ProfileChangeRequests() {
       alert("Request deleted successfully.");
     } catch (error: unknown) {
       console.error("API Error during deletion:", error);
-      alert("Failed to delete the request. Please ensure the backend delete endpoints are configured correctly.");
+      alert(error instanceof Error ? error.message : "Failed to delete the request.");
     }
   };
 
@@ -116,7 +121,7 @@ export default function ProfileChangeRequests() {
     if (!id) return;
     if (requestType === 'Name Changes') {
       router.push(`/membership/name-changes/${id}`);
-    } else if (requestType === 'Nomminne Changes') {
+    } else if (requestType === 'Nominee Changes') {
       router.push(`/membership/nommine-changes/${id}`);
     } else if (requestType === 'Remittance Amount Changes') {
       router.push(`/membership/directory/change-remittance?editId=${id}`);
@@ -141,8 +146,8 @@ export default function ProfileChangeRequests() {
             <select value={requestType} onChange={(e) => { setRequestType(e.target.value); setHasSearched(false); }} className="w-full p-2.5 border border-gray-300 rounded-lg bg-white">
               <option>Basic Profile Changes</option>
               <option>Name Changes</option>
-              <option>Nomminne Changes</option>
-              <option>Remmitance Amount Changes</option>
+              <option>Nominee Changes</option>
+              <option>Remittance Amount Changes</option>
               <option>Member Transfer</option>
             </select>
           </div>
@@ -179,7 +184,7 @@ export default function ProfileChangeRequests() {
                     <th className="p-4">New Full Name</th>
                     <th className="p-4">Name in Payroll</th>
                   </>
-                ) : requestType === 'Nomminne Changes' ? (
+                ) : requestType === 'Nominee Changes' ? (
                   <>
                     <th className="p-4">New Nominee Name</th>
                     <th className="p-4">Relationship</th>
@@ -209,7 +214,7 @@ export default function ProfileChangeRequests() {
                   <tr key={rowId || Math.random()} className="hover:bg-gray-50">
                     <td className="p-4">
                       <button onClick={() => { console.log("Editing row:", row); handleEdit(rowId); }} className="text-blue-600 font-bold hover:underline">
-                        {requestType === 'Name Changes' ? 'NCR' : requestType === 'Nomminne Changes' ? 'NMR' : 'PCR'}-2026-{rowId ? rowId.toString().padStart(3, '0') : '000'}
+                        {requestType === 'Name Changes' ? 'NCR' : requestType === 'Nominee Changes' ? 'NMR' : 'PCR'}-2026-{rowId ? rowId.toString().padStart(3, '0') : '000'}
                       </button>
                     </td>
                     {requestType === 'Name Changes' ? (
@@ -217,7 +222,7 @@ export default function ProfileChangeRequests() {
                         <td className="p-4 font-bold">{row.newFullName || '-'}</td>
                         <td className="p-4 text-gray-600">{row.newNameAsInPayroll || row.newNameInPayroll || '-'}</td>
                       </>
-                    ) : requestType === 'Nomminne Changes' ? (
+                    ) : requestType === 'Nominee Changes' ? (
                       <>
                         <td className="p-4 font-bold">{row.newnommineName || '-'}</td>
                         <td className="p-4 text-gray-600">{row.newRelationship || row.relationship || '-'}</td>

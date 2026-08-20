@@ -16,6 +16,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Checkbox } from "@/src/components/ui/checkbox";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import {
   Table,
   TableBody,
@@ -55,6 +56,10 @@ export default function MemberDocumentationDispatchPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  // window.confirm() blocked synchronously; these hold what each dialog is asking about.
+  const [confirmingDispatch, setConfirmingDispatch] = useState(false);
+  /** Dispatch number whose report has just been offered, or null when nothing is offered. */
+  const [reportOffer, setReportOffer] = useState<string | null>(null);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
   const [showHistory, setShowHistory] = useState(false);
@@ -100,30 +105,29 @@ export default function MemberDocumentationDispatchPage() {
     }
   };
 
-  const handleDispatch = async () => {
+  /** Asks for confirmation; runDispatch does the work once the dialog is confirmed. */
+  const handleDispatch = () => {
     if (selected.length === 0) return;
-    if (
-      !window.confirm(
-        `Mark membership documentation as dispatched for ${selected.length} member${selected.length === 1 ? "" : "s"}?`
-      )
-    ) {
-      return;
-    }
+    setConfirmingDispatch(true);
+  };
+
+  const runDispatch = async () => {
+    if (selected.length === 0) return;
     setDispatching(true);
     try {
       const dispatch = await createDispatch(selected);
+      setConfirmingDispatch(false);
       addToast(`Dispatch ${dispatch.dispatchNo} recorded for ${dispatch.memberCount} member(s).`);
-      if (
-        dispatch.dispatchNo &&
-        window.confirm("Dispatch recorded. Download the Dispatch Report now?")
-      ) {
-        window.open(
-          `/membership/dispatch/report/${encodeURIComponent(dispatch.dispatchNo)}`,
-          "_blank"
-        );
+
+      // Offer the report through a dialog rather than a second confirm(). The refresh
+      // below runs either way — the dispatch is recorded whether or not the report is
+      // downloaded, so declining must not leave the list stale.
+      if (dispatch.dispatchNo) {
+        setReportOffer(dispatch.dispatchNo);
       }
       await retrieve();
     } catch (error) {
+      setConfirmingDispatch(false);
       addToast(
         error instanceof Error ? error.message : "Failed to record dispatch",
         "destructive"
@@ -131,6 +135,14 @@ export default function MemberDocumentationDispatchPage() {
     } finally {
       setDispatching(false);
     }
+  };
+
+  const openDispatchReport = (dispatchNo: string) => {
+    setReportOffer(null);
+    window.open(
+      `/membership/dispatch/report/${encodeURIComponent(dispatchNo)}`,
+      "_blank"
+    );
   };
 
   const selectableIds = members.filter((m) => m.id).map((m) => m.id as number);
@@ -354,6 +366,31 @@ export default function MemberDocumentationDispatchPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingDispatch}
+        title="Record Dispatch"
+        subtitle={`${selected.length} member${selected.length === 1 ? "" : "s"} selected`}
+        message={`Mark membership documentation as dispatched for ${selected.length} member${selected.length === 1 ? "" : "s"}?`}
+        confirmLabel="Yes, Dispatch"
+        busy={dispatching}
+        busyLabel="Recording..."
+        onCancel={() => setConfirmingDispatch(false)}
+        onConfirm={() => void runDispatch()}
+      />
+
+      <ConfirmDialog
+        open={reportOffer !== null}
+        title="Dispatch Recorded"
+        subtitle={reportOffer ?? undefined}
+        message="Download the Dispatch Report now?"
+        confirmLabel="Download Report"
+        cancelLabel="Not now"
+        onCancel={() => setReportOffer(null)}
+        onConfirm={() => {
+          if (reportOffer) openDispatchReport(reportOffer);
+        }}
+      />
     </div>
   );
 }
