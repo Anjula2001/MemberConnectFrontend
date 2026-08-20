@@ -311,9 +311,16 @@ export default function ProfileChangeRequests() {
             <label className="text-sm font-semibold text-gray-600">Type</label>
             <select
               value={requestType}
-              onChange={(e) =>
-                setRequestType(e.target.value as ProfileChangeType | 'MEMBER_TRANSFER')
-              }
+              onChange={(e) => {
+                const next = e.target.value as ProfileChangeType | 'MEMBER_TRANSFER';
+                // Member Transfers has its own screen; the option is a link to it
+                // rather than a filter this list can serve.
+                if (next === 'MEMBER_TRANSFER') {
+                  router.push('/membership/MemberTransfer');
+                  return;
+                }
+                setRequestType(next);
+              }}
               className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
             >
               {TYPE_OPTIONS.map((t) => (
