@@ -366,9 +366,6 @@ export default function ChangeMemberTransferForm() {
     const targetMemberId = memberId || loadedRecord?.member?.memberId;
     if (!targetMemberId) return;
 
-    // In view mode: if the request has saved snapshot values, use them for the
-    // Current column and only fetch the member to populate `member` state
-    // (needed for header display). Never overwrite oldValues from live data.
     const hasSnapshot = Boolean(
       loadedRecord &&
       (
@@ -387,8 +384,6 @@ export default function ChangeMemberTransferForm() {
         const data = await res.json();
         setMember(data);
 
-        // Only set oldValues from live member data when creating a NEW request.
-        // For existing requests that have a snapshot, oldValues is set separately below.
         if (!hasSnapshot) {
           setOldValues({
             fullName: formatDisplayValue(data.fullName),
@@ -422,10 +417,9 @@ export default function ChangeMemberTransferForm() {
     };
 
     fetchMember();
-  }, [memberId, loadedRecord?.member?.memberId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [memberId, loadedRecord?.member?.memberId]);
 
-  // When viewing an existing request that has snapshot data, populate oldValues
-  // from the snapshot so the Current column reflects the state at request creation time.
+  //When viewing an existing request that has snapshot data, populate oldValues
   useEffect(() => {
     if (!loadedRecord) return;
     const hasSnapshot = Boolean(
@@ -437,7 +431,7 @@ export default function ChangeMemberTransferForm() {
     if (!hasSnapshot) return;
 
     setOldValues((prev) => ({
-      // Keep personal detail fields from live member data (fullName, dob, etc.)
+      // Keep personal detail fields from live member data 
       fullName: prev?.fullName ?? "",
       dateOfBirth: prev?.dateOfBirth ?? "",
       nicNumber: prev?.nicNumber ?? "",
@@ -486,7 +480,7 @@ export default function ChangeMemberTransferForm() {
     reset,
   ]);
 
-  //Fetch existing request details when requestKey changes (view/edit)
+  //Fetch existing request details when requestKey changes 
   useEffect(() => {
     if (!requestKey) {
       setLoadedRecord(null);
@@ -512,7 +506,7 @@ export default function ChangeMemberTransferForm() {
     fetchRequest();
   }, [requestKey]);
 
-  // Populate form when loadedRecord changes (after fetch)
+  // Populate form when loadedRecord changes 
   useEffect(() => {
     if (!loadedRecord) return;
 
@@ -1004,9 +998,6 @@ export default function ChangeMemberTransferForm() {
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">Personal Details</h3>
 
-            {/* Single value per field rather than a Current/New pair: a transfer never
-                changes these, and both columns were rendering the same value. The
-                Current/New treatment stays on Occupation and Location, which do change. */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <ReadOnlyField label="Full Name" value={oldValues.fullName} />
               <ReadOnlyField label="Date of Birth" value={oldValues.dateOfBirth} />
@@ -1495,13 +1486,6 @@ export default function ChangeMemberTransferForm() {
   );
 }
 
-/**
- * One read-only detail. Replaces the old FieldPair, which rendered a Current and a New
- * column for Personal Details even though a transfer leaves those values untouched.
- *
- * readOnly rather than disabled so the value reads as normal text instead of greyed
- * out — it is information, not an input the user is being refused.
- */
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>

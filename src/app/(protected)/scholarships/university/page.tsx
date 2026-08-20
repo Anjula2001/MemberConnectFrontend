@@ -34,17 +34,12 @@ type RequestRow = {
   examNumber?: string;
   requestDate?: string;
   approvalListId?: string;
-  /** District Office that owns the request — what the Location filter matches on. */
   submissionLocation?: string;
 };
 
 export default function Page() {
   const { user } = useAuth();
 
-  // This screen serves two audiences at once — District Office searching their own
-  // requests, and Head Office assembling board approval lists — so the page guard
-  // only asks "may you open University Scholarships at all", and each control is
-  // gated separately.
   const canViewPage = canAccessUniversityScholarships(user?.role);
   const canCreateApprovalLists = hasPermission(user?.role, "US_LIST_CREATE");
   const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
@@ -123,16 +118,10 @@ export default function Page() {
     return dt;
   };
 
-  // Loaded from the District Office master at runtime rather than hardcoded. The
-  // previous inline list used invented lowercase slugs ("kurunagala", "kaluthara",
-  // "mathale") that matched neither the district master nor anything stored against
-  // a member, so no value in it could ever have matched a record.
   const [locationOptions, setLocationOptions] = useState<
     { value: string; label: string }[]
   >([]);
 
-  // Same District Office master the Member Directory and the Grade 5 list filter on,
-  // so a location selected here matches the value actually stored on a request.
   useEffect(() => {
     let cancelled = false;
     getEducationalDistricts()
@@ -143,16 +132,12 @@ export default function Page() {
         );
       })
       .catch(() => {
-        /* leave empty on failure — the filter simply offers no options */
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // A location-restricted user (District Office) is pinned to their own branch. The
-  // backend re-pins them regardless of what is sent; this only keeps the filter
-  // honest on screen.
   useEffect(() => {
     if (!canSelectAllLocationOptions && user?.assignedDistrict) {
       setSelectedLocations([user.assignedDistrict]);
@@ -226,22 +211,10 @@ export default function Page() {
 
     let filtered = [...requests];
 
-    // Filter by location (District Office that owns the request).
-    //
-    // This used to compare the student's free-text permanent address against a
-    // district name with exact string equality — "No 12, Galle Road, Colombo 03"
-    // never equals "colombo", so the filter could not match anything. It now reads
-    // submissionLocation, the field the backend actually scopes on.
-    //
-    // The backend already restricts a District Office user to their own branch
-    // before the data leaves the server; this only narrows within what they received.
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((r) => {
         const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
         if (!requestLocation) {
-          // An untagged request matches no district. It used to fall through as
-          // visible, which meant a District Office user saw every untagged request
-          // in the system on top of their own. Mirrors matchesScope on the backend.
           return false;
         }
         return selectedLocations.some(
@@ -359,13 +332,6 @@ export default function Page() {
       );
     };
 
-    // A single selection shows its own name rather than "1 Selected": a District
-    // Office user is pinned to exactly one district and the whole point of the
-    // control is to tell them which one they are filtered to. Checked before the
-    // "All Selected" branch so a one-option list still names the option.
-    //
-    // Falls back to the raw value when the district master has not loaded yet, so
-    // the pinned district is never rendered as a bare count.
     const label =
       selected.length === 0
         ? placeholder
@@ -470,8 +436,6 @@ export default function Page() {
     try {
       setIsLoading(true);
 
-      // The backend scopes this to the caller's own District Office before it
-      // returns, so a restricted user never receives another branch's records.
       const res = await authFetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
 
@@ -500,13 +464,6 @@ export default function Page() {
       }
       const data = await res.json();
 
-      // Only meetings that have not happened yet — an approval list must not be
-      // attached to a Board Meeting whose date has already passed. Today counts as
-      // still upcoming.
-      //
-      // Compared as yyyy-mm-dd strings rather than Date objects on purpose:
-      // new Date("2026-04-04") parses as UTC midnight, so in a non-UTC timezone a
-      // meeting could land on the wrong side of the boundary by a few hours.
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const upcoming = (Array.isArray(data) ? data : []).filter(
@@ -575,8 +532,6 @@ export default function Page() {
     }
   };
 
-  // Allow-list: a role reaches this page only by holding a University Scholarship
-  // right explicitly. Waits for `user` so the guard does not flash before auth loads.
   if (user && !canViewPage) {
     return (
       <AccessRestricted message="University Scholarships are restricted to District Office, Head Office and Scholarship personnel." />

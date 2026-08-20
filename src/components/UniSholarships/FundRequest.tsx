@@ -33,7 +33,6 @@ type ScholarshipFundRequest = {
   status?: FundRequestStatus;
   incompleteReason?: string;
   decisionReason?: string;
-  /** MMS48 — non-null once handed to the Finance Module. */
   financeIntegratedAt?: string | null;
   financeIntegratedBy?: string | null;
 };
