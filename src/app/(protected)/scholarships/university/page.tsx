@@ -499,7 +499,23 @@ export default function Page() {
         throw new Error("Failed to fetch board meetings");
       }
       const data = await res.json();
-      setBoardMeetings(data);
+
+      // Only meetings that have not happened yet — an approval list must not be
+      // attached to a Board Meeting whose date has already passed. Today counts as
+      // still upcoming.
+      //
+      // Compared as yyyy-mm-dd strings rather than Date objects on purpose:
+      // new Date("2026-04-04") parses as UTC midnight, so in a non-UTC timezone a
+      // meeting could land on the wrong side of the boundary by a few hours.
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const upcoming = (Array.isArray(data) ? data : []).filter(
+        (meeting: any) =>
+          typeof meeting?.scheduledDate === "string" &&
+          meeting.scheduledDate.slice(0, 10) >= today
+      );
+
+      setBoardMeetings(upcoming);
       setIsDeviationModal(deviation);
       setShowBoardMeetingModal(true);
     } catch (error) {
@@ -859,7 +875,7 @@ export default function Page() {
                 </SelectTrigger>
                 <SelectContent className="max-h-60 overflow-y-auto">
                   {boardMeetings.length === 0 ? (
-                    <SelectItem value="none" disabled>No Board Meetings created</SelectItem>
+                    <SelectItem value="none" disabled>No upcoming Board Meetings</SelectItem>
                   ) : (
                     boardMeetings.map((meeting: any) => (
                       <SelectItem key={meeting.id} value={String(meeting.id)}>
