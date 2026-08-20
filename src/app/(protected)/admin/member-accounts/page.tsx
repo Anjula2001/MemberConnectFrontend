@@ -7,6 +7,7 @@ import { Building2, Info, Loader2, Lock, Save, Search } from "lucide-react";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
 import {
   Table,
@@ -114,6 +115,9 @@ export default function MemberAccountsAdminPage() {
     setFinancials((f) =>
       f ? { ...f, accounts: f.accounts?.map((a, x) => (x === i ? { ...a, ...patch } : a)) } : f
     );
+
+  const setEligibility = (patch: Partial<MemberFinancialsDTO>) =>
+    setFinancials((f) => (f ? { ...f, ...patch } : f));
 
   const save = async () => {
     if (!selected?.id || !financials) return;
@@ -366,6 +370,65 @@ export default function MemberAccountsAdminPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            {/* Temporary Scholarship finance eligibility (MMS23).
+                Stands in for the Finance Module: rather than maintaining Remittance and
+                Settlement rows by hand purely to answer whether a member may apply, the
+                answer is recorded here. Retire this card once Finance is integrated and
+                scholarship.finance.validation.source is switched to "finance". */}
+            <Card className="rounded-xl py-0">
+              <CardHeader className="flex flex-row items-center justify-between px-5 pt-5 pb-3">
+                <CardTitle className="text-base text-[#953002]">
+                  Scholarship Finance Eligibility
+                </CardTitle>
+                <Badge className="border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-50">
+                  Temporary — Finance Module not connected
+                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-4 px-5 pb-5">
+                <p className="text-xs text-neutral-500">
+                  Both must be met before this member can apply for a University
+                  Scholarship. Remittance is checked first — if it is not met, the member
+                  is refused on that ground and Settlement is not considered.
+                </p>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 hover:bg-neutral-50">
+                  <Checkbox
+                    checked={financials.isRemittance ?? false}
+                    onCheckedChange={(checked) =>
+                      setEligibility({ isRemittance: checked === true })
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-neutral-800">
+                      Remittance requirement met
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      Scholarship amount was continuously remitted for the required period.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 hover:bg-neutral-50">
+                  <Checkbox
+                    checked={financials.isSettlement ?? false}
+                    onCheckedChange={(checked) =>
+                      setEligibility({ isSettlement: checked === true })
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-neutral-800">
+                      Settlement requirement met
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      Remaining months in the period were settled by other means.
+                    </span>
+                  </span>
+                </label>
               </CardContent>
             </Card>
 
