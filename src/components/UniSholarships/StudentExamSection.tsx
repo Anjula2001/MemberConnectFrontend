@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
@@ -12,7 +12,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { hasPermission } from "@/lib/permissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Eye } from "lucide-react";
+import { Eye, Check, AlertCircle } from "lucide-react";
+import { authFetch } from "@/lib/api/authFetch";
 
 type FormData = {
   requestDate: string;
@@ -100,6 +101,15 @@ export default function StudentExamSection() {
   const [branches, setBranches] = useState<any[]>([]);
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Ref mirrors isSubmitting so a double-click in the same tick is rejected before
+  // React has re-rendered the disabled button.
+  const isSubmittingRef = useRef(false);
+  const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
   const [isValidatingExamNo, setIsValidatingExamNo] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -121,6 +131,7 @@ export default function StudentExamSection() {
     | "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL"
     | "APPROVED"
     | "REJECTED"
+    | "INACTIVE"
   >("NEW");
   const [isSaved, setIsSaved] = useState(false);
 
@@ -136,12 +147,46 @@ export default function StudentExamSection() {
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  const isApprovedDetailsEditMode = isExistingRequest && mode === "approved-edit" && status === "APPROVED";
+  // MMS41 — amending an approved award (academic start date, special degree flag,
+  // disbursement bank account) is "a special authorization", held by Head Office and
+  // Board Secretary but not District Office.
+  const canEditApprovedScholarshipDetails = hasPermission(user?.role, "US_APPROVED_EDIT");
+  // The right is part of the mode, not just the button: without it, a District Office
+  // user could enter the edit form by putting ?mode=approved-edit in the URL and only
+  // discover the 403 on save.
+  const isApprovedDetailsEditMode =
+    isExistingRequest
+    && mode === "approved-edit"
+    && status === "APPROVED"
+    && canEditApprovedScholarshipDetails;
   const isViewMode = isExistingRequest && !isEditMode && !isApprovedDetailsEditMode;
   const isInputsDisabled = isViewMode || isSubmitted;
   const cannotEdit = !isEditMode && isSaved;
   const incomplete = status === "INCOMPLETE";
-  const canEditApprovedScholarshipDetails = true; // TODO: wire to the user privilege for approved scholarship detail edits.
+
+  // MMS25 — status changes available from View Mode, keyed by current status.
+  // Mirrors the closed table enforced in UniversityScholarshipService; APPROVED and
+  // the ADDED_TO_*_LIST states are absent on purpose and so offer nothing.
+  const STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
+    NEW: ["INACTIVE"],
+    INCOMPLETE: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_COMMITTEE_APPROVAL: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_NORMAL_BOARD_APPROVAL: ["NEW", "INACTIVE"],
+    SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL: ["NEW", "INACTIVE"],
+    REJECTED: ["NEW", "INACTIVE"],
+    INACTIVE: ["NEW"],
+  };
+
+  // Returning a request to New needs US_REQUEST_REOPEN and deactivating it needs
+  // US_REQUEST_SET_INACTIVE. Both sit with Super Admin, Head Office and Board
+  // Secretary, so District Office never sees this control.
+  const canReopenToNew = hasPermission(user?.role, "US_REQUEST_REOPEN");
+  const canSetInactive = hasPermission(user?.role, "US_REQUEST_SET_INACTIVE");
+
+  const availableStatusTargets = (STATUS_CHANGE_TARGETS[status] || []).filter((target) =>
+    target === "NEW" ? canReopenToNew : canSetInactive
+  );
+  const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
   const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
   const {
@@ -173,7 +218,7 @@ export default function StudentExamSection() {
   // Load required document types 
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
-      const res = await fetch(
+      const res = await authFetch(
         "http://localhost:8080/api/required-document-types/UNIVERSITY_SCHOLARSHIP"
       );
       const data = await res.json();
@@ -190,7 +235,7 @@ export default function StudentExamSection() {
 
     const fetchMember = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/members/${targetMemberId}`
         );
 
@@ -217,7 +262,7 @@ export default function StudentExamSection() {
 
     const fetchMemberScholarships = async () => {
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
         );
 
@@ -247,7 +292,7 @@ export default function StudentExamSection() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/university-scholarships/${encodeURIComponent(requestKey)}`
         );
 
@@ -308,7 +353,7 @@ export default function StudentExamSection() {
 
     const fetchUploadedDocuments = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
             requestId
           )}`
@@ -398,8 +443,8 @@ export default function StudentExamSection() {
     const fetchInitialData = async () => {
       try {
         const [uniRes, bankRes] = await Promise.all([
-          fetch("http://localhost:8080/api/universities"),
-          fetch("http://localhost:8080/api/banks"),
+          authFetch("http://localhost:8080/api/universities"),
+          authFetch("http://localhost:8080/api/banks"),
         ]);
 
         const uniData = await uniRes.json();
@@ -428,7 +473,7 @@ export default function StudentExamSection() {
 
     const fetchPrograms = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/programs/${selectedUniversity}`
         );
         const data = await res.json();
@@ -452,7 +497,7 @@ export default function StudentExamSection() {
 
     const fetchDuration = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/duration?universityId=${selectedUniversity}&programId=${selectedProgram}`
         );
         const data = await res.json();
@@ -475,7 +520,7 @@ export default function StudentExamSection() {
 
     const fetchBranches = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/branches/${selectedBank}`
         );
         const data = await res.json();
@@ -505,7 +550,7 @@ export default function StudentExamSection() {
     try {
       setIsValidatingExamNo(true);
 
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
           selectedExamNo
         )}`
@@ -568,7 +613,7 @@ export default function StudentExamSection() {
       let savedRequest: any = null;
 
       if (requestId) {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/university-scholarships/${requestId}`,
           {
             method: "PUT",
@@ -589,7 +634,7 @@ export default function StudentExamSection() {
 
         savedRequest = await res.json();
       } else {
-        const response = await fetch(
+        const response = await authFetch(
           "http://localhost:8080/api/university-scholarships",
           {
             method: "POST",
@@ -659,34 +704,59 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    let actionId: string | number | null = requestId;
+    // Only NEW and INCOMPLETE requests may be submitted. The button is disabled for
+    // every other status, but pressing Enter in a field still fires the form submit.
+    if (!isEditableStatus) return;
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      let actionId: string | number | null = requestId;
 
-    if (!isInputsDisabled) {
-      const saved = await performSave(false);
-      if (!saved) {
-        setExamNoPopupMessage("Failed to save request before submitting");
+      if (!isInputsDisabled) {
+        const saved = await performSave(false);
+        if (!saved) {
+          setExamNoPopupMessage("Failed to save request before submitting");
+          setShowExamNoPopup(true);
+          return;
+        }
+        actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+      }
+
+      if (!actionId) {
+        setExamNoPopupMessage("Please save the request before submitting");
         setShowExamNoPopup(true);
         return;
       }
-      actionId = saved.universityScholarshipRequestID || (saved.id ? String(saved.id) : null);
+
+      setShowSubmitConfirmModal(true);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  const executeSubmit = async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    setShowSubmitConfirmModal(false);
+
+    let actionId: string | number | null = requestId;
+    if (!actionId && loadedRecord) {
+      actionId = loadedRecord.requestId || (loadedRecord.id ? String(loadedRecord.id) : null);
     }
 
     if (!actionId) {
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
-      return;
-    }
-
-    const confirmSubmit = window.confirm(
-      "After submitting, this request cannot be edited. Do you want to continue?"
-    );
-
-    if (!confirmSubmit) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/submit/${actionId}`,
         {
           method: "POST",
@@ -711,6 +781,59 @@ export default function StudentExamSection() {
       console.error("Submit failed:", error);
       setExamNoPopupMessage("Failed to submit request");
       setShowExamNoPopup(true);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  // MMS25 — apply a View Mode status change.
+  const executeStatusChange = async () => {
+    if (!statusChangeTarget || isChangingStatus) return;
+
+    const actionId = requestId || loadedRecord?.requestId;
+    if (!actionId) {
+      setExamNoPopupMessage("Request must be saved before its status can be changed");
+      setShowExamNoPopup(true);
+      return;
+    }
+
+    setIsChangingStatus(true);
+    try {
+      const response = await authFetch(
+        `http://localhost:8080/api/university-scholarships/${encodeURIComponent(String(actionId))}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: statusChangeTarget }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = "Failed to change status";
+        try {
+          message = JSON.parse(errorText).message || message;
+        } catch { }
+        setExamNoPopupMessage(message);
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      const updated = await response.json();
+      const nextStatus = updated.status || statusChangeTarget;
+      setStatus(nextStatus);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setShowStatusChangeModal(false);
+      setStatusChangeTarget("");
+      setExamNoPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Status change failed:", error);
+      setExamNoPopupMessage("Failed to change status");
+      setShowExamNoPopup(true);
+    } finally {
+      setIsChangingStatus(false);
     }
   };
 
@@ -724,7 +847,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/validate-exam-no?ExamNumber=${encodeURIComponent(
           examNo
         )}`
@@ -771,7 +894,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/minor-account/check?birthCertificateNumber=${encodeURIComponent(
           bcNo
         )}`
@@ -820,14 +943,14 @@ export default function StudentExamSection() {
   };
 
   //Handle Approve Scholarship
-  const handleApproveScholarship = async () => {
+  const handleApproveScholarship = () => {
     if (!requestId) return;
+    setShowApproveConfirmModal(true);
+  };
 
-    const confirmApprove = window.confirm(
-      "Approve this scholarship request?"
-    );
-
-    if (!confirmApprove) return;
+  const executeApproveScholarship = async () => {
+    setShowApproveConfirmModal(false);
+    if (!requestId) return;
 
     const deviationFlag = !!loadedRecord && (
       !!(loadedRecord as any).followsDeviationProcess
@@ -839,7 +962,7 @@ export default function StudentExamSection() {
 
     try {
 
-      const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-approve/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/university-scholarships/committee-approve/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: requestId, status: nextStatus }),
@@ -882,7 +1005,7 @@ export default function StudentExamSection() {
 
     (async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/university-scholarships/committee-reject/${requestId}`, {
+        const res = await authFetch(`http://localhost:8080/api/university-scholarships/committee-reject/${requestId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decisionReason: rejectReason.trim() }),
@@ -931,7 +1054,7 @@ export default function StudentExamSection() {
       const formData = new FormData();
       formData.append("file", file.file);
 
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
           savedRequestId
         )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
@@ -956,11 +1079,11 @@ export default function StudentExamSection() {
       });
     }
 
-    setDocumentFiles(uploadedItems);
+    setDocumentFiles([]);
 
     // Refresh the uploaded documents list from backend
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(
           savedRequestId
         )}`
@@ -982,7 +1105,7 @@ export default function StudentExamSection() {
   // Perform update request
   const updateScholarship = async (id: string | number, data: any) => {
     try {
-      const res = await fetch(`http://localhost:8080/api/university-scholarships/${id}`, {
+      const res = await authFetch(`http://localhost:8080/api/university-scholarships/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -1016,7 +1139,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/university-scholarships/incomplete/${actionId}`,
         {
           method: "POST",
@@ -1047,14 +1170,39 @@ export default function StudentExamSection() {
   };
 
   //Get mandatory document in DB
-  const mandatoryDocumentTypes = requiredDocumentTypes
-    .filter((doc) => doc.mandatory)
-    .map((doc) => doc.documentType);
+  const mandatoryDocumentTypes = requiredDocumentTypes.filter((doc) => doc.mandatory);
 
-  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((type) =>
-    documentFiles.some((doc) => doc.documentType === type) ||
-    uploadedDocuments.some((doc) => doc.documentType === type)
+  const hasAllMandatoryDocuments = mandatoryDocumentTypes.every((reqDoc) =>
+    documentFiles.some((doc) => doc.documentType === reqDoc.documentType) ||
+    uploadedDocuments.some(
+      (doc) => doc.requiredDocumentId === reqDoc.id || doc.documentType === reqDoc.documentType
+    )
   );
+
+  // Handle deleting an already uploaded document
+  const handleDeleteUploadedDocument = async (docId: number) => {
+    if (!requestId) return;
+    try {
+      const res = await authFetch(
+        `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(requestId)}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        setExamNoPopupMessage("Failed to delete uploaded document");
+        setShowExamNoPopup(true);
+        return;
+      }
+
+      setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setExamNoPopupMessage("Document deleted successfully");
+      setShowExamNoPopup(true);
+    } catch (error) {
+      console.error("Delete uploaded document failed:", error);
+      setExamNoPopupMessage("Failed to delete uploaded document");
+      setShowExamNoPopup(true);
+    }
+  };
 
   //Handle edit mode
   const handleEnterEditMode = () => {
@@ -1090,7 +1238,7 @@ export default function StudentExamSection() {
     };
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/university-scholarships/${requestId}/approved-details`,
         {
           method: "PUT",
@@ -1136,7 +1284,10 @@ export default function StudentExamSection() {
       : status === "REJECTED"
         ? loadedRecord?.decisionReason || ""
         : "";
-  const isFollowingDeviation = !!(loadedRecord?.followDeviationProcess);
+  const isFollowingDeviation =
+    !!(loadedRecord?.followDeviationProcess) &&
+    status !== "NEW" &&
+    status !== "INCOMPLETE";
   const pageTitle = isApprovedDetailsEditMode
     ? "Edit University Scholarship Details"
     : isExistingRequest
@@ -1152,7 +1303,12 @@ export default function StudentExamSection() {
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =
     (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
-  const canAddFundRequest = isApprovedScholarship && availableBalance > 0;
+  // District Office holds no fund request rights at all, so it can neither open the
+  // Fund Requests tab nor raise one from an approved scholarship it can otherwise see.
+  const canViewFundRequests = hasPermission(user?.role, "US_FUND_VIEW");
+  const canCreateFundRequest = hasPermission(user?.role, "US_FUND_CREATE");
+  const canAddFundRequest =
+    isApprovedScholarship && availableBalance > 0 && canCreateFundRequest;
 
   const formatCurrency = (amount?: number | null) =>
     typeof amount === "number"
@@ -1181,6 +1337,8 @@ export default function StudentExamSection() {
       return "bg-amber-100 border-amber-200 text-amber-600";
     } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
       return "bg-emerald-100 border-emerald-200 text-emerald-600";
+    } else if (statusLower === "inactive") {
+      return "bg-gray-100 border-gray-200 text-gray-500";
     }
 
     return "bg-yellow-100 border-yellow-200 text-yellow-500";
@@ -1212,6 +1370,8 @@ export default function StudentExamSection() {
         return "Approved";
       case "REJECTED":
         return "Rejected";
+      case "INACTIVE":
+        return "Inactive";
       default:
         return value.replace(/_/g, " ");
     }
@@ -1259,7 +1419,7 @@ export default function StudentExamSection() {
     }
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `http://localhost:8080/api/university-scholarships/member/${encodeURIComponent(targetMemberId)}`
       );
 
@@ -1320,6 +1480,19 @@ export default function StudentExamSection() {
 
 
           <div className="flex gap-2">
+            {canChangeStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStatusChangeTarget(availableStatusTargets[0]);
+                  setShowStatusChangeModal(true);
+                }}
+              >
+                Change Status
+              </Button>
+            )}
+
             {isViewMode && isEditableStatus && (
               <Button
                 type="button"
@@ -1363,17 +1536,17 @@ export default function StudentExamSection() {
               type="button"
               variant="outline"
               onClick={handleSave}
-              disabled={isInputsDisabled || !isValid || (!isDirty && isSaved) || isApprovedDetailsEditMode}
+              disabled={isInputsDisabled || (!isSaved && !isValid) || (!isDirty && documentFiles.length === 0 && isSaved) || isApprovedDetailsEditMode}
             >
               Save
             </Button>
 
             <Button
               type="submit"
-              disabled={!requestId || !hasAllMandatoryDocuments || isSubmitted || isApprovedDetailsEditMode}
+              disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
               className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
             >
-              Submit
+              {isSubmitting ? "Submitting..." : "Submit"}
             </Button>
           </div>
         </div>
@@ -1506,7 +1679,7 @@ export default function StudentExamSection() {
             </TabsTrigger>
             <TabsTrigger
               value="funds"
-              disabled={!isApprovedScholarship}
+              disabled={!isApprovedScholarship || !canViewFundRequests}
               className="flex-1 rounded-md px-4 py-2 text-sm font-medium text-gray-600 data-[state=active]:bg-[#953002] data-[state=active]:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               Fund Requests
@@ -1587,7 +1760,7 @@ export default function StudentExamSection() {
                   <label htmlFor="examYear" className="mb-1 block text-sm  text-gray-600">
                     Exam Year <span className="text-red-500">*</span>
                   </label>
-                  <Input id="examYear" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
+                  <Input id="examYear" maxLength={4} placeholder="YYYY (1950 - Present)" {...register("examYear")} disabled={isInputsDisabled || cannotEdit} className={whiteInputClass} />
                   {errors.examYear && <p className="mt-1 text-sm text-red-500">{errors.examYear.message}</p>}
                 </div>
 
@@ -1807,6 +1980,7 @@ export default function StudentExamSection() {
                   files={documentFiles}
                   setFiles={setDocumentFiles}
                   documentTypes={requiredDocumentTypes}
+                  uploadedDocuments={uploadedDocuments}
                 />
               </div>
             </section>
@@ -1868,6 +2042,16 @@ export default function StudentExamSection() {
                           >
                             Download
                           </a>
+                          {!isInputsDisabled && !isApprovedDetailsEditMode && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleDeleteUploadedDocument(doc.id)}
+                              className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-3 py-1.5 text-xs h-auto"
+                            >
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1978,29 +2162,216 @@ export default function StudentExamSection() {
         onConfirm={handleMarkIncomplete}
       />
 
-      {showExamNoPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-3 text-lg font-semibold text-[#953002]">
-              POPUP MESSAGE
+      {showExamNoPopup && (() => {
+        const msgLower = examNoPopupMessage.toLowerCase();
+        const isError =
+          msgLower.includes("failed") ||
+          msgLower.includes("error") ||
+          msgLower.includes("duplicat") ||
+          msgLower.includes("please") ||
+          isExamNoDuplicate;
+
+        let popupTitle = "Notification";
+        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+        else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
+        else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
+        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        else if (msgLower.includes("duplicat") || isExamNoDuplicate) popupTitle = "Notification";
+        else if (isError) popupTitle = "Notice";
+
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              {isError ? (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100/80">
+                  <AlertCircle className="h-7 w-7 text-amber-600 stroke-[2.5]" />
+                </div>
+              ) : (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                  <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+                </div>
+              )}
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                {popupTitle}
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                {examNoPopupMessage}
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2">
+                <Button
+                  type="button"
+                  onClick={() => setShowExamNoPopup(false)}
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                >
+                  OK
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showStatusChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <h3 className="mb-2 text-xl font-bold text-[#953002] text-center">
+              Change Status
             </h3>
 
-            <p className="mb-5 text-sm text-black">
-              {examNoPopupMessage}
+            <p className="mb-4 text-sm text-gray-600 text-center">
+              Current status:{" "}
+              <span className="font-semibold text-gray-800">{formatStatusLabel(status)}</span>
             </p>
 
-            <div className="flex justify-end">
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Change to</label>
+              {availableStatusTargets.map((target) => (
+                <label
+                  key={target}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="statusChangeTarget"
+                    value={target}
+                    checked={statusChangeTarget === target}
+                    onChange={() => setStatusChangeTarget(target)}
+                  />
+                  <span className="font-medium text-gray-800">{formatStatusLabel(target)}</span>
+                  {target === "INACTIVE" && (
+                    <span className="ml-auto text-xs text-gray-500">Requires Inactive rights</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-center gap-3 border-t border-gray-100 pt-4">
               <Button
                 type="button"
-                onClick={() => setShowExamNoPopup(false)}
-                className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                variant="outline"
+                onClick={() => {
+                  setShowStatusChangeModal(false);
+                  setStatusChangeTarget("");
+                }}
+                className="w-28 rounded-lg text-sm font-semibold"
               >
-                OK
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeStatusChange}
+                disabled={!statusChangeTarget || isChangingStatus}
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+              >
+                {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {showSubmitConfirmModal && (() => {
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Submit for Approval
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                The scholarship request will be submitted for approval and can no longer be edited.
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSubmitConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                  onClick={executeSubmit}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showApproveConfirmModal && (() => {
+        const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Approve Scholarship
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                Are you sure you want to approve this scholarship request?
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowApproveConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-emerald-600 text-white hover:bg-emerald-700 font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeApproveScholarship}
+                >
+                  Approve
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

@@ -60,6 +60,15 @@ export const INACTIVE_RIGHTS_ROLES: UserRole[] = [
 // Print Membership Card / Signature Card / Passbook (MR15–17).
 export const CARD_PRINTING_ROLES: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE"];
 
+// Raising a Member Transfer request. Member Registration has no named permission for
+// this, so it is a role list like the rest of that module.
+//
+// Head Office is excluded: a transfer is raised by the branch that holds the
+// membership, and Head Office receives it rather than creating it. Board Secretary is
+// excluded for the same reason, which also keeps this in step with US_REQUEST_CREATE
+// — the equivalent right for raising a University Scholarship.
+export const MEMBER_TRANSFER_ROLES: UserRole[] = ["SUPER_ADMIN", "DISTRICT_OFFICE"];
+
 // Membership Document Dispatch update (MR18).
 export const DISPATCH_ROLES: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE", "DISTRICT_OFFICE"];
 
@@ -131,6 +140,8 @@ export type Permission =
   | "US_FUND_SUBMIT"
   | "US_FUND_INCOMPLETE"
   | "US_FUND_APPROVE"
+  | "US_FUND_SET_INACTIVE"
+  | "US_FUND_REOPEN"
   // ---- University: masters + finance ----
   | "US_MASTER_VIEW"
   | "US_MASTER_MANAGE"
@@ -157,20 +168,28 @@ const GRADE5_BOARD: Permission[] = [
   "G5_EXAM_MASTER_VIEW",
 ];
 
+// University scholarship requests (MMS21-MMS25) only.
+//
+// No fund request rights at all, not even US_FUND_VIEW — briefly granted on
+// 2026-08-19 and revoked on 2026-08-20. Since canAccessFundRequests() keys on
+// US_FUND_VIEW, its absence both hides the sidebar item and makes the Fund Requests
+// page render AccessRestricted. Mirrors RolePermissions.java — keep the two in step.
 const UNIVERSITY_DISTRICT: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_CREATE",
   "US_REQUEST_EDIT",
   "US_REQUEST_SUBMIT",
   "US_REQUEST_INCOMPLETE",
-  "US_FUND_VIEW",
   "US_MASTER_VIEW",
 ];
 
 // The University board track. Deliberately WITHOUT US_COMMITTEE_APPROVE — the
-// Committee gate (MMS26) must not be cleared by the office that runs the Board —
-// and WITHOUT US_FUND_APPROVE, so whoever can change a payee's bank account on an
-// approved award (US_APPROVED_EDIT) cannot also release the payment into it.
+// Committee gate (MMS26) must not be cleared by the office that runs the Board.
+//
+// US_FUND_APPROVE is included as of 2026-08-19 by product decision: the office that
+// raises fund requests also decides them. It knowingly pairs US_APPROVED_EDIT
+// (changing a payee's bank account) with releasing payment into that account.
+// Mirrors RolePermissions.java on the backend — keep the two in step.
 const UNIVERSITY_BOARD: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_SET_INACTIVE",
@@ -186,6 +205,11 @@ const UNIVERSITY_BOARD: Permission[] = [
   "US_FUND_EDIT",
   "US_FUND_SUBMIT",
   "US_FUND_INCOMPLETE",
+  "US_FUND_APPROVE",
+  // Fund request View Mode status changes (New <-> Inactive). Withheld from District
+  // Office, which raises fund requests.
+  "US_FUND_SET_INACTIVE",
+  "US_FUND_REOPEN",
   "US_MASTER_VIEW",
 ];
 
@@ -197,7 +221,6 @@ const ALL_PERMISSIONS: Permission[] = [
   ...UNIVERSITY_DISTRICT,
   ...UNIVERSITY_BOARD,
   "US_COMMITTEE_APPROVE",
-  "US_FUND_APPROVE",
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
 ];
@@ -220,10 +243,13 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT],
 
-  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
+  // US_FINANCE_DISBURSE is listed here rather than in UNIVERSITY_BOARD because that
+  // array is shared with BOARD_SECRETARY, which does not hold the finance hand-over.
+  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FINANCE_DISBURSE"],
 
-  // Head Office's rights plus the one withheld from it: releasing a disbursement.
-  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FUND_APPROVE"],
+  // The same approval track as Head Office, plus the Grade 5 / University delete
+  // privileges that DELETE_RIGHTS_ROLES also grants.
+  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
 
   // Seat of the University Scholarship Committee (MMS26), and owner of the exam /
   // university masters.
