@@ -24,6 +24,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/src/components/ui/table";
+import {
+  TablePagination,
+  clampPage,
+  pageSlice,
+} from "@/src/components/ui/table-pagination";
 
 import { searchMembers, type MemberDTO } from "@/lib/api/member";
 import {
@@ -97,6 +102,7 @@ export default function DocumentPrintScreen({
   // the user pressing Print and confirming it.
   const [pendingPrint, setPendingPrint] = useState<{ ids: number[]; reprint: boolean } | null>(null);
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [location, setLocation] = useState("all");
@@ -134,6 +140,7 @@ export default function DocumentPrintScreen({
 
       setMembers(sorted);
       setSelected([]);
+      setPage(1);
       setHasRetrieved(true);
     } catch (error) {
       addToast(
@@ -151,16 +158,35 @@ export default function DocumentPrintScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Guarded rather than trusted: a print marks rows and re-retrieves, which can
+  // shrink the result under whatever page was showing.
+  const safePage = clampPage(page, members.length);
+  const pagedMembers = useMemo(() => pageSlice(members, page), [members, page]);
+
   // Rows already printed can never be selected — not individually, not by Select All.
-  const selectableIds = useMemo(
-    () => members.filter((m) => !printedAt(m) && m.id).map((m) => m.id as number),
-    [members, printedAt]
+  const pageSelectableIds = useMemo(
+    () => pagedMembers.filter((m) => !printedAt(m) && m.id).map((m) => m.id as number),
+    [pagedMembers, printedAt]
   );
 
+  /**
+   * Select All covers the rows on screen, not the whole result set. Ticking a box
+   * above ten rows and silently arming several hundred would be a bad way to
+   * discover that Print stamps printedAt for every one of them.
+   *
+   * Selections still survive paging, so a print can be assembled across pages —
+   * which is why the Print button counts `selected`, not this page's share of it.
+   */
   const allSelectableChecked =
-    selectableIds.length > 0 && selected.length === selectableIds.length;
+    pageSelectableIds.length > 0 &&
+    pageSelectableIds.every((id) => selected.includes(id));
 
-  const toggleAll = (checked: boolean) => setSelected(checked ? selectableIds : []);
+  const toggleAll = (checked: boolean) =>
+    setSelected((prev) =>
+      checked
+        ? [...prev, ...pageSelectableIds.filter((id) => !prev.includes(id))]
+        : prev.filter((id) => !pageSelectableIds.includes(id))
+    );
 
   const toggleOne = (id: number, checked: boolean) =>
     setSelected((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
@@ -348,7 +374,7 @@ export default function DocumentPrintScreen({
                       <Checkbox
                         checked={allSelectableChecked}
                         onCheckedChange={(c) => toggleAll(Boolean(c))}
-                        disabled={selectableIds.length === 0}
+                        disabled={pageSelectableIds.length === 0}
                         className="data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
                       />
                     </TableHead>
@@ -361,7 +387,7 @@ export default function DocumentPrintScreen({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members.map((m) => {
+                  {pagedMembers.map((m) => {
                     const printed = printedAt(m);
                     return (
                       <TableRow key={m.id}>
@@ -426,6 +452,12 @@ export default function DocumentPrintScreen({
                 </TableBody>
               </Table>
             </div>
+            <TablePagination
+              page={safePage}
+              total={members.length}
+              onPageChange={setPage}
+              className="-mx-5 mt-1 px-5"
+            />
           </CardContent>
         </Card>
       </div>

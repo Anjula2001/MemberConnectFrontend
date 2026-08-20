@@ -177,6 +177,11 @@ export default function NavigationSideBar() {
         ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
+        // District Office is in REGISTRATION_ROLES and DISPATCH_ROLES, so it is
+        // entitled to the Member Profile Search (5.4) and Dispatch (5.5) reports.
+        // Every other role menu already offered Reports; this one did not, leaving
+        // the page reachable only by typing the URL.
+        { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
 

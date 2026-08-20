@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -35,6 +35,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/src/components/ui/table";
+import {
+	TablePagination,
+	clampPage,
+	pageSlice,
+} from "@/src/components/ui/table-pagination";
 
 import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
 import { getEducationalDistricts } from "@/lib/api/education";
@@ -184,6 +189,7 @@ export default function MemberDirectoryPage() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasFetched, setHasFetched] = useState(false);
+	const [page, setPage] = useState(1);
 
 	// ---------------------------------------------------------------------------
 	// Fetch helpers
@@ -238,6 +244,7 @@ export default function MemberDirectoryPage() {
 			});
 
 			setMembers(sorted);
+			setPage(1);
 			setHasFetched(true);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : "Failed to fetch members.");
@@ -252,6 +259,13 @@ export default function MemberDirectoryPage() {
 	// screens follow, and what the "Click Retrieve to load members." empty state below
 	// has always described. Auto-loading also meant every visit pulled the full
 	// membership before the user had chosen any filter.
+
+	// ---------------------------------------------------------------------------
+	// Paging
+	// ---------------------------------------------------------------------------
+
+	const safePage = clampPage(page, members.length);
+	const pagedMembers = useMemo(() => pageSlice(members, page), [members, page]);
 
 	// ---------------------------------------------------------------------------
 	// Options
@@ -563,7 +577,7 @@ export default function MemberDirectoryPage() {
 									</TableCell>
 								</TableRow>
 							) : (
-								members.map((member) => (
+								pagedMembers.map((member) => (
 									<TableRow
 										key={member.id ?? member.memberId}
 										className="hover:bg-neutral-50"
@@ -605,11 +619,13 @@ export default function MemberDirectoryPage() {
 						</TableBody>
 					</Table>
 
-					{/* Result count footer */}
+					{/* Result count + paging footer */}
 					{hasFetched && !loading && !error && (
-						<div className="border-t border-neutral-200 px-4 py-2 text-xs text-neutral-500">
-							{members.length} member{members.length !== 1 ? "s" : ""} found
-						</div>
+						<TablePagination
+							page={safePage}
+							total={members.length}
+							onPageChange={setPage}
+						/>
 					)}
 				</CardContent>
 			</Card>

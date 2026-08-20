@@ -53,7 +53,20 @@ const AUDIT_ROLES: UserRole[] = [
   "SUPER_ADMIN",
 ]
 
-const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL"]
+/**
+ * "Awaiting approval" means a decision is owed by someone else, which is two states,
+ * not one. A request that has been put on a Termination Approval List is still
+ * waiting for the board to sit — counting only SUBMITTED_FOR_APPROVAL reported
+ * "0 awaiting approval" while a request sat on a list, which is the opposite of what
+ * this card exists to say.
+ *
+ * NEW is deliberately excluded from both lists below: it is a draft the District
+ * Office has not submitted yet, so nobody is waiting on it.
+ */
+const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL", "ADDED_TO_APPROVAL_LIST"]
+
+/** The application-side counterpart, with the same reasoning. */
+const APPLICATION_PENDING = ["SUBMITTED_FOR_APPROVAL", "ADDED_TO_BOARD_APPROVAL_LIST"]
 
 /** Null means "not loaded" — rendered as "—" so it is never mistaken for a real zero. */
 type Data = {
@@ -125,7 +138,7 @@ export default function BottomSection() {
   const totalMembers = data.members?.length ?? null
   const totalApplications = data.applications?.length ?? null
   const pendingApplications = data.applications
-    ? applications.filter((a) => a.status === 'NEW' || a.status === 'SUBMITTED_FOR_APPROVAL').length
+    ? applications.filter((a) => APPLICATION_PENDING.includes(a.status as string)).length
     : null
 
   const show = (value: number | null) => (loading ? '…' : value ?? '—')
