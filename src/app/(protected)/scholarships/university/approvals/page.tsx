@@ -10,6 +10,7 @@ import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Up
 import { useAuth } from "@/lib/auth-context";
 import { hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
+import { authFetch } from "@/lib/api/authFetch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ function ApprovalsPageInner() {
       setDecisions({});
       setShowConfirmPopup(false);
 
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
       const data: RequestRow[] = await res.json();
 
@@ -347,14 +348,25 @@ function ApprovalsPageInner() {
   };
 
   // ── Fetch board meeting options ───────────────────────────────────────────
+  // MMS34 — the Actual Board Meeting Date is a selection over the Board Meeting
+  // records, so this has to succeed for the field to work at all.
+  //
+  // Was pointing at /api/board-meetings, which does not exist — the controller only
+  // exposes /getAllBoardMeetings. The 404 fell into a silent catch, the option list
+  // stayed empty, and the field quietly degraded to a free-text date picker.
   const fetchBoardMeetingOptions = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings");
-      if (!res.ok) return;
+      const res = await authFetch(
+        "http://localhost:8080/api/board-meetings/getAllBoardMeetings"
+      );
+      if (!res.ok) {
+        console.error("Failed to fetch board meetings:", res.status);
+        return;
+      }
       const data: BoardMeetingOption[] = await res.json();
-      setBoardMeetingOptions(data);
-    } catch {
-      // silently ignore; user can still proceed
+      setBoardMeetingOptions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to fetch board meetings:", error);
     }
   };
 
@@ -429,7 +441,7 @@ function ApprovalsPageInner() {
           ? "http://localhost:8080/api/university-scholarships/process-deviation-approvals"
           : "http://localhost:8080/api/university-scholarships/process-approvals";
 
-      const res = await fetch(endpoint, { method: "POST", body: formData });
+      const res = await authFetch(endpoint, { method: "POST", body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to process approvals");
@@ -457,7 +469,7 @@ function ApprovalsPageInner() {
         ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${approvalListId}`
         : `http://localhost:8080/api/university-scholarships/approval-list/${approvalListId}`;
 
-      const res = await fetch(endpoint, { method: "DELETE" });
+      const res = await authFetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete the approval list");
@@ -515,6 +527,54 @@ function ApprovalsPageInner() {
 
   // ── Selected list info ────────────────────────────────────────────────────
   const selectedGroup = filteredLists.find((g) => g.approvalListId === selectedListId);
+
+  // The Actual Board Meeting Date is bounded by the meeting itself and today: a
+  // postponement moves the meeting later, never earlier, and a meeting cannot be
+  // recorded as having happened on a date that has not arrived.
+  //
+  // Built as a yyyy-mm-dd string from local parts rather than toISOString(), which
+  // would report the UTC day and roll over early evening in UTC+5:30.
+  const todayIsoDate = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  })();
+  const minActualBoardMeetingDate = selectedGroup?.scheduledDate?.slice(0, 10) ?? "";
+
+  // Board Meeting records that could be the actual date: the meeting's own scheduled
+  // date, plus any other meeting between that date and today — a postponement moves
+  // the meeting later, and it cannot have happened in the future.
+  //
+  // The scheduled date is always kept, even when it is itself in the future, because
+  // the requirement makes it the default and a default that is not in the list would
+  // leave the field blank.
+  const selectableBoardMeetingOptions = (() => {
+    const inRange = boardMeetingOptions
+      .filter((opt) => {
+        const date = opt.scheduledDate?.slice(0, 10);
+        if (!date) return false;
+        if (date === minActualBoardMeetingDate) return true;
+        return (
+          (!minActualBoardMeetingDate || date >= minActualBoardMeetingDate) &&
+          date <= todayIsoDate
+        );
+      })
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
+
+    if (!minActualBoardMeetingDate) return inRange;
+
+    // The scheduled date is the default, so it has to be selectable even if the
+    // records call failed or does not contain it. Synthesised rather than left out,
+    // so the field never renders with nothing in it.
+    const hasScheduled = inRange.some(
+      (opt) => opt.scheduledDate?.slice(0, 10) === minActualBoardMeetingDate
+    );
+    return hasScheduled
+      ? inRange
+      : [
+        { id: -1, boardMeetingId: "", scheduledDate: minActualBoardMeetingDate },
+        ...inRange,
+      ];
+  })();
   const isProcessed = selectedGroup ? getListStatus(selectedGroup) === "PROCEED" : false;
   const firstRequest = retrievedRequests[0];
 
@@ -1028,33 +1088,27 @@ function ApprovalsPageInner() {
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Actual Board Meeting Date
                   </label>
-                  {boardMeetingOptions.length > 0 ? (
-                    <div className="relative">
-                      <select
-                        value={actualBoardMeetingDate}
-                        onChange={(e) => setActualBoardMeetingDate(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 pr-8 shadow-sm"
-                      >
-                        {boardMeetingOptions.map((opt) => (
-                          <option key={opt.id} value={opt.scheduledDate}>
-                            {new Date(opt.scheduledDate + "T00:00:00").toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "long",
-                              year: "numeric",
-                            })}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                    </div>
-                  ) : (
-                    <input
-                      type="date"
+                  {/* Always a selection over the Board Meeting records — a free date
+                      picker would let a date be entered that no meeting was ever held
+                      on. The list is bounded by the meeting's own date and today. */}
+                  <div className="relative">
+                    <select
                       value={actualBoardMeetingDate}
                       onChange={(e) => setActualBoardMeetingDate(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
-                    />
-                  )}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 pr-8 shadow-sm"
+                    >
+                      {selectableBoardMeetingOptions.map((opt) => (
+                        <option key={`${opt.id}-${opt.scheduledDate}`} value={opt.scheduledDate}>
+                          {new Date(opt.scheduledDate + "T00:00:00").toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "long",
+                            year: "numeric",
+                          })}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  </div>
                   <p className="text-[10px] text-gray-400">Select if meeting was postponed</p>
                 </div>
               </div>

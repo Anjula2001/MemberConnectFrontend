@@ -36,6 +36,12 @@ export interface MemberFinancialsDTO {
   accounts?: MemberAccountDTO[];
   /** True while no operative account has been synced from the Finance Module. */
   awaitingFinanceIntegration?: boolean;
+  /**
+   * Temporary Scholarship finance eligibility, held on the Member until the Finance
+   * Module lands. Omit on a PUT to leave the stored values untouched.
+   */
+  isRemittance?: boolean;
+  isSettlement?: boolean;
 }
 
 export async function getMemberFinancials(memberId: number) {

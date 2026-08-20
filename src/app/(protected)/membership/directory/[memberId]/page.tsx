@@ -17,7 +17,13 @@ import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
-import { TESTING_ACTIVATE_ROLES, hasRole } from "@/lib/permissions";
+import {
+	MEMBER_TRANSFER_ROLES,
+	PROFILE_CHANGE_CREATE_ROLES,
+	TESTING_ACTIVATE_ROLES,
+	hasPermission,
+	hasRole,
+} from "@/lib/permissions";
 
 const detailTabs = [
 	"Profile Details",
@@ -42,6 +48,18 @@ const actionGroups = {
 	],
 	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death", "Member Termination"],
 };
+
+/**
+ * Actions that an INACTIVE member may not start.
+ *
+ * Transferring a member who holds no active membership moves nothing, and a new
+ * University Scholarship would be raised against a membership that cannot fund it.
+ *
+ * Scoped to INACTIVE specifically, per the requirement. Other non-active statuses
+ * (INACTIVE_DORMANT, RETIRED, TERMINATED, DECEASED, RESIGNED) are deliberately NOT
+ * covered here — widen this list if they should be.
+ */
+const BLOCKED_WHILE_INACTIVE = ["Member Transfer", "University Scholarship"];
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
 	return (
@@ -73,7 +91,15 @@ export default function MemberProfilePage({
 	const [isActivating, setIsActivating] = useState(false);
 	const { addToast } = useToast();
 	const { user } = useAuth();
+	// MMC01/05/14/18 name the District Office System User as the one who raises a
+	// profile change request. Board Secretary decides them but never opens one, so the
+	// Actions entries are hidden rather than shown and refused.
+	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
 	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
+	// Raising a request is the originating office's job. Head Office holds neither
+	// right, so it reviews these rather than creating them.
+	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
+	const canCreateMemberTransfer = hasRole(user?.role, MEMBER_TRANSFER_ROLES);
 
 	// Real activation is supposed to come from the Finance Module once the member's
 	// accounts are created there (out of scope for this build). This button is a
@@ -244,11 +270,41 @@ export default function MemberProfilePage({
 			return;
 		}
 
+		// Two separate reasons an action can be unavailable: the member is inactive, or
+		// the signed-in role does not raise this kind of request. The buttons are
+		// disabled for both; this guard is what stops a stale page whose profile
+		// loaded while the member was still active.
+		if (BLOCKED_WHILE_INACTIVE.includes(action) && profile.status === "INACTIVE") {
+			return;
+		}
+
+		if (action === "Member Transfer" && !canCreateMemberTransfer) {
+			return;
+		}
+
+		if (
+			(action === "University Scholarship" || action === "University Scholarships") &&
+			!canCreateUniversityScholarship
+		) {
+			return;
+		}
+
 		if (
 			action === "Record Member Death" &&
 			profile.status !== "ACTIVE" &&
 			profile.status !== "MEMBER_DEATH_RECORDED"
 		) {
+			return;
+		}
+
+		// Requirement 02 gates every profile change request on an active membership.
+		const activeOnlyActions = [
+			"Basic Profile Changes",
+			"Change Name",
+			"Change Remittance",
+			"Change Nominee",
+		];
+		if (activeOnlyActions.includes(action) && profile.status !== "ACTIVE") {
 			return;
 		}
 
@@ -288,6 +344,21 @@ export default function MemberProfilePage({
 	if (!profile) {
 		notFound();
 	}
+
+	// Returns the reason an action is unavailable, or null when it is allowed. A
+	// reason rather than a boolean so the disabled button can explain itself.
+	const actionDisabledReason = (item: string): string | null => {
+		if (item === "Member Transfer" && !canCreateMemberTransfer) {
+			return "Your role cannot raise a Member Transfer request";
+		}
+		if (item === "University Scholarship" && !canCreateUniversityScholarship) {
+			return "Your role cannot raise a University Scholarship request";
+		}
+		if (BLOCKED_WHILE_INACTIVE.includes(item) && profile.status === "INACTIVE") {
+			return "Not available for an inactive member";
+		}
+		return null;
+	};
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
@@ -333,16 +404,27 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{actionGroups.profileRequests.map((item) => (
-										<button
-											key={item}
-											type="button"
-											onClick={() => handleActionClick(item)}
-											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-										>
-											{item}
-										</button>
-									))}
+{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
+    const disabledReason = actionDisabledReason(item);
+    const isDisabled = disabledReason !== null;
+
+    return (
+        <button
+            key={item}
+            type="button"
+            onClick={() => handleActionClick(item)}
+            disabled={isDisabled}
+            title={disabledReason ?? undefined}
+            className={
+                isDisabled
+                    ? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+                    : "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+            }
+        >
+            {item}
+        </button>
+    );
+})}
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2">
@@ -352,16 +434,27 @@ export default function MemberProfilePage({
 											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
 										</summary>
 										<div className="mt-1 space-y-1 pl-3">
-											{actionGroups.scholarshipRequests.map((item) => (
-												<button
-													key={item}
-													type="button"
-													onClick={() => handleActionClick(item)}
-													className="block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-												>
-													{item}
-												</button>
-											))}
+											{actionGroups.scholarshipRequests.map((item) => {
+												const disabledReason = actionDisabledReason(item);
+												const isDisabled = disabledReason !== null;
+
+												return (
+													<button
+														key={item}
+														type="button"
+														onClick={() => handleActionClick(item)}
+														disabled={isDisabled}
+														title={disabledReason ?? undefined}
+														className={
+															isDisabled
+																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
+																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+														}
+													>
+														{item}
+													</button>
+												);
+											})}
 										</div>
 									</details>
 								</div>
