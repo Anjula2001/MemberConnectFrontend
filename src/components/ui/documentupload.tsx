@@ -2,11 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./button";
+import { apiClient } from "@/lib/api/client";
 
-const API_BASE_URL = "http://localhost:8080";
+/**
+ * These endpoints sit under .anyRequest().authenticated() in SecurityConfig -
+ * only the literal /api/documents/**, /api/uploaded-documents/** and
+ * /api/file/** paths are permitAll, and none of the per-request document paths
+ * used here match those. They therefore need the JWT, which is why every call
+ * goes through apiClient rather than a bare fetch to a hardcoded host.
+ */
 
 const SUBMITTED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
+  // The two Member Death escalation levels. A record with a committee is as
+  // locked as a submitted one - only the District Office may change its files.
+  "DISTRICT_COMMITTEE",
+  "PD_COMMITTEE",
   "SUBMITTED_FOR_NORMAL_APPROVAL",
   "SUBMITTED_FOR_DEVIATION_APPROVAL",
   "ADDED_TO_APPROVAL_LIST",
@@ -36,7 +47,11 @@ interface DocumentUploadProps {
   requestNo: string | null;
   memberId: string;
   requestStatus: string;
-  requestType: "retirement-requests" | "grade5-requests" | "termination-requests";
+  requestType:
+    | "retirement-requests"
+    | "grade5-requests"
+    | "termination-requests"
+    | "member-death-records";
   readOnly?: boolean;
 }
 
@@ -94,24 +109,11 @@ export default function DocumentUpload({
   const fetchRequiredDocuments = async () => {
     try {
       const url = requestNo
-        ? `${API_BASE_URL}/api/${requestType}/${requestNo}/required-documents?memberId=${memberId}`
-        : `${API_BASE_URL}/api/${requestType}/required-documents-preview?memberId=${memberId}`;
+        ? `/api/${requestType}/${requestNo}/required-documents?memberId=${encodeURIComponent(memberId)}`
+        : `/api/${requestType}/required-documents-preview?memberId=${encodeURIComponent(memberId)}`;
 
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Required documents API failed:", {
-          url,
-          status: response.status,
-          body: errorText,
-        });
-
-        throw new Error("Failed to load required documents");
-      }
-
-      const documents: RequiredDocument[] = await response.json();
-      setRequiredDocuments(documents);
+      const { data } = await apiClient.get<RequiredDocument[]>(url);
+      setRequiredDocuments(data);
     } catch (error) {
       console.error(error);
       setMessage("Failed to load required documents.");
@@ -127,16 +129,10 @@ export default function DocumentUpload({
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestNo}/uploaded-documents`
+      const { data } = await apiClient.get<UploadedDocument[]>(
+        `/api/${requestType}/${requestNo}/uploaded-documents`
       );
-
-      if (!response.ok) {
-        throw new Error("Failed to load uploaded documents");
-      }
-
-      const documents: UploadedDocument[] = await response.json();
-      setUploadedDocuments(documents);
+      setUploadedDocuments(data);
     } catch (error) {
       console.error(error);
       setMessage("Failed to load uploaded documents.");
@@ -202,19 +198,10 @@ export default function DocumentUpload({
       const formData = new FormData();
       formData.append("file", file as File);
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/${requestNo}/documents/${selectedDocumentId}/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
+      await apiClient.post(
+        `/api/${requestType}/${requestNo}/documents/${selectedDocumentId}/upload`,
+        formData
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        setMessage(errorText || "Failed to upload document.");
-        return;
-      }
 
       setSelectedDocumentId(null);
       setMessage("Document uploaded successfully.");
@@ -226,6 +213,34 @@ export default function DocumentUpload({
       setMessage("Failed to upload document.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  /**
+   * Downloads an uploaded file.
+   *
+   * A plain <a href> cannot carry the Authorization header, and this endpoint
+   * requires it, so the file is fetched as a blob and handed to the browser
+   * through a temporary object URL instead.
+   */
+  const handleDownload = async (uploadedDocumentId: number, fileName: string) => {
+    try {
+      const { data } = await apiClient.get<Blob>(
+        `/api/${requestType}/documents/${uploadedDocumentId}/download`,
+        { responseType: "blob" }
+      );
+
+      const objectUrl = window.URL.createObjectURL(data);
+      const link = window.document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to download document.");
     }
   };
 
@@ -241,18 +256,9 @@ export default function DocumentUpload({
     try {
       setDeletingDocumentId(uploadedDocumentId);
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/${requestType}/documents/${uploadedDocumentId}/file`,
-        {
-          method: "DELETE",
-        }
+      await apiClient.delete(
+        `/api/${requestType}/documents/${uploadedDocumentId}/file`
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        setMessage(errorText || "Failed to delete document.");
-        return;
-      }
 
       setMessage("Document deleted successfully.");
 
@@ -380,14 +386,13 @@ export default function DocumentUpload({
                     </td>
 
                     <td className="px-4 py-2 border-b">
-                      <a
-                        href={`${API_BASE_URL}/api/${requestType}/documents/${file.id}/download`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(file.id, file.fileName)}
                         className="text-blue-600 hover:underline"
                       >
                         {file.fileName}
-                      </a>
+                      </button>
                     </td>
 
                     <td className="px-4 py-2 border-b">{file.fileType}</td>

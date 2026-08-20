@@ -9,6 +9,9 @@ import apiClient from "./api/client";
 export type UserRole =
   | "SUPER_ADMIN"
   | "DISTRICT_OFFICE"
+  // The second and third Member Death approval levels (MMT23, MMT24).
+  | "DISTRICT_COMMITTEE"
+  | "PD_COMMITTEE"
   | "BOARD_SECRETARY"
   | "HEAD_OFFICE"
   | "ACCOUNTS"

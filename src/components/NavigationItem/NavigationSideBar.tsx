@@ -139,8 +139,39 @@ export default function NavigationSideBar() {
               url: "/membership/dispatch",
               icon: Send,
             },
+            // MMT01-MMT04 name the District Office System User as the actor who
+            // raises, edits and submits termination requests, so the screen has
+            // to be reachable from this menu too - it was previously only
+            // offered to Head Office, who cannot author a request at all.
+            {
+              title: "Termination & Retirement",
+              url: "/membership/termination",
+              icon: UserMinus,
+            },
+            // SRS 4.2.3 describes a Location filter that is un-editable for a
+            // user with access to only their own district - that sentence is
+            // the SRS admitting the District Office to the dormant view.
+            // Read-only, and scoped by the server to their own
+            // submissionLocation; the board half (Inactivation Approval Lists)
+            // stays with Head Office.
+            {
+              title: "Dormant Members",
+              url: "/membership/dormant",
+              icon: UserCheck,
+            },
+            {
+              title: "Profile Changes",
+              url: "/membership/profile-changes",
+              icon: FileText,
+            },
           ],
         },
+        // MMD01 names the District Office System User as the actor who raises
+        // every death donation request, and MMD05 as the level that decides it
+        // first, so the list has to be reachable from this menu. It was
+        // previously offered only to Super Admin and to the catch-all branch -
+        // that is, to everyone except the people who actually use it.
+        { title: "Death Donation", icon: Heart, url: "/death-donation" },
         // District Office is the SRS's named actor for creating Grade 5 requests
         // (MMS01–MMS05), so the module belongs in this menu.
         ...([buildScholarshipsMenu(role)].filter(
@@ -206,6 +237,11 @@ export default function NavigationSideBar() {
               url: "/membership/termination",
               icon: UserMinus,
             },
+            // MMD14/16/17/18 (Inactivation Approval Lists) is deliberately not a
+            // menu entry of its own. It is reached by the "View Approval Lists"
+            // button on this screen, which is also where a list is created - the
+            // board half follows on from the selection rather than standing
+            // alongside it.
             {
               title: "Dormant Members",
               url: "/membership/dormant",
@@ -213,11 +249,48 @@ export default function NavigationSideBar() {
             },
           ],
         },
+        // MMD02 / MMD03: Head Office reads donations across every district and
+        // holds the Inactive right in the MMD04 status matrix.
+        { title: "Death Donation", icon: Heart, url: "/death-donation" },
         // Head Office / Board Secretary own the Grade 5 approval track
         // (MMS06–MMS19) — the module was previously unreachable for them.
         ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
+        { title: "Reports", icon: BarChart, url: "/reports" },
+      ];
+    }
+
+    // 2b. District / P&D Committee: the second and third Member Death approval
+    // levels (MMT23, MMT24). They decide on records escalated to them, so they
+    // need the request list and the member profile behind it - and nothing else.
+    // They are not actors anywhere in the registration or termination flows.
+    if (role === "DISTRICT_COMMITTEE" || role === "PD_COMMITTEE") {
+      return [
+        {
+          title: "Dashboard",
+          icon: Home,
+          url: "/",
+        },
+        {
+          title: "Membership",
+          icon: Users,
+          subMenu: [
+            {
+              title: "Member Directory",
+              url: "/membership/directory",
+              icon: Users,
+            },
+            {
+              title: "Termination & Retirement",
+              url: "/membership/termination",
+              icon: UserMinus,
+            },
+          ],
+        },
+        // The same two committees are approval levels 2 and 3 for death
+        // donations (MMD06 / MMD07), not only for member deaths.
+        { title: "Death Donation", icon: Heart, url: "/death-donation" },
         { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
@@ -355,9 +428,14 @@ export default function NavigationSideBar() {
     // Registration spec, so they get no Membership access at all rather than silently
     // inheriting it from a catch-all branch. They keep access to their own modules only.
     //
-    // Grade 5 is no longer part of that inheritance: it appears here only if the role
-    // actually holds a Grade 5 permission, so Death Donation Officer now sees the
+    // Grade 5 is no longer part of that inheritance: the Scholarships menu is built
+    // from the permissions the role actually holds, so Death Donation Officer sees the
     // University items it already had and nothing more.
+    //
+    // Death Donation is deliberately NOT here. SRS Requirement 05 names only the
+    // District Office and Head Office System Users as actors, so a Scholarship
+    // Officer was being shown a module they have no part in — and, despite the
+    // name, so was the Death Donation Officer. The server refuses both.
     return [
       {
         title: "Dashboard",
@@ -367,7 +445,6 @@ export default function NavigationSideBar() {
       ...([buildScholarshipsMenu(role)].filter(
         Boolean
       ) as MenuItem[]),
-      { title: "Death Donation", icon: Heart, url: "/death-donation" },
       { title: "Reports", icon: BarChart, url: "/reports" },
     ];
   };

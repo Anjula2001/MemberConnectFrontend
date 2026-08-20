@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useSidebar } from "@/src/components/ui/sidebar";
 import {
-  Bell,
   ChevronDown,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Search,
   Settings,
   Shield,
   User,
@@ -20,6 +18,8 @@ import {
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
   DISTRICT_OFFICE: "District Office",
+  DISTRICT_COMMITTEE: "District Committee",
+  PD_COMMITTEE: "P&D Committee",
   BOARD_SECRETARY: "Board Secretary",
   HEAD_OFFICE: "Head Office",
   ACCOUNTS: "Accounts",
@@ -32,20 +32,15 @@ export default function TopHeader() {
   const { toggleSidebar, state } = useSidebar();
   const router = useRouter();
 
-  const [searchValue, setSearchValue] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
 
   const profileRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns on outside click
+  // Close the profile menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node))
         setProfileOpen(false);
-      if (notifRef.current && !notifRef.current.contains(e.target as Node))
-        setNotifOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -86,73 +81,30 @@ export default function TopHeader() {
       {/* Divider */}
       <div className="h-6 w-px bg-neutral-200 shrink-0" />
 
-      {/* ── Global Search Card (h-10 matching role and profile cards) ── */}
-      <div className="relative w-80 max-w-sm">
-        <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-        <input
-          id="global-search"
-          type="text"
-          placeholder="Search global records..."
-          value={searchValue}
-          onChange={(e) => setSearchValue(e.target.value)}
-          className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] pl-10 pr-4 text-sm text-neutral-700 outline-none transition-all placeholder:text-neutral-400 focus:border-[#9e3600]/40 focus:bg-white focus:ring-2 focus:ring-[#9e3600]/10"
-        />
-      </div>
+      {/* ── Institute Title ───────────────────────────────────────────
+           Matches the name printed on the Membership Card, Signature Card and
+           Passbook templates, so the screen and the printed documents agree.
+           Truncates rather than pushing the role and profile cards off a narrow
+           screen — those are functional, this is identification. */}
+      <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-[#9e3600]">
+        Future Finance Institute
+      </h1>
 
       {/* ── Spacer ────────────────────────────────────────────────────── */}
       <div className="flex-1" />
 
-      {/* ── Role Badge Card (h-10 matching search and profile cards) ── */}
+      {/* ── Role Badge Card (h-10, matching the profile card) ── */}
       <div className="flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3.5 shrink-0">
         <Shield className="h-4 w-4 text-[#9e3600]" />
         <span className="text-xs font-medium text-neutral-500">Role :</span>
         <span className="text-xs font-semibold text-[#9e3600]">{roleLabel}</span>
       </div>
 
-      {/* ── Notification Bell Card (h-10 w-10) ────────────────────────── */}
-      <div ref={notifRef} className="relative shrink-0">
-        <button
-          id="notification-bell"
-          onClick={() => { setNotifOpen((v) => !v); setProfileOpen(false); }}
-          className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-[#f4f4f5] text-neutral-500 transition-colors hover:border-[#9e3600]/30 hover:bg-[#fdf5f2] hover:text-[#9e3600]"
-        >
-          <Bell className="h-4.5 w-4.5" />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#9e3600] ring-2 ring-white" />
-        </button>
-
-        {notifOpen && (
-          <div className="absolute right-0 top-12 z-50 w-72 rounded-xl border border-neutral-200 bg-white shadow-lg">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
-              <span className="text-sm font-semibold text-neutral-800">Notifications</span>
-              <span className="rounded-full bg-[#9e3600]/10 px-2 py-0.5 text-xs font-medium text-[#9e3600]">3 new</span>
-            </div>
-            <div className="divide-y divide-neutral-50">
-              {[
-                { title: "New member application", time: "5 min ago", dot: "bg-blue-500" },
-                { title: "Board approval pending", time: "1 hr ago", dot: "bg-[#9e3600]" },
-                { title: "Scholarship request submitted", time: "2 hr ago", dot: "bg-green-500" },
-              ].map((n, i) => (
-                <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-[#fdf5f2]/60 cursor-pointer transition-colors">
-                  <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.dot}`} />
-                  <div>
-                    <p className="text-sm font-medium text-neutral-700">{n.title}</p>
-                    <p className="text-xs text-neutral-400">{n.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-neutral-100 px-4 py-2.5">
-              <button className="text-xs font-medium text-[#9e3600] hover:underline">View all notifications</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Profile / Logout Card (h-10 matching search and role cards) ── */}
+      {/* ── Profile / Logout Card (h-10, matching the role card) ── */}
       <div ref={profileRef} className="relative shrink-0">
         <button
           id="profile-menu-trigger"
-          onClick={() => { setProfileOpen((v) => !v); setNotifOpen(false); }}
+          onClick={() => setProfileOpen((v) => !v)}
           className="flex h-10 items-center gap-2.5 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 transition-colors hover:border-[#9e3600]/30 hover:bg-[#fdf5f2]"
         >
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shrink-0 shadow-xs overflow-hidden">

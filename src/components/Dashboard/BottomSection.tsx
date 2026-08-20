@@ -4,8 +4,31 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { Button } from "@/src/components/ui/button"
 import { Activity, ClipboardList } from "lucide-react"
+import { apiClient } from "@/lib/api/client"
+import { getRecentActivity, AuditDTO } from "@/lib/api/audit"
 import { getMemberApplications, MemberApplicationDTO } from "@/lib/api/memberApplications"
 import { getMembers, MemberDTO } from "@/lib/api/member"
+import { useAuth, type UserRole } from "@/lib/auth-context"
+import { REGISTRATION_ROLES, hasRole } from "@/lib/permissions"
+
+/**
+ * Dashboard lower row: Recent Activity and Pending Tasks.
+ *
+ * Rebuilt because both cards previously derived everything from one call to
+ * getMemberApplications(). "Recent Activity" listed the newest member applications
+ * under the subtitle "latest actions across the system", and "Termination Requests"
+ * counted applications whose boardDecisionReason contained the substring
+ * "termination" — a heuristic the label itself admitted to with "(detected)".
+ *
+ * Both now read the tables they name: the audit trail for activity, and
+ * /api/termination-requests for terminations.
+ *
+ * Role handling matters here. MemberController, MemberApplicationController and
+ * AuditController are all restricted, so the old unconditional fetches meant
+ * SCHOLARSHIP_OFFICER and DEATH_DONATION_OFFICER landed on the home page and saw two
+ * "You do not have permission" boxes. Each query is now gated on the caller's role and
+ * each card is hidden when there is nothing it may show.
+ */
 
 const cardStyle: React.CSSProperties = {
   borderRadius: '16px',
@@ -20,95 +43,155 @@ const cardStyle: React.CSSProperties = {
   overflow: 'hidden',
 }
 
+// AuditController's own @PreAuthorize list — ACCOUNTS is included there because it can
+// edit remittance details and so appears in the trail.
+const AUDIT_ROLES: UserRole[] = [
+  "DISTRICT_OFFICE",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+  "ACCOUNTS",
+  "SUPER_ADMIN",
+]
+
+const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL"]
+
+/** Null means "not loaded" — rendered as "—" so it is never mistaken for a real zero. */
+type Data = {
+  activity: AuditDTO[] | null
+  applications: MemberApplicationDTO[] | null
+  members: MemberDTO[] | null
+  pendingTerminations: number | null
+}
+
 export default function BottomSection() {
-  const [applications, setApplications] = useState<MemberApplicationDTO[]>([])
-  const [members, setMembers] = useState<MemberDTO[]>([])
+  const { user } = useAuth()
+  const role = user?.role
+
+  const canSeeMemberData = hasRole(role, REGISTRATION_ROLES)
+  const canSeeActivity = hasRole(role, AUDIT_ROLES)
+
+  const [data, setData] = useState<Data>({
+    activity: null,
+    applications: null,
+    members: null,
+    pendingTerminations: null,
+  })
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
+
     async function load() {
-      try {
-        setLoading(true)
-        const [apps, mems] = await Promise.all([getMemberApplications(), getMembers()])
-        if (!mounted) return
-        setApplications(apps ?? [])
-        setMembers(mems ?? [])
-      } catch (err: any) {
-        setError(err?.message ?? String(err))
-      } finally {
-        if (mounted) setLoading(false)
-      }
+      setLoading(true)
+
+      // allSettled, not all: a single denied or failing endpoint must not blank the
+      // whole row, which is what the previous shared `error` state did.
+      const [activity, applications, members, terminations] = await Promise.allSettled([
+        canSeeActivity ? getRecentActivity(5) : Promise.resolve(null),
+        canSeeMemberData ? getMemberApplications() : Promise.resolve(null),
+        canSeeMemberData ? getMembers() : Promise.resolve(null),
+        canSeeMemberData
+          ? apiClient
+              .get<unknown[]>("/api/termination-requests", {
+                params: { statuses: TERMINATION_PENDING },
+              })
+              .then((res) => res.data)
+          : Promise.resolve(null),
+      ])
+
+      if (!mounted) return
+
+      const value = <T,>(result: PromiseSettledResult<T | null>): T | null =>
+        result.status === "fulfilled" ? result.value : null
+
+      const terminationRows = value(terminations)
+
+      setData({
+        activity: value(activity),
+        applications: value(applications),
+        members: value(members),
+        pendingTerminations: Array.isArray(terminationRows) ? terminationRows.length : null,
+      })
+      setLoading(false)
     }
-    load()
+
+    void load()
     return () => {
       mounted = false
     }
-  }, [])
+  }, [canSeeActivity, canSeeMemberData])
 
-  const totalMembers = members.length
-  const totalApplications = applications.length
-  const pendingApplications = applications.filter(a => a.status === 'NEW' || a.status === 'SUBMITTED_FOR_APPROVAL').length
-  const terminationRequests = applications.filter(a => a.boardDecisionReason?.toLowerCase()?.includes('termination')).length
+  const applications = data.applications ?? []
+  const totalMembers = data.members?.length ?? null
+  const totalApplications = data.applications?.length ?? null
+  const pendingApplications = data.applications
+    ? applications.filter((a) => a.status === 'NEW' || a.status === 'SUBMITTED_FOR_APPROVAL').length
+    : null
 
-  const recentActivities = [...applications]
-    .sort((a, b) => (b.applicationDate ?? '').localeCompare(a.applicationDate ?? ''))
-    .slice(0, 5)
+  const show = (value: number | null) => (loading ? '…' : value ?? '—')
+
+  // Nothing this role may see — render nothing rather than a row of error boxes.
+  if (!canSeeActivity && !canSeeMemberData) {
+    return null
+  }
+
+  const gridColumns = canSeeActivity && canSeeMemberData ? '1fr 1fr' : '1fr'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '24px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: gridColumns, gap: '16px', marginTop: '24px' }}>
 
-      {/* Recent Activity */}
-      <div style={cardStyle}>
-        <div className="flex items-center gap-2 mb-1">
-          <Activity className="h-5 w-5 text-[#953002]" />
-          <h2 className="text-lg font-semibold text-[#953002]">Recent Activity</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">Latest actions across the system</p>
-
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : error ? (
-          <p className="text-sm text-red-600">Error: {error}</p>
-        ) : (
-          <div className="space-y-4">
-            {recentActivities.length === 0 && (
-              <p className="text-sm text-muted-foreground">No recent activity</p>
-            )}
-
-            {recentActivities.map((app) => (
-              <div key={app.id ?? app.applicationID} className="flex gap-3 items-start">
-                <div className="h-2 w-2 rounded-full bg-blue-500 mt-[5px] flex-shrink-0" />
-                <div style={{ minWidth: 0 }}>
-                  <p className="font-medium text-sm">{app.fullName ?? app.applicationID ?? 'Application'}</p>
-                  <p className="text-sm text-muted-foreground">Status: {app.status ?? '—'}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{app.applicationDate ? new Date(app.applicationDate).toLocaleString() : '—'}</p>
-                </div>
-              </div>
-            ))}
+      {/* Recent Activity — the audit trail, which is the only record of actions from
+          every module rather than member applications alone. */}
+      {canSeeActivity && (
+        <div style={cardStyle}>
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="h-5 w-5 text-[#953002]" />
+            <h2 className="text-lg font-semibold text-[#953002]">Recent Activity</h2>
           </div>
-        )}
-      </div>
+          <p className="text-sm text-muted-foreground mb-4">Latest actions across the system</p>
+
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : data.activity === null ? (
+            <p className="text-sm text-muted-foreground">Activity could not be loaded</p>
+          ) : data.activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No recent activity</p>
+          ) : (
+            <div className="space-y-4" style={{ overflowY: 'auto' }}>
+              {data.activity.map((entry, index) => (
+                <div key={entry.id ?? index} className="flex gap-3 items-start">
+                  <div className="h-2 w-2 rounded-full bg-blue-500 mt-[5px] flex-shrink-0" />
+                  <div style={{ minWidth: 0 }}>
+                    <p className="font-medium text-sm">{entry.actionName ?? 'Action'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {entry.moduleName?.replace(/_/g, ' ') ?? '—'}
+                      {entry.actionBy ? ` · ${entry.actionBy}` : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {entry.actionAt ? new Date(entry.actionAt).toLocaleString() : '—'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pending Tasks */}
-      <div style={cardStyle}>
-        <div className="flex items-center gap-2 mb-1">
-          <ClipboardList className="h-5 w-5 text-[#953002]" />
-          <h2 className="text-lg font-semibold text-[#953002]">Pending Tasks</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">Action items requiring your attention</p>
+      {canSeeMemberData && (
+        <div style={cardStyle}>
+          <div className="flex items-center gap-2 mb-1">
+            <ClipboardList className="h-5 w-5 text-[#953002]" />
+            <h2 className="text-lg font-semibold text-[#953002]">Pending Tasks</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">Action items requiring your attention</p>
 
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : error ? (
-          <p className="text-sm text-red-600">Error: {error}</p>
-        ) : (
           <div className="space-y-3">
             <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
               <div style={{ minWidth: 0 }}>
                 <p className="font-medium text-sm">Total Members</p>
-                <p className="text-sm text-muted-foreground">{totalMembers} member(s)</p>
+                <p className="text-sm text-muted-foreground">{show(totalMembers)} member(s)</p>
               </div>
               <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
                 <Link href="/membership/directory">View</Link>
@@ -118,7 +201,7 @@ export default function BottomSection() {
             <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
               <div style={{ minWidth: 0 }}>
                 <p className="font-medium text-sm">New Member Applications</p>
-                <p className="text-sm text-muted-foreground">{pendingApplications} application(s) waiting for review.</p>
+                <p className="text-sm text-muted-foreground">{show(pendingApplications)} application(s) waiting for review.</p>
               </div>
               <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
                 <Link href="/membership/new-registrations">View</Link>
@@ -128,25 +211,27 @@ export default function BottomSection() {
             <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
               <div style={{ minWidth: 0 }}>
                 <p className="font-medium text-sm">Total Applications</p>
-                <p className="text-sm text-muted-foreground">{totalApplications} submitted</p>
+                <p className="text-sm text-muted-foreground">{show(totalApplications)} submitted</p>
               </div>
               <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
                 <Link href="/membership/new-registrations">View</Link>
               </Button>
             </div>
 
+            {/* Counts termination_request rows, not applications whose text happens to
+                contain "termination". */}
             <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
               <div style={{ minWidth: 0 }}>
-                <p className="font-medium text-sm">Termination Requests (detected)</p>
-                <p className="text-sm text-muted-foreground">{terminationRequests} request(s) detected</p>
+                <p className="font-medium text-sm">Termination Requests</p>
+                <p className="text-sm text-muted-foreground">{show(data.pendingTerminations)} awaiting approval</p>
               </div>
               <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
                 <Link href="/membership/termination">View</Link>
               </Button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
     </div>
   )

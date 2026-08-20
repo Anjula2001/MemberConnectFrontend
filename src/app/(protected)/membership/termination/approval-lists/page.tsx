@@ -10,7 +10,9 @@ import {
   ArrowRight,
   CircleDollarSign,
   FileText,
+  Printer,
   Search,
+  ShieldAlert,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,12 +33,12 @@ import {
   getTerminationApprovalLists,
   processTerminationApprovalList,
   type TerminationApprovalListDTO,
+  type TerminationRequestDecision,
 } from "@/lib/api/terminationApprovalLists";
-import {
-  approveTerminationRequest,
-  rejectTerminationRequest,
-  type TerminationRequestResponse,
-} from "@/lib/api/terminationRequests";
+import { type TerminationRequestResponse } from "@/lib/api/terminationRequests";
+import { apiClient } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth-context";
+import { DELETE_RIGHTS_ROLES, TERMINATION_BOARD_ROLES, hasRole } from "@/lib/permissions";
 
 type RequestDecision = "Approve" | "Reject";
 
@@ -51,6 +53,21 @@ type ApprovalRequestRow = {
   rejectReason?: string;
 };
 
+/** MMT10 shows date *and* time, so this keeps the clock component. */
+function formatProcessedAt(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
 function formatDisplayDate(value: string) {
   if (!value) return "";
   const [year, month, day] = value.split("-");
@@ -60,6 +77,7 @@ function formatDisplayDate(value: string) {
 export default function TerminationApprovalListsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const initialListId = searchParams.get("listId") ?? "";
 
   const [dateFilter, setDateFilter] = useState("all");
@@ -71,6 +89,10 @@ export default function TerminationApprovalListsPage() {
     Record<number, { decision: RequestDecision; rejectReason: string }>
   >({});
   const [boardRemarks, setBoardRemarks] = useState("");
+  // MMT09: the meeting may have been postponed, so the date actually sat is
+  // captured separately from the date it was scheduled for.
+  const [actualMeetingDate, setActualMeetingDate] = useState("");
+  const [approvalSheetFile, setApprovalSheetFile] = useState<File | null>(null);
   const [isRetrievingLists, setIsRetrievingLists] = useState(false);
   const [isRetrievingRequests, setIsRetrievingRequests] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -201,6 +223,12 @@ export default function TerminationApprovalListsPage() {
     });
     setRequestDecisions(initialDecisions);
     setBoardRemarks(selectedApprovalList?.boardRemarks ?? "");
+    setActualMeetingDate(
+      selectedApprovalList?.actualMeetingDate ??
+        selectedApprovalList?.boardMeetingDate ??
+        todayDate
+    );
+    setApprovalSheetFile(null);
     setRequestsRetrieved(true);
   };
 
@@ -249,38 +277,44 @@ export default function TerminationApprovalListsPage() {
     try {
       setIsProcessing(true);
 
-      const decisionsArray = Object.values(requestDecisions).map((d) => d.decision);
-      const listDecision: RequestDecision = decisionsArray.includes("Approve")
-        ? "Approve"
-        : "Reject";
+      // One call, one transaction. The server validates every decision before it
+      // writes anything and applies them together, so the list can no longer end
+      // up marked processed while some members were never updated.
+      const decisions: TerminationRequestDecision[] = selectedListRequests.map(
+        (request) => {
+          const decisionState = requestDecisions[request.id];
+          const decision: RequestDecision = decisionState?.decision ?? "Approve";
+
+          return {
+            requestNo: request.requestNo,
+            decision,
+            rejectReason:
+              decision === "Reject" ? decisionState?.rejectReason?.trim() : undefined,
+          };
+        }
+      );
+
+      // The scanned, board-signed sheet. A failed upload must not lose the
+      // meeting, so the filename is stored as a fallback reference.
+      let approvedListDocument: string | undefined;
+      if (approvalSheetFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", approvalSheetFile);
+          const { data } = await apiClient.post<string>("/api/file/upload", formData);
+          approvedListDocument = data;
+        } catch (uploadError) {
+          console.warn("Approval sheet upload failed, storing filename:", uploadError);
+          approvedListDocument = approvalSheetFile.name;
+        }
+      }
 
       await processTerminationApprovalList(selectedApprovalListId, {
-        actualMeetingDate: todayDate,
-        decision: listDecision,
+        actualMeetingDate: actualMeetingDate || todayDate,
+        requestDecisions: decisions,
         boardRemarks,
-        processedBy: "Head Office User",
-        rejectReason:
-          listDecision === "Reject"
-            ? Object.values(requestDecisions).find((d) => d.decision === "Reject")
-              ?.rejectReason ?? ""
-            : undefined,
+        approvedListDocument,
       });
-
-      await Promise.allSettled(
-        selectedListRequests.map(async (request) => {
-          const decisionState = requestDecisions[request.id];
-          const decision = decisionState?.decision ?? "Approve";
-
-          if (decision === "Approve") {
-            await approveTerminationRequest(request.requestNo);
-          } else {
-            await rejectTerminationRequest(
-              request.requestNo,
-              decisionState?.rejectReason?.trim() || "Rejected by board"
-            );
-          }
-        })
-      );
 
       setApprovalLists((prev) =>
         prev.map((item) =>
@@ -309,7 +343,15 @@ export default function TerminationApprovalListsPage() {
       setShowToast(true);
     } catch (error) {
       console.error("Error processing termination approval list:", error);
-      setToastMessage("Failed to process termination approval list");
+      // The server validates the whole list before writing anything and says
+      // exactly which request was at fault ("A rejection reason is required for
+      // T-2026-004"). apiClient already unwraps that into Error.message, so show
+      // it rather than a generic failure the user cannot act on.
+      setToastMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to process termination approval list"
+      );
       setShowToast(true);
     } finally {
       setIsProcessing(false);
@@ -321,6 +363,21 @@ export default function TerminationApprovalListsPage() {
   ).length;
   const rejectedCount = selectedListRequests.length - approvedCount;
 
+  // Server-side @PreAuthorize is the real gate; this keeps a role that cannot
+  // use the screen from being shown a page of failing requests.
+  if (user && !hasRole(user.role, TERMINATION_BOARD_ROLES)) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600 shadow-sm">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
+        <p className="mt-2 max-w-md text-sm text-neutral-500">
+          Termination Approval Lists are restricted to Head Office and Board Secretariat personnel.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
       <Link
@@ -447,17 +504,80 @@ export default function TerminationApprovalListsPage() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* MMT10: "The name of the user who processed the list along with
+                    the date and time will be displayed." */}
+                {isSelectedListProcessed && (
+                  <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
+                    <p className="font-semibold text-neutral-700">
+                      This list has been processed and is read-only.
+                    </p>
+                    <dl className="mt-2 grid gap-x-8 gap-y-1 sm:grid-cols-2">
+                      <div className="flex gap-2">
+                        <dt className="text-neutral-500">Processed by</dt>
+                        <dd className="text-neutral-900">
+                          {selectedApprovalList?.processedBy || "—"}
+                        </dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-neutral-500">Processed on</dt>
+                        <dd className="text-neutral-900">
+                          {formatProcessedAt(selectedApprovalList?.processedAt)}
+                        </dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-neutral-500">Board decision</dt>
+                        <dd className="text-neutral-900">
+                          {selectedApprovalList?.decision || "—"}
+                        </dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-neutral-500">Actual meeting date</dt>
+                        <dd className="text-neutral-900">
+                          {formatDisplayDate(selectedApprovalList?.actualMeetingDate ?? "") || "—"}
+                        </dd>
+                      </div>
+                    </dl>
+                    {selectedApprovalList?.boardRemarks && (
+                      <p className="mt-2 text-neutral-600">
+                        Remarks: {selectedApprovalList.boardRemarks}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Once processed there is no Print and no Process — the meeting
+                    the sheet was printed for is over. */}
                 {!isSelectedListProcessed && (
                   <div className="flex items-center justify-end gap-2">
                     <Button
                       type="button"
-                      className="h-8 bg-rose-600 px-3 text-white hover:bg-rose-700"
-                      onClick={() => setShowDeleteModal(true)}
+                      variant="outline"
+                      className="h-8 px-3"
+                      onClick={() =>
+                        router.push(
+                          `/membership/termination/approval-lists/print/${encodeURIComponent(
+                            selectedApprovalListId
+                          )}`
+                        )
+                      }
                       disabled={!selectedApprovalListId}
                     >
-                      <Trash2 size={14} />
-                      Delete List
+                      <Printer size={14} />
+                      Print
                     </Button>
+                    {/* MMT07 calls delete a separate privilege, narrower than
+                        ordinary Head Office access. */}
+                    {hasRole(user?.role, DELETE_RIGHTS_ROLES) && (
+                      <Button
+                        type="button"
+                        className="h-8 bg-rose-600 px-3 text-white hover:bg-rose-700"
+                        onClick={() => setShowDeleteModal(true)}
+                        disabled={!selectedApprovalListId}
+                      >
+                        <Trash2 size={14} />
+                        Delete List
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -626,6 +746,43 @@ export default function TerminationApprovalListsPage() {
               </p>
               <p>Approved: {approvedCount}</p>
               <p>Rejected: {rejectedCount}</p>
+
+              <div className="space-y-1 pt-2">
+                <label
+                  htmlFor="actual-meeting-date"
+                  className="block text-xs font-semibold text-gray-600"
+                >
+                  Actual Board Meeting Date
+                </label>
+                <Input
+                  id="actual-meeting-date"
+                  type="date"
+                  value={actualMeetingDate}
+                  max={todayDate}
+                  onChange={(event) => setActualMeetingDate(event.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  Scheduled for {formatDisplayDate(selectedApprovalList?.boardMeetingDate ?? "")}.
+                  Change this only if the meeting was postponed.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="approval-sheet"
+                  className="block text-xs font-semibold text-gray-600"
+                >
+                  Signed Approval Sheet (optional)
+                </label>
+                <input
+                  id="approval-sheet"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(event) => setApprovalSheetFile(event.target.files?.[0] ?? null)}
+                  className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border file:border-neutral-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
+                />
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowConfirmModal(false)}>
                   Cancel
@@ -649,7 +806,9 @@ export default function TerminationApprovalListsPage() {
             <div className="px-5 pt-5">
               <h2 className="text-xl font-semibold text-[#953002]">Delete Approval List</h2>
               <p className="mt-2 text-sm text-gray-600">
-                This will remove the list and return attached requests to Submitted for Approval.
+                This will remove the list and return each attached request to the
+                status it held before it was listed — Submitted for Approval, or
+                Rejected if it had been refused at an earlier meeting.
               </p>
             </div>
             <div className="flex justify-end gap-2 px-5 pb-5">
