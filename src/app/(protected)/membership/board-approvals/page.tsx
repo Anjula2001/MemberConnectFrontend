@@ -67,14 +67,33 @@ type ApplicationDecision = "Approve" | "Reject";
 
 type ApprovalListKind = "membership" | "termination";
 
+/**
+ * What the list actually holds. Separate from `kind`, which drives behaviour (which
+ * endpoint to retrieve from) and must stay "membership" for every BAL - a name change
+ * list is still a membership-side board approval list.
+ */
+type ApprovalListContent = "applications" | "name-change" | "nominee-change" | "termination";
+
 type ApprovalListRow = {
   kind: ApprovalListKind;
+  /** Drives the badge and the count's noun; derived from the list's contents. */
+  content: ApprovalListContent;
   listId: string;
   status?: string;
   boardMeetingId?: number;
   boardMeetingDate?: string;
   createdAt?: string;
   itemCount: number;
+};
+
+const CONTENT_BADGES: Record<
+  ApprovalListContent,
+  { label: string; className: string; noun: string }
+> = {
+  applications: { label: "Membership", className: "bg-blue-50 text-blue-700", noun: "applications" },
+  "name-change": { label: "Name Change", className: "bg-violet-50 text-violet-700", noun: "requests" },
+  "nominee-change": { label: "Nominee Change", className: "bg-emerald-50 text-emerald-700", noun: "requests" },
+  termination: { label: "Termination", className: "bg-[#f7ede8] text-[#953002]", noun: "requests" },
 };
 
 type ApprovalApplication = {
@@ -408,20 +427,35 @@ export default function BoardApprovalsPage() {
   const combinedApprovalLists = useMemo<ApprovalListRow[]>(() => {
     const membershipRows: ApprovalListRow[] = approvalLists
       .filter((item) => Boolean(item.listId))
-      .map((item) => ({
-        kind: "membership" as const,
-        listId: item.listId as string,
-        status: item.status,
-        boardMeetingId: item.boardMeetingId,
-        boardMeetingDate: item.boardMeetingDate,
-        createdAt: item.createdAt,
-        itemCount: item.applicationIds?.length ?? 0,
-      }));
+      .map((item) => {
+        // A list holds one kind of record - MMC08 and MMC21 only allow a homogeneous
+        // selection - so the first non-empty collection identifies it. Counting the
+        // matching collection also fixes name and nominee lists showing no count at
+        // all, because only applicationIds was ever counted.
+        const names = item.nameChangeRequestIds?.length ?? 0;
+        const nominees = item.nomineeChangeRequestIds?.length ?? 0;
+        const applications = item.applicationIds?.length ?? 0;
+
+        const content: ApprovalListContent =
+          names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
+
+        return {
+          kind: "membership" as const,
+          content,
+          listId: item.listId as string,
+          status: item.status,
+          boardMeetingId: item.boardMeetingId,
+          boardMeetingDate: item.boardMeetingDate,
+          createdAt: item.createdAt,
+          itemCount: names > 0 ? names : nominees > 0 ? nominees : applications,
+        };
+      });
 
     const terminationRows: ApprovalListRow[] = terminationApprovalLists
       .filter((item) => Boolean(item.listId))
       .map((item) => ({
         kind: "termination" as const,
+        content: "termination" as const,
         listId: item.listId as string,
         status: item.status,
         boardMeetingId: item.boardMeetingId,
@@ -1113,22 +1147,16 @@ export default function BoardApprovalsPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-medium text-gray-800">{item.listId}</p>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                item.kind === "termination"
-                                  ? "bg-[#f7ede8] text-[#953002]"
-                                  : "bg-blue-50 text-blue-700"
-                              }`}
+                              className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + CONTENT_BADGES[item.content].className}
                             >
-                              {item.kind === "termination" ? "Termination" : "Membership"}
+                              {CONTENT_BADGES[item.content].label}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {item.boardMeetingDate ?? "-"}
                             {item.boardMeetingId ? ` (${item.boardMeetingId})` : ""}
                             {item.itemCount
-                              ? ` · ${item.itemCount} ${
-                                  item.kind === "termination" ? "requests" : "applications"
-                                }`
+                              ? " · " + item.itemCount + " " + CONTENT_BADGES[item.content].noun
                               : ""}
                           </p>
                         </div>
