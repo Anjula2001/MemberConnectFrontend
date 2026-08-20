@@ -1,352 +1,504 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Send, Trash2, Plus, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+
 import { apiClient } from '@/lib/api/client';
 import { getMemberById } from '@/lib/api/member';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
+import {
+  hasRole,
+  PROFILE_CHANGE_DIRECT_APPROVAL_ROLES,
+  PROFILE_CHANGE_EDIT_ROLES,
+} from '@/lib/permissions';
 
-// --- Type Definitions ---
-// ReadonlyAccount represents existing remittance deductions currently on the member's record.
-// MutableAccount represents the new remittance items that the user can change and submit.
-interface ReadonlyAccount {
-  id: string;
-  type: string;
-  amount: number;
-}
+/**
+ * Remittance Amount Change Request Entry (Requirement 02, MMC14–MMC17).
+ *
+ * The screen is driven entirely by the backend's line rows: one per editable account,
+ * each carrying the amount that stood when the request was raised and the amount being
+ * asked for. It used to render two hardcoded arrays of demo accounts, let the user add
+ * and remove rows freely, and then flatten the lot into a single amount and a single
+ * account type on submit — so the per-account detail the SRS is about never reached the
+ * server.
+ *
+ * Accounts are fixed rows here rather than a free list, because MMC14 says the New Value
+ * section is "the editable remittance accounts created for the Member" — the member does
+ * not invent accounts, they revise the amounts on the ones they hold.
+ */
 
-interface MutableAccount {
-  id: string;
-  type: string;
-  amount: string;
-}
-
-interface SectionCardProps {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}
-
-// --- Constants ---
-const PREDEFINED_ACCOUNT_TYPES = [
-  'Share Account',
-  'Special Deposit',
-  'Retirement Fund',
-  'Welfare Fund',
-];
-
-const INITIAL_READONLY_ACCOUNTS: ReadonlyAccount[] = [
-  { id: 'ro1', type: 'Share Account', amount: 500 },
-  { id: 'ro2', type: 'Special Deposit', amount: 1000 },
-];
-
-const INITIAL_MUTABLE_ACCOUNTS: MutableAccount[] = [
-  { id: 'm1', type: 'Share Account', amount: '500' },
-  { id: 'm2', type: 'Special Deposit', amount: '1000' },
-];
-
-// --- Utility: Format Currency ---
-const formatCurrency = (amount: number): string => {
-  return `LKR ${amount.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
+type Line = {
+  accountCode: string;
+  accountName: string;
+  oldAmount: number | null;
+  newAmount: number | null;
+  minimumAmount: number | null;
+  mandatory: boolean | null;
 };
 
-export default function RemittanceChangePage({ editId, memberId }: { editId?: string; memberId?: string }) {
-  const router = useRouter();
-  const STATUS_OPTIONS = [
-    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
-    { value: 'REJECTED', label: 'Rejected' },
-    { value: 'INACTIVE', label: 'Inactive' },
-    { value: 'PENDING', label: 'Pending' },
-  ];
+type RequestDTO = {
+  id?: number;
+  requestNo?: string | null;
+  memberId?: string | null;
+  status?: string | null;
+  requestedDate?: string | null;
+  rejectReason?: string | null;
+  submissionLocation?: string | null;
+  processedBy?: string | null;
+  memberFullName?: string | null;
+  memberNameWithInitials?: string | null;
+  memberNic?: string | null;
+  lines?: Line[];
+};
 
-  const [mounted, setMounted] = useState(false);
-  const [memberName, setMemberName] = useState<string | null>(null);
-  const [mutableAccounts, setMutableAccounts] = useState<MutableAccount[]>(INITIAL_MUTABLE_ACCOUNTS);
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [loadingRequest, setLoadingRequest] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+const money = (v: number | null | undefined) =>
+  v == null ? '—' : `Rs. ${Number(v).toLocaleString('en-LK', { minimumFractionDigits: 2 })}`;
+
+export default function RemittanceChangePage({
+  editId,
+  memberId,
+}: {
+  editId?: string;
+  memberId?: string;
+}) {
+  const router = useRouter();
+  const { addToast } = useToast();
+  const { user } = useAuth();
+
   const isEditMode = Boolean(editId);
 
-  const normalizeAmount = (value: string) => {
-    const parsed = parseFloat(value.replace(/,/g, ""));
-    return Number.isFinite(parsed) ? parsed : 0;
+  // MMC17's approval authority, and the client's edit rule: District Office raises a
+  // remittance change but neither decides nor revises one.
+  const canDecide = hasRole(user?.role, PROFILE_CHANGE_DIRECT_APPROVAL_ROLES);
+  const canEdit = hasRole(user?.role, PROFILE_CHANGE_EDIT_ROLES);
+
+  const [request, setRequest] = useState<RequestDTO | null>(null);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const status = request?.status ?? null;
+  const isLocked = isEditMode && !isEditing;
+  const isPending =
+    status === 'SUBMITTED_FOR_APPROVAL' || status === 'ADDED_TO_BOARD_APPROVAL_LIST';
+
+  // ── Load ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    /**
+     * The memberId prop is the Member table's numeric primary key — the member profile
+     * links here with its own route param, not with the membership number. Every
+     * request API is keyed by the membership number (MEM-2026-001), so the member is
+     * resolved first and its memberId used. Passing the route param straight through
+     * produced "No member found with membership number 1".
+     */
+    const load = async (): Promise<RequestDTO> => {
+      if (editId) {
+        const res = await apiClient.get(`/api4/remitance/getRemitanceById/${editId}`);
+        return res.data?.data ?? res.data;
+      }
+
+      if (!memberId) {
+        throw new Error('No member or request was specified.');
+      }
+
+      const member = await getMemberById(Number(memberId));
+      if (!member?.memberId) {
+        throw new Error('This member has no membership number yet.');
+      }
+
+      const res = await apiClient.get(
+        `/api4/remitance/new/${encodeURIComponent(member.memberId)}`
+      );
+      return res.data?.data ?? res.data;
+    };
+
+    load()
+      .then((data) => {
+        if (cancelled) return;
+        setRequest(data);
+        setLines(data.lines ?? []);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error ? err.message : 'Could not load the remittance details.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, memberId]);
+
+  const setAmount = (code: string, raw: string) => {
+    const value = raw === '' ? null : Number(raw);
+    setLines((prev) =>
+      prev.map((l) => (l.accountCode === code ? { ...l, newAmount: value } : l))
+    );
   };
 
-  // Validation helper for the remittance request.
-  // Ensures every new remittance item has a valid account type and a positive amount.
-  const validateAccounts = () => {
-    return mutableAccounts.some(acc => acc.type.trim() === '' || normalizeAmount(acc.amount) <= 0);
-  };
+  /**
+   * The same minimum the backend enforces on submit, shown inline so the user is told
+   * before the round trip. The server check is the one that counts.
+   */
+  const problemFor = useCallback((line: Line): string | null => {
+    if (line.newAmount == null) return 'Enter an amount.';
+    if (Number.isNaN(line.newAmount)) return 'Enter a number.';
+    if (line.newAmount < 0) return 'Cannot be negative.';
+    if (line.minimumAmount != null && line.newAmount < line.minimumAmount) {
+      return `Minimum is ${money(line.minimumAmount)}.`;
+    }
+    return null;
+  }, []);
 
-  // Submit remittance change request to the backend.
-  // Uses create or update route depending on whether editId is present.
-  const handleSubmit = async (overrideStatus?: string) => {
-    if (validateAccounts()) {
-      setSubmitError('Please provide valid account types and positive amounts for all remittance items.');
+  const hasProblems = lines.some((l) => problemFor(l) !== null);
+
+  // ── Submit ──────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    if (hasProblems) {
+      addToast('Correct the highlighted amounts before submitting.', 'destructive');
       return;
     }
 
     setIsSubmitting(true);
-    setSubmitError(null);
-
-    const nextStatus = overrideStatus ?? selectedStatus;
-    const accountType = mutableAccounts[0]?.type || 'Share Account';
-
-    const payload: any = {
-      newRemittanceAmount: totalNewRemittance.toString(),
-      newRemittanceCurrency: 'LKR',
-      remittanceAccountType: accountType,
-      ...(memberId ? { memberId } : {}),
-      // Status is owned by the backend: it stamps Submitted for Approval on submit,
-      // and decisions go through the approve/reject endpoint rather than this payload.
+    const payload = {
+      memberId: request?.memberId,
+      submissionLocation: request?.submissionLocation,
+      lines: lines.map((l) => ({ accountCode: l.accountCode, newAmount: l.newAmount })),
     };
 
     try {
-      if (isEditMode) {
-        await apiClient.put(`/api4/remitance/updateRemitance/${editId}`, payload);
-        alert('Remittance change updated successfully.');
-      } else {
-        await apiClient.post('/api4/remitance/saveRemitance', payload);
-        alert('Remittance change submitted successfully.');
-      }
+      const res = isEditMode
+        ? await apiClient.put(`/api4/remitance/updateRemitance/${editId}`, payload)
+        : await apiClient.post('/api4/remitance/saveRemitance', payload);
+
+      const saved: RequestDTO = res.data?.data ?? res.data;
+      setRequest(saved);
+      setLines(saved.lines ?? lines);
+      setIsEditing(false);
+      addToast(
+        isEditMode
+          ? 'Request updated and sent back for approval.'
+          : `Remittance change request ${saved.requestNo ?? ''} submitted.`.trim()
+      );
       router.push('/membership/profile-changes');
-    } catch (error: any) {
-      setSubmitError(error instanceof Error ? error.message : 'Failed to submit remittance change.');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error ? err.message : 'Could not submit the request.',
+        'destructive'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleApproveRequest = async () => {
-    setSelectedStatus('APPROVED');
-    await handleSubmit('APPROVED');
+  // ── Decide (MMC17) ──────────────────────────────────────────────────────
+  const decide = async (decision: 'APPROVE' | 'REJECT', reason?: string) => {
+    setIsSubmitting(true);
+    try {
+      const res = await apiClient.put(`/api4/remitance/requests/${editId}/decision`, {
+        decision,
+        rejectReason: reason,
+      });
+      const saved: RequestDTO = res.data?.data ?? res.data;
+      setRequest(saved);
+      setLines(saved.lines ?? lines);
+      addToast(
+        decision === 'APPROVE'
+          ? 'Approved. The member’s remittance amounts have been updated.'
+          : 'Request rejected.'
+      );
+      router.push('/membership/profile-changes');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error ? err.message : 'Could not record the decision.',
+        'destructive'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Fix Hydration Mismatch
-  // Force the component to render only after mounting to avoid server/client markup mismatches.
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // ── Render ──────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    if (!editId && !memberId) return;
+  if (loadError) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        {loadError}
+      </div>
+    );
+  }
 
-    const fetchRequest = async () => {
-      setLoadingRequest(true);
-      setLoadError(null);
-
-      try {
-        if (editId) {
-          const response = await apiClient.get(`/api4/remitance/getRemitanceById/${editId}`);
-          const data = response.data.data || response.data;
-
-          setMutableAccounts([
-            {
-              id: Date.now().toString(),
-              type: data.remittanceAccountType || 'Share Account',
-              amount: data.newRemittanceAmount?.toString?.() || '0',
-            },
-          ]);
-          setSelectedStatus(data.status || '');
-        }
-
-        if (memberId) {
-          const member = await getMemberById(Number(memberId));
-          setMemberName(member.fullName || member.nameWithInitials || null);
-        }
-      } catch (error: any) {
-        setLoadError(error?.message || 'Failed to load remittance request.');
-      } finally {
-        setLoadingRequest(false);
-      }
-    };
-
-    fetchRequest();
-  }, [editId, memberId]);
-
-  // -- Calculations --
-  const totalCurrentRemittance = INITIAL_READONLY_ACCOUNTS.reduce((sum, acc) => sum + acc.amount, 0);
-  const totalNewRemittance = mutableAccounts.reduce((sum, acc) => sum + (parseFloat(acc.amount) || 0), 0);
-
-  // -- Handlers --
-  const addAccount = () => {
-    setMutableAccounts([...mutableAccounts, { id: Date.now().toString(), type: 'Share Account', amount: '0' }]);
-  };
-
-  const removeAccount = (id: string) => {
-    setMutableAccounts(mutableAccounts.filter(acc => acc.id !== id));
-  };
-
-  const handleUpdate = (id: string, field: keyof MutableAccount, value: string) => {
-    setMutableAccounts(mutableAccounts.map(acc => acc.id === id ? { ...acc, [field]: value } : acc));
-  };
+  const totalOld = lines.reduce((s, l) => s + (l.oldAmount ?? 0), 0);
+  const totalNew = lines.reduce((s, l) => s + (l.newAmount ?? 0), 0);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] p-8 text-slate-800 font-sans">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="mx-auto max-w-5xl">
+      {/* Member details (MMC14) */}
+      <div className="mb-4 grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:grid-cols-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Member ID</p>
+          <p className="font-mono font-medium text-gray-800">{request?.memberId ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            Name with Initials
+          </p>
+          <p className="font-medium text-gray-800">
+            {request?.memberNameWithInitials ?? request?.memberFullName ?? '—'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">NIC</p>
+          <p className="font-medium text-gray-800">{request?.memberNic ?? '—'}</p>
+        </div>
+      </div>
 
-        {/* Header */}
-        <header className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50">
-              <ArrowLeft size={20} />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-[#8A4C27]">
-                {isEditMode ? 'Update Remittance Change Request' : 'New Remittance Change Request'}
-              </h1>
-              <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono">
-                {memberName ? `${memberName} (${memberId})` : "Johnathan Doe (MB-2023001)"}
+      <header className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            aria-label="Back"
+            onClick={() =>
+              router.push(
+                isEditMode
+                  ? '/membership/profile-changes'
+                  : memberId
+                    ? `/membership/directory/${memberId}`
+                    : '/membership/directory'
+              )
+            }
+            className="rounded-full border border-slate-200 bg-white p-2 transition-colors hover:bg-slate-50"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold leading-tight text-[#8B3205]">
+              {isEditMode
+                ? `Remittance Amount Change ${request?.requestNo ?? ''}`.trim()
+                : 'New Remittance Amount Change'}
+            </h1>
+            {request?.requestedDate && (
+              <span className="mt-1 inline-block rounded bg-gray-200 px-2 py-0.5 font-mono text-[12px] text-gray-600">
+                Requested {request.requestedDate}
               </span>
-            </div>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.back()} className="px-6 py-2 border border-slate-300 rounded-lg bg-white font-semibold">Cancel</button>
-            {isEditMode && (
+        </div>
+
+        <div className="flex items-center gap-3">
+          {status && (
+            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-orange-900">
+              {status.replace(/_/g, ' ')}
+            </span>
+          )}
+
+          {isEditMode && !isEditing && canEdit && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              disabled={isSubmitting}
+              className="rounded-lg border border-[#8B3205] px-4 py-2 text-sm font-medium text-[#8B3205] transition-all hover:bg-[#8B3205]/5 disabled:opacity-60"
+            >
+              ✏️ Edit
+            </button>
+          )}
+
+          {isEditMode && isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-sm font-medium text-gray-700"
+            >
+              Cancel
+            </button>
+          )}
+
+          {(!isEditMode || isEditing) && (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex items-center gap-2 rounded-lg bg-[#8B3205] px-6 py-2 font-bold text-white transition-all hover:bg-[#722904] disabled:opacity-60"
+            >
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              💾 Submit
+            </button>
+          )}
+
+          {isEditMode && !isEditing && isPending && canDecide && (
+            <>
               <button
                 type="button"
-                onClick={handleApproveRequest}
+                onClick={() => decide('APPROVE')}
                 disabled={isSubmitting}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-all disabled:opacity-60"
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-green-700 disabled:opacity-60"
               >
-                Approved
+                Approve
               </button>
-            )}
-            {isEditMode && (
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(true)}
+                disabled={isSubmitting}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-red-700 disabled:opacity-60"
               >
-                <option value="">Change status</option>
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            )}
-            <button
-              onClick={() => handleSubmit()}
-              disabled={isSubmitting}
-              className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400 text-slate-700 cursor-not-allowed' : 'bg-[#8A4C27] text-white hover:bg-[#733F20]'}`}
-            >
-              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-              {isSubmitting ? (isEditMode ? 'Updating...' : 'Submitting...') : (isEditMode ? 'Update Request' : 'Submit Request')}
-            </button>
-          </div>
-        </header>
+                Reject
+              </button>
+            </>
+          )}
+        </div>
+      </header>
 
-        {submitError && (
-          <div className="max-w-5xl mx-auto mb-4 rounded-lg border border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700">
-            ⚠️ {submitError}
+      {request?.rejectReason && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <span className="font-semibold">Reject reason:</span> {request.rejectReason}
+          {request.processedBy && (
+            <span className="ml-2 text-red-600">— {request.processedBy}</span>
+          )}
+        </div>
+      )}
+
+      {/* Amounts */}
+      <section className="rounded-xl border border-gray-200 bg-white p-6">
+        <h2 className="text-xl font-bold text-[#8B3205]">Remittance Amounts</h2>
+        <p className="mb-6 text-sm font-medium text-gray-500">
+          Only the accounts this member may change are listed. Each amount is checked
+          against its configured minimum on submit.
+        </p>
+
+        {lines.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-8 text-center text-sm text-gray-500">
+            This member has no editable remittance accounts.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-700">
+                    Account
+                  </th>
+                  <th className="border-b border-gray-200 px-3 py-2 text-right font-semibold text-gray-700">
+                    Current Value
+                  </th>
+                  <th className="border-b border-gray-200 px-3 py-2 text-right font-semibold text-gray-700">
+                    New Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => {
+                  const problem = problemFor(line);
+                  return (
+                    <tr key={line.accountCode}>
+                      <td className="border-b border-gray-100 px-3 py-3">
+                        <span className="font-medium text-gray-800">{line.accountName}</span>
+                        {line.minimumAmount != null && (
+                          <span className="block text-[11px] text-gray-500">
+                            Minimum {money(line.minimumAmount)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border-b border-gray-100 px-3 py-3 text-right tabular-nums text-gray-600">
+                        {money(line.oldAmount)}
+                      </td>
+                      <td className="border-b border-gray-100 px-3 py-3 text-right">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={line.newAmount ?? ''}
+                          disabled={isLocked}
+                          onChange={(e) => setAmount(line.accountCode, e.target.value)}
+                          className={`w-40 rounded-lg border px-3 py-2 text-right tabular-nums ${
+                            problem && !isLocked
+                              ? 'border-red-400 bg-red-50'
+                              : 'border-gray-300 bg-white'
+                          } ${isLocked ? 'bg-gray-100 text-gray-600' : ''}`}
+                        />
+                        {problem && !isLocked && (
+                          <span className="mt-1 block text-[11px] text-red-600">{problem}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-gray-50 font-semibold">
+                  <td className="px-3 py-3 text-gray-800">Total</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-700">
+                    {money(totalOld)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-900">
+                    {money(totalNew)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
+      </section>
 
-        {/* Section 1: Current Remittance */}
-        <SectionCard title="Current Monthly Remittance" subtitle="Current salary deductions on record">
-          <div className="space-y-3">
-            {INITIAL_READONLY_ACCOUNTS.map(account => (
-              <div key={account.id} className="grid grid-cols-2 bg-[#E9E9E9] p-5 rounded-lg border border-slate-200">
-                <ReadonlyField label="Account Type" value={account.type} />
-                <ReadonlyField label="Amount (LKR)" value={account.amount.toLocaleString()} />
-              </div>
-            ))}
+      {/* Reject reason (MMC17) */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900">Reject this request</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              The reason is sent to the member and stored against the request.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+              autoFocus
+              className="mt-4 w-full rounded-lg border border-gray-300 p-3 text-sm"
+              placeholder="Why is this being rejected?"
+            />
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!rejectReason.trim() || isSubmitting}
+                onClick={() => {
+                  setShowRejectModal(false);
+                  void decide('REJECT', rejectReason.trim());
+                  setRejectReason('');
+                }}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
           </div>
-          <div className="flex justify-between mt-6 pt-4 border-t font-bold">
-            <span>Total Monthly Deduction:</span>
-            <span>{formatCurrency(totalCurrentRemittance)}</span>
-          </div>
-        </SectionCard>
-
-        {/* Section 2: New Remittance */}
-        <SectionCard
-          title="New Monthly Remittance"
-          subtitle="Configure updated salary deductions"
-          action={
-            <button onClick={addAccount} className="px-4 py-2 bg-[#8A4C27] text-white rounded-lg flex items-center gap-2 text-sm font-semibold">
-              <Plus size={16} /> Add Account
-            </button>
-          }
-        >
-          <div className="space-y-4">
-            {mutableAccounts.map(account => (
-              <div key={account.id} className="flex items-center gap-4 p-4 border rounded-xl bg-white shadow-sm">
-                <div className="flex-1 grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Account Type *</label>
-                    <select
-                      className="border p-2 rounded-md bg-white text-sm"
-                      value={account.type}
-                      onChange={(e) => handleUpdate(account.id, 'type', e.target.value)}
-                    >
-                      {PREDEFINED_ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Amount (LKR) *</label>
-                    <input
-                      type="text"
-                      className="border p-2 rounded-md text-sm"
-                      value={account.amount}
-                      onChange={(e) => handleUpdate(account.id, 'amount', e.target.value)}
-                    />
-                  </div>
-                </div>
-                <button onClick={() => removeAccount(account.id)} className="p-2 text-red-500 bg-red-50 rounded-md mt-4 border border-red-100">
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between mt-6 pt-4 border-t font-bold">
-            <span>New Total Monthly Deduction:</span>
-            <span>{formatCurrency(totalNewRemittance)}</span>
-          </div>
-        </SectionCard>
-
-        {/* Section 3: Notes */}
-        <SectionCard title="Important Notes" subtitle="">
-          <ul className="list-disc ml-5 space-y-2 text-sm text-slate-600">
-            <li>Changes to remittance amounts will take effect from the following month</li>
-            <li>Ensure sufficient salary balance for deductions</li>
-            <li>Contact HR department for any payroll-related queries</li>
-          </ul>
-        </SectionCard>
-
-        {/* Section 4: Documents */}
-        <SectionCard title="Required Documents" subtitle="Supporting documents for remittance changes">
-          <ul className="list-disc ml-5 space-y-2 text-sm text-slate-600 mb-6">
-            <li>Completed Remittance Change Form</li>
-            <li>Current Payslip (for verification)</li>
-          </ul>
-          <div className="border-2 border-dashed border-slate-200 rounded-xl py-10 bg-slate-50 text-center text-slate-400 italic text-sm">
-            Document upload functionality (Mock)
-          </div>
-        </SectionCard>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// --- Helper Components ---
-const SectionCard = ({ title, subtitle, children, action }: SectionCardProps) => (
-  <section className="bg-white p-8 rounded-xl border shadow-sm">
-    <div className="flex justify-between items-start mb-6">
-      <div>
-        <h2 className="text-lg font-bold text-[#8A4C27]">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-    {children}
-  </section>
-);
-
-const ReadonlyField = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex flex-col gap-1">
-    <label className="text-[10px] font-bold text-slate-500 uppercase">{label}</label>
-    <span className="text-sm font-medium">{value}</span>
-  </div>
-);

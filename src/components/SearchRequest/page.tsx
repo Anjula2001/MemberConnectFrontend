@@ -5,6 +5,12 @@ import { Search, Loader2, FileCheck2, ListChecks, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { apiClient } from '@/lib/api/client';
+import { useAuth } from '@/lib/auth-context';
+import {
+  hasRole,
+  PROFILE_CHANGE_APPROVAL_LIST_ROLES,
+  PROFILE_CHANGE_DELETE_ROLES,
+} from '@/lib/permissions';
 import { createBoardApprovalList } from '@/lib/api/boardApprovalLists';
 import { getBoardMeetings, type BoardMeetingDTO } from '@/lib/api/boardMeeting';
 import {
@@ -63,6 +69,11 @@ const ALL_STATUSES = 'ALL';
 
 export default function ProfileChangeRequests() {
   const router = useRouter();
+  const { user } = useAuth();
+  // Deleting a request is open to everyone who works the module, District Office
+  // included; building a board approval list is Head Office / Board Secretary work.
+  const canDelete = hasRole(user?.role, PROFILE_CHANGE_DELETE_ROLES);
+  const canBuildApprovalList = hasRole(user?.role, PROFILE_CHANGE_APPROVAL_LIST_ROLES);
   const [mounted, setMounted] = useState(false);
   const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
 
@@ -390,7 +401,7 @@ export default function ProfileChangeRequests() {
         </div>
 
         <div className="mt-6 flex justify-end gap-3">
-          {supportsApprovalList && hasSearched && (
+          {supportsApprovalList && hasSearched && canBuildApprovalList && (
             <button
               onClick={() => setShowMeetingModal(true)}
               disabled={selectedKeys.length === 0 || loading}
@@ -514,6 +525,7 @@ export default function ProfileChangeRequests() {
                       </span>
                     </td>
                     <td className="p-4 text-right">
+                      {canDelete && (
                       <button
                         onClick={() => void handleDelete(row)}
                         disabled={deletingKey === key}
@@ -525,6 +537,7 @@ export default function ProfileChangeRequests() {
                           : <Trash2 className="w-4 h-4" />}
                         Delete
                       </button>
+                      )}
                     </td>
                   </tr>
                 );

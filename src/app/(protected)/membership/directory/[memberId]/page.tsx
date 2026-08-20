@@ -17,7 +17,7 @@ import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
-import { TESTING_ACTIVATE_ROLES, hasRole } from "@/lib/permissions";
+import { TESTING_ACTIVATE_ROLES, hasRole, PROFILE_CHANGE_CREATE_ROLES } from "@/lib/permissions";
 
 const detailTabs = [
 	"Profile Details",
@@ -73,6 +73,10 @@ export default function MemberProfilePage({
 	const [isActivating, setIsActivating] = useState(false);
 	const { addToast } = useToast();
 	const { user } = useAuth();
+	// MMC01/05/14/18 name the District Office System User as the one who raises a
+	// profile change request. Board Secretary decides them but never opens one, so the
+	// Actions entries are hidden rather than shown and refused.
+	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
 	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
 
 	// Real activation is supposed to come from the Finance Module once the member's
@@ -344,7 +348,7 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{actionGroups.profileRequests.map((item) => (
+									{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => (
 										<button
 											key={item}
 											type="button"

@@ -10,6 +10,14 @@ import { getApplicationHistory, getMemberHistory, type AuditDTO } from "@/lib/ap
  * application or a membership, newest last, each entry showing what changed, when,
  * and who did it.
  */
+const MODULE_TAGS: Record<string, string> = {
+  MEMBER_APPLICATION: 'application',
+  PROFILE_CHANGE_BASIC: 'basic profile change',
+  PROFILE_CHANGE_NAME: 'name change',
+  PROFILE_CHANGE_NOMINEE: 'nominee change',
+  PROFILE_CHANGE_REMITTANCE: 'remittance change',
+};
+
 export default function ProgressTimeline({
   memberId,
   applicationId,
@@ -95,7 +103,9 @@ export default function ProgressTimeline({
               {e.remarks && <p className="mt-0.5 text-sm text-neutral-500">{e.remarks}</p>}
               <p className="mt-0.5 text-xs text-neutral-400">
                 by {e.actionBy ?? "System"}
-                {e.moduleName === "MEMBER_APPLICATION" ? " · application" : ""}
+                {MODULE_TAGS[e.moduleName ?? ""]
+                  ? ` · ${MODULE_TAGS[e.moduleName ?? ""]}`
+                  : ""}
               </p>
             </li>
           );

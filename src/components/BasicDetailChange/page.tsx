@@ -9,6 +9,12 @@ import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
 import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 import { useToast } from '@/lib/toast-context';
+import { useAuth } from '@/lib/auth-context';
+import {
+  hasRole,
+  PROFILE_CHANGE_DIRECT_APPROVAL_ROLES,
+  PROFILE_CHANGE_EDIT_ROLES,
+} from '@/lib/permissions';
 
 // 1. Schema Definition
 // This Zod schema validates the profile change request fields before submission.
@@ -61,6 +67,16 @@ type ProfileData = {
 export default function BasicDetailChange({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
   const { addToast } = useToast();
+  const { user } = useAuth();
+
+  // MMC04's approval authority. District Office raises a Basic Profile change but does
+  // not decide it, so the Approve and Reject buttons are absent for that role rather
+  // than present-and-failing. Head Office, Board Secretary and Super Admin decide.
+  const canDecide = hasRole(user?.role, PROFILE_CHANGE_DIRECT_APPROVAL_ROLES);
+
+  // Re-opening a submitted request is not an SRS function; it is restricted to the
+  // same roles that can decide one.
+  const canEdit = hasRole(user?.role, PROFILE_CHANGE_EDIT_ROLES);
   const isEditMode = Boolean(editId);
 
   const EMPTY_PROFILE: ProfileData = {
@@ -378,7 +394,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
               {selectedStatus.replace(/_/g, ' ')}
             </span>
           )}
-          {isEditMode && !isEditing && (
+          {isEditMode && !isEditing && canEdit && (
             <button
               type="button"
               onClick={() => setIsEditing(true)}
@@ -409,7 +425,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
               </button>
             </>
           )}
-          {isEditMode && !isEditing && isPending && (
+          {isEditMode && !isEditing && isPending && canDecide && (
             <>
               <button
                 type="button"

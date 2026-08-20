@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { BOARD_GOVERNANCE_ROLES, DELETE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
+import {
+  BOARD_GOVERNANCE_ROLES,
+  DELETE_RIGHTS_ROLES,
+  PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES,
+  hasRole,
+} from "@/lib/permissions";
 import {
   AlertCircle,
   ArrowRight,
@@ -106,6 +111,19 @@ export default function BoardApprovalsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const canDelete = hasRole(user?.role, DELETE_RIGHTS_ROLES);
+  // MMC12 / MMC25: recording what the board decided is the Board Secretary's. Head
+  // Office builds the list, prints it and reads it back afterwards — it keeps all of
+  // that — but Proceed and Process are hidden for it rather than shown and refused.
+  const canProcess = hasRole(user?.role, PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES);
+
+  // MMC11 and MMC24 are separate reports from the Application List, because a name or
+  // nominee change is judged as a comparison and needs its current value printed too.
+  const printPathFor = (listId: string) => {
+    const base = "/membership/board-approvals/print";
+    if (selectedListNameChangeRequests.length > 0) return base + "/name/" + encodeURIComponent(listId);
+    if (selectedListNomineeChangeRequests.length > 0) return base + "/nominee/" + encodeURIComponent(listId);
+    return base + "/" + encodeURIComponent(listId);
+  };
   const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
@@ -1190,12 +1208,7 @@ export default function BoardApprovalsPage() {
                           variant="outline"
                           className="h-8 px-3"
                           onClick={() =>
-                            window.open(
-                              `/membership/board-approvals/print/${encodeURIComponent(
-                                selectedApprovalListId
-                              )}`,
-                              "_blank"
-                            )
+                            window.open(printPathFor(selectedApprovalListId), "_blank")
                           }
                           disabled={!selectedApprovalListId}
                         >
@@ -1477,6 +1490,7 @@ export default function BoardApprovalsPage() {
                             )
                           }
                           onClick={handleOpenConfirmModal}
+                          hidden={!canProcess}
                         >
                           {isEditingProcessedList ? "Update" : "Proceed"}
                           <ArrowRight size={14} />
@@ -1775,6 +1789,7 @@ export default function BoardApprovalsPage() {
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700"
                   onClick={handleProcessBoardDecision}
+                  hidden={!canProcess}
                 >
                   <CheckSquare size={14} />
                   {isEditingProcessedList ? "Update" : "Process"}

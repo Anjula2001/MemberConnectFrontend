@@ -6,6 +6,9 @@ import { z } from 'zod';
 import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
+import { useToast } from '@/lib/toast-context';
+import { useAuth } from '@/lib/auth-context';
+import { hasRole, PROFILE_CHANGE_EDIT_ROLES } from '@/lib/permissions';
 import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 
 // --- 1. Zod Schema Definition ---
@@ -26,6 +29,17 @@ interface SectionCardProps {
 
 export default function NomineeChangeRequest({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
+  // The shared toast used across the app (member creation, admin screens). The
+  // browser's alert() was an unstyled OS dialog that also blocked the page.
+  const { addToast } = useToast();
+  const { user } = useAuth();
+
+  // Re-opening a submitted request is not an SRS function — MMC18 forbids editing a
+  // submitted record outright — so it is held to the roles that can decide one.
+  //
+  // There is deliberately no Approve/Reject here: MMC25 places the decision on the
+  // Nominee Change Approval List, not on the request.
+  const canEdit = hasRole(user?.role, PROFILE_CHANGE_EDIT_ROLES);
   const isEditMode = Boolean(editId);
 
   const [memberName, setMemberName] = useState<string | null>(null);
@@ -247,16 +261,16 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
         await apiClient.put(`/api/v3/updateNommineWithDocument/${editId}`, body);
         setIsEditing(false);
         setRequestStatus('SUBMITTED_FOR_APPROVAL');
-        alert("Request updated and sent back for approval.");
+        addToast("Request updated and sent back for approval.");
       } else {
         await apiClient.post('/api/v3/saveNommineWithDocument', body);
-        alert("Nominee change request submitted successfully!");
+        addToast("Nominee change request submitted successfully.");
       }
       router.push('/membership/profile-changes');
     } catch (error: unknown) {
       // apiClient's interceptor already unwraps the backend message into an Error.
       const message = error instanceof Error ? error.message : "Server error";
-      alert("Submission failed: " + message);
+      addToast(message || "Could not submit the request.", "destructive");
     } finally {
       setIsSubmitting(false);
     }
@@ -322,7 +336,7 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
                 {requestStatus.replace(/_/g, ' ')}
               </span>
             )}
-            {isEditMode && !isEditing && (
+            {isEditMode && !isEditing && canEdit && (
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}

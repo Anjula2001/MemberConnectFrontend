@@ -19,8 +19,8 @@ import type { UserRole } from "@/lib/auth-context";
  * authorized user who has the delete privileges", MMS41's "special authorization"),
  * which a role list cannot express.
  *
- * Still out of scope and unrestricted: Death Donation, Termination/Retirement,
- * Dormant Membership, Profile Changes.
+ * Still out of scope and unrestricted: Death Donation, Termination/Retirement and
+ * Dormant Membership.
  *
  * Everything here is UX only — it decides what is shown, never what is allowed. The
  * backend enforces the same matrix independently in RolePermissions.java, and that
@@ -101,19 +101,52 @@ export const PROFILE_CHANGE_VIEW_ROLES: UserRole[] = [
   "DISTRICT_OFFICE",
 ];
 
-// Approve or reject directly, with no board step. MMC04 (Basic Profile) and MMC17
-// (Remittance) are decided by an authorised District Office user.
+// Approve or reject a request that is decided directly, with no board step — Basic
+// Profile (MMC04) and Remittance (MMC17).
+//
+// This departs from the SRS on the client's instruction. MMC04 names the District
+// Office System User as the approver; here District Office raises the request but
+// never decides it, and Board Secretary — which the SRS does not name for this
+// function at all — decides every type.
 export const PROFILE_CHANGE_DIRECT_APPROVAL_ROLES: UserRole[] = [
   "SUPER_ADMIN",
   "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Re-open a submitted request and change its values. Not an SRS function: MMC01 says
+// a submitted record cannot be edited. Enabled at the client's direction, for the same
+// roles that may decide the request — a District Office user cannot revise what they
+// have already sent for approval.
+export const PROFILE_CHANGE_EDIT_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Delete a request outright. Also not an SRS function; the audit row is what keeps it
+// traceable. Available to everyone who works with the module, District Office included.
+export const PROFILE_CHANGE_DELETE_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
   "DISTRICT_OFFICE",
 ];
 
-// Build, print and process a Name or Nominee Change Approval List. MMC08–MMC13 and
-// MMC21–MMC26 name the Head Office System User throughout.
+// Build, view and print a Name or Nominee Change Approval List for the board meeting.
+// MMC08–MMC11 and MMC21–MMC24 name the Head Office System User throughout.
 export const PROFILE_CHANGE_APPROVAL_LIST_ROLES: UserRole[] = [
   "SUPER_ADMIN",
   "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Record the board's decisions on that list (MMC12 / MMC25). Deliberately narrower
+// than the list above: Head Office prepares the board pack but does not decide what
+// the board decided. Anything routed through a Board Approval List is settled by the
+// Board Secretary.
+export const PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
   "BOARD_SECRETARY",
 ];
 

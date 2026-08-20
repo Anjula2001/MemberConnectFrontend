@@ -6,6 +6,9 @@ import { apiClient } from '@/lib/api/client';
 import { z } from "zod";
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
+import { useToast } from '@/lib/toast-context';
+import { useAuth } from '@/lib/auth-context';
+import { hasRole, PROFILE_CHANGE_EDIT_ROLES } from '@/lib/permissions';
 import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 
 export const nameChangeSchema = z.object({
@@ -55,6 +58,18 @@ const InputGroup = ({
 
 export default function NameChangeRequest({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
+  // The shared toast used across the app (member creation, admin screens). The
+  // browser's alert() was an unstyled OS dialog that also blocked the page.
+  const { addToast } = useToast();
+  const { user } = useAuth();
+
+  // Re-opening a submitted request is not an SRS function — MMC05 forbids editing a
+  // submitted record outright — so it is held to the roles that can decide one. A
+  // District Office user cannot revise what they have already sent to the board.
+  //
+  // There is deliberately no Approve/Reject here: MMC12 places the decision on the
+  // Name Change Approval List, not on the request.
+  const canEdit = hasRole(user?.role, PROFILE_CHANGE_EDIT_ROLES);
   const isEditMode = Boolean(editId);
 
   // memberName is used for the page header display.
@@ -250,16 +265,16 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
         await apiClient.put(`/api5/namechange/updatenamechangeWithDocument/${editId}`, body);
         setIsEditing(false);
         setRequestStatus('SUBMITTED_FOR_APPROVAL');
-        alert("Request updated and sent back for approval.");
+        addToast("Request updated and sent back for approval.");
       } else {
         await apiClient.post('/api5/namechange/savenamechangeWithDocument', body);
-        alert("Request submitted successfully to MemberConnect!");
+        addToast("Name change request submitted successfully.");
       }
       router.push('/membership/profile-changes');
     } catch (error: unknown) {
       // apiClient's interceptor already unwraps the backend message into an Error.
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred. Please try again.";
-      alert(`Failed to submit request: ${errorMessage}`);
+      addToast(errorMessage || "Could not submit the request.", "destructive");
     } finally {
       setIsSubmitting(false);
     }
@@ -317,7 +332,7 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
               {requestStatus.replace(/_/g, ' ')}
             </span>
           )}
-          {isEditMode && !isEditing && (
+          {isEditMode && !isEditing && canEdit && (
             <button
               type="button"
               onClick={() => setIsEditing(true)}
