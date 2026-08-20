@@ -2,8 +2,28 @@
 
 import { useEffect, useState } from "react"
 import { Users, GraduationCap, XCircle, HeartHandshake, LucideIcon } from "lucide-react"
-import { getMemberApplications } from "@/lib/api/memberApplications"
+import { apiClient } from "@/lib/api/client"
 import { getMembers } from "@/lib/api/member"
+import { searchDeathDonationRequests } from "@/lib/api/deathDonation"
+import { useAuth, type UserRole } from "@/lib/auth-context"
+import { REGISTRATION_ROLES, hasPermission, hasRole } from "@/lib/permissions"
+
+/**
+ * Dashboard metrics.
+ *
+ * Every card here counts rows in the table it names. The previous version called only
+ * getMembers() and getMemberApplications(), then derived the other three numbers from
+ * the applications list with string heuristics — "Death Donations" rendered the member
+ * application count outright, and "Pending Scholarships" counted any application whose
+ * scholarshipDeathDonationPensionAmount was non-zero, which is a membership
+ * contribution amount present on nearly every application. Both reported 1 against a
+ * database holding zero scholarship and zero death donation requests.
+ *
+ * Cards are also filtered by role. The endpoints behind them are permission-gated
+ * (Grade 5 needs G5_REQUEST_VIEW), so fetching unconditionally produces guaranteed
+ * 403s for roles like DEATH_DONATION_OFFICER — the same failure the New Registrations
+ * page hit with board meetings. A role that cannot see a metric does not get the card.
+ */
 
 type StatCardProps = {
   title: string
@@ -36,79 +56,138 @@ function StatCard({ title, value, subtitle, icon: Icon }: StatCardProps) {
   )
 }
 
+// Statuses that mean "waiting on a decision", per the request status enums.
+const SCHOLARSHIP_PENDING = [
+  "SUBMITTED_FOR_NORMAL_APPROVAL",
+  "SUBMITTED_FOR_DEVIATION_APPROVAL",
+]
+const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL"]
+
+// Death Donation is its own module with its own officer role, so it does not follow
+// REGISTRATION_ROLES.
+const DEATH_DONATION_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+  "DISTRICT_OFFICE",
+  "DEATH_DONATION_OFFICER",
+]
+
+/** A count that failed to load stays null, so the card shows "—" rather than a wrong 0. */
+type Counts = {
+  members: number | null
+  scholarships: number | null
+  terminations: number | null
+  deathDonations: number | null
+}
+
 export default function StatsCards() {
-  const [membersCount, setMembersCount] = useState<number | null>(null)
-  const [applicationsCount, setApplicationsCount] = useState<number | null>(null)
-  const [pendingScholarships, setPendingScholarships] = useState<number | null>(null)
-  const [terminationRequests, setTerminationRequests] = useState<number | null>(null)
+  const { user } = useAuth()
+  const role = user?.role
+
+  const canSeeMembers = hasRole(role, REGISTRATION_ROLES)
+  const canSeeScholarships = hasPermission(role, "G5_REQUEST_VIEW")
+  const canSeeTerminations = hasRole(role, REGISTRATION_ROLES)
+  const canSeeDeathDonations = hasRole(role, DEATH_DONATION_ROLES)
+
+  const [counts, setCounts] = useState<Counts>({
+    members: null,
+    scholarships: null,
+    terminations: null,
+    deathDonations: null,
+  })
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
+
+    // allSettled, not all: one failing metric must not blank out the other three.
     async function load() {
-      try {
-        setLoading(true)
-        const [members, applications] = await Promise.all([getMembers(), getMemberApplications()])
-        if (!mounted) return
-        setMembersCount(members?.length ?? 0)
-        setApplicationsCount(applications?.length ?? 0)
+      setLoading(true)
 
-        // Heuristic: identify scholarship requests by presence of scholarship-related field or keywords
-        const scholarshipMatches = (applications ?? []).filter(a => {
-          const title = (a.title ?? '').toString().toLowerCase()
-          const full = (a.fullName ?? '').toString().toLowerCase()
-          const hasScholarField = !!a.scholarshipDeathDonationPensionAmount
-          return hasScholarField || title.includes('scholar') || full.includes('scholar')
-        }).length
-        setPendingScholarships(scholarshipMatches)
+      const [members, scholarships, terminations, deathDonations] = await Promise.allSettled([
+        canSeeMembers ? getMembers() : Promise.resolve(null),
 
-        // Heuristic: termination requests when boardDecisionReason or title contains 'terminat'
-        const termMatches = (applications ?? []).filter(a => {
-          const reason = (a.boardDecisionReason ?? '').toString().toLowerCase()
-          const title = (a.title ?? '').toString().toLowerCase()
-          return reason.includes('terminat') || title.includes('terminat')
-        }).length
-        setTerminationRequests(termMatches)
-      } catch (err: any) {
-        setError(err?.message ?? String(err))
-      } finally {
-        if (mounted) setLoading(false)
+        canSeeScholarships
+          ? apiClient
+              .get<unknown[]>("/api/grade5/requests/search", {
+                params: { statuses: SCHOLARSHIP_PENDING },
+              })
+              .then((res) => res.data)
+          : Promise.resolve(null),
+
+        canSeeTerminations
+          ? apiClient
+              .get<unknown[]>("/api/termination-requests", {
+                params: { statuses: TERMINATION_PENDING },
+              })
+              .then((res) => res.data)
+          : Promise.resolve(null),
+
+        canSeeDeathDonations ? searchDeathDonationRequests() : Promise.resolve(null),
+      ])
+
+      if (!mounted) return
+
+      const count = (result: PromiseSettledResult<unknown[] | null>) => {
+        if (result.status !== "fulfilled" || result.value === null) return null
+        return Array.isArray(result.value) ? result.value.length : 0
       }
+
+      setCounts({
+        members: count(members),
+        scholarships: count(scholarships),
+        terminations: count(terminations),
+        deathDonations: count(deathDonations),
+      })
+      setLoading(false)
     }
-    load()
-    return () => { mounted = false }
-  }, [])
+
+    void load()
+    return () => {
+      mounted = false
+    }
+  }, [canSeeMembers, canSeeScholarships, canSeeTerminations, canSeeDeathDonations])
+
+  const show = (value: number | null) => (loading ? "…" : value ?? "—")
 
   return (
     <div className="flex flex-row gap-4 w-full overflow-x-auto">
-      <StatCard
-        title="Total Members"
-        value={loading ? '…' : membersCount ?? '—'}
-        subtitle={loading ? 'Loading' : `${membersCount ?? 0} total`}
-        icon={Users}
-      />
+      {canSeeMembers && (
+        <StatCard
+          title="Total Members"
+          value={show(counts.members)}
+          subtitle={loading ? "Loading" : `${counts.members ?? 0} total`}
+          icon={Users}
+        />
+      )}
 
-      <StatCard
-        title="Pending Scholarships"
-        value={loading ? '…' : pendingScholarships ?? 0}
-        subtitle={loading ? 'Loading' : 'Requires Approval'}
-        icon={GraduationCap}
-      />
+      {canSeeScholarships && (
+        <StatCard
+          title="Pending Scholarships"
+          value={show(counts.scholarships)}
+          subtitle="Requires Approval"
+          icon={GraduationCap}
+        />
+      )}
 
-      <StatCard
-        title="Pending Terminations"
-        value={loading ? '…' : terminationRequests ?? 0}
-        subtitle={loading ? 'Loading' : 'In Review'}
-        icon={XCircle}
-      />
+      {canSeeTerminations && (
+        <StatCard
+          title="Pending Terminations"
+          value={show(counts.terminations)}
+          subtitle="In Review"
+          icon={XCircle}
+        />
+      )}
 
-      <StatCard
-        title="Death Donations"
-        value={loading ? '…' : applicationsCount ?? 0}
-        subtitle={loading ? 'Loading' : 'Total requests'}
-        icon={HeartHandshake}
-      />
+      {canSeeDeathDonations && (
+        <StatCard
+          title="Death Donations"
+          value={show(counts.deathDonations)}
+          subtitle="Total requests"
+          icon={HeartHandshake}
+        />
+      )}
     </div>
   )
 }

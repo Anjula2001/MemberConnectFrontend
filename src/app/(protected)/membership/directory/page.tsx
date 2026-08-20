@@ -247,11 +247,11 @@ export default function MemberDirectoryPage() {
 	}, [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
 		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
 
-	// Fetch automatically on first render so the table isn't empty
-	useEffect(() => {
-		fetchMembers();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	// Deliberately no fetch on mount. Opening the Directory shows the filters and an
+	// empty table until the user clicks Retrieve — the same pattern the other list
+	// screens follow, and what the "Click Retrieve to load members." empty state below
+	// has always described. Auto-loading also meant every visit pulled the full
+	// membership before the user had chosen any filter.
 
 	// ---------------------------------------------------------------------------
 	// Options
