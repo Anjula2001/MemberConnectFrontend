@@ -78,6 +78,11 @@ export const TESTING_ACTIVATE_ROLES: UserRole[] = ["SUPER_ADMIN"];
 // Remittance Master (contribution amounts) — a finance parameter, owned by Accounts.
 export const REMITTANCE_MASTER_ROLES: UserRole[] = ["ACCOUNTS", "SUPER_ADMIN"];
 
+// University Scholarship master data (universities, programmes, durations, amounts).
+// Super Admin only. US_MASTER_MANAGE would have been the obvious gate, but that right
+// is also held by SCHOLARSHIP_OFFICER and this screen is Super Admin only.
+export const UNIVERSITY_MASTER_ROLES: UserRole[] = ["SUPER_ADMIN"];
+
 // Membership eligibility age limits — a membership-policy setting, deliberately NOT
 // delegated to Accounts.
 export const ELIGIBILITY_CONFIG_ROLES: UserRole[] = ["SUPER_ADMIN"];

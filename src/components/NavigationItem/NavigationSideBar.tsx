@@ -311,6 +311,11 @@ export default function NavigationSideBar() {
               url: "/admin/member-accounts",
               icon: Wallet,
             },
+            {
+              title: "University Master",
+              url: "/admin/university-master",
+              icon: GraduationCap,
+            },
           ],
         },
       ];
