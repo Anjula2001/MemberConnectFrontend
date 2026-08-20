@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { BOARD_GOVERNANCE_ROLES, DELETE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
+import { BOARD_GOVERNANCE_ROLES, BOARD_MEETING_VIEW_ROLES, DELETE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
 import {
   AlertCircle,
   ArrowRight,
@@ -102,8 +102,9 @@ function formatDisplayDate(value: string) {
 
 export default function BoardApprovalsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const canDelete = hasRole(user?.role, DELETE_RIGHTS_ROLES);
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
   const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
@@ -156,8 +157,19 @@ export default function BoardApprovalsPage() {
     boardDecisionReason: application.boardDecisionReason ?? "",
   });
 
-  // Fetch board meetings from database
+  // Fetch board meetings from database.
+  // The BOARD_GOVERNANCE_ROLES guard further down is a render-time early return,
+  // which does not stop this effect from committing — so a District Office user
+  // landing here used to get both the Access Restricted screen and a "Failed to
+  // load board meetings" toast off the resulting 403. isAuthLoading covers the
+  // first render, where AuthProvider has not yet hydrated `user` from localStorage.
   useEffect(() => {
+    if (isAuthLoading) return;
+    if (!canViewBoardMeetings) {
+      setIsFetching(false);
+      return;
+    }
+
     const fetchMeetings = async () => {
       try {
         setIsFetching(true);
@@ -177,7 +189,7 @@ export default function BoardApprovalsPage() {
     };
 
     fetchMeetings();
-  }, []);
+  }, [isAuthLoading, canViewBoardMeetings]);
 
   // Toast timeout effect
   useEffect(() => {

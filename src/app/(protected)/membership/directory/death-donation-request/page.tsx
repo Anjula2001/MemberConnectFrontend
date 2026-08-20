@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Info } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Info, Pencil } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
@@ -15,14 +15,21 @@ import {
   SubmitSuccessModal,
 } from "@/src/components/ui/termination/SubmitConfirmationModal";
 import {
+  changeDeathDonationStatus,
   deleteDeathDonationDocument,
-  getDeathDonationDocumentDownloadUrl,
+  downloadDeathDonationDocument,
+  forwardDeathDonationToDistrictCommittee,
+  forwardDeathDonationToPdCommittee,
   getDeathDonationDocuments,
+  getDeathDonationRelationships,
+  getDeathDonationRequiredDocuments,
+  updateDeathDonationConcerns,
   getDeathDonationRequest,
   getDeathDonationRequestsByMember,
   approveDeathDonationRequest,
   markDeathDonationIncomplete,
   populateDeceasedMember,
+  refreshDeathDonationEntitlement,
   refreshDeathDonationRelatives,
   rejectDeathDonationRequest,
   saveDeathDonationRequest,
@@ -33,11 +40,27 @@ import {
   type DeathDonationRelative,
   type DeathDonationRequest,
 } from "@/lib/api/deathDonation";
+import { useAuth } from "@/lib/auth-context";
+import {
+  DEATH_DONATION_AMOUNT_EDIT_ROLES,
+  DEATH_DONATION_ENTRY_ROLES,
+  DEATH_DONATION_LEVEL_LABEL,
+  DEATH_DONATION_NEXT_LEVEL,
+  DEATH_DONATION_VIEW_ROLES,
+  canDecideDeathDonationAt,
+  canForwardDeathDonationAt,
+  hasRole,
+} from "@/lib/permissions";
 
-const API_BASE_URL = "http://localhost:8080";
+// Was hardcoded to localhost, which meant the member lookup below pointed at a
+// developer machine in every other environment.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
 
-const RELATIONSHIP_OPTIONS = [
+// Fallback only. The list proper comes from the Death Donation Relationship
+// master (MMD01) via getDeathDonationRelationships(); these values are what the
+// screen offers if that call fails, and match what the master seeds.
+const FALLBACK_RELATIONSHIP_OPTIONS = [
   "Father",
   "Mother",
   "Spouse",
@@ -50,7 +73,10 @@ const RELATIONSHIP_OPTIONS = [
   "Other",
 ];
 
-const DOCUMENT_TYPES = [
+// Fallback only, used before a request has been saved (the master lookup is
+// scoped to a saved request). The live list comes from the Supporting Documents
+// master via getDeathDonationRequiredDocuments (MMD01).
+const FALLBACK_DOCUMENT_TYPES = [
   { type: "DEATH_CERTIFICATE", label: "Death Certificate", mandatory: true },
   { type: "NIC_COPY", label: "NIC Copy", mandatory: true },
   { type: "OTHER", label: "Other Documents", mandatory: false },
@@ -91,6 +117,14 @@ function formatStatus(status: string) {
   return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
 }
 
+/**
+ * A local approximation of the eligible-period rule, used only while the form is
+ * being filled in and there is no saved request to ask the server about.
+ *
+ * The authoritative answer is request.eligiblePeriodWarning, computed from the
+ * DONATION_ELIGIBLE_PERIOD_DAYS configuration value. This three-month guess is
+ * deliberately not shown once a saved request carries the real one.
+ */
 function isOutsideAllowedRange(requestedDate: string, deceasedDate: string) {
   if (!requestedDate || !deceasedDate) return false;
   const requested = new Date(requestedDate);
@@ -98,6 +132,75 @@ function isOutsideAllowedRange(requestedDate: string, deceasedDate: string) {
   const limit = new Date(deceased);
   limit.setMonth(limit.getMonth() + 3);
   return requested > limit;
+}
+
+type FormValues = {
+  relationshipToDeceased: string;
+  requestedDate: string;
+  deceasedMember: boolean;
+  deceasedMemberId: string;
+  deceasedName: string;
+  maidenNameIfMarried: string;
+  deceasedDate: string;
+  deathCertificateNumber: string;
+  deceasedPlaceOfWork: string;
+  concernsIdentified: string;
+};
+
+/**
+ * The same required-field rules DeathDonationService.validateRequestDto applies,
+ * checked before the request leaves the browser.
+ *
+ * The server is still the authority - this does not replace it. It exists so a
+ * missed field is pointed at in place, instead of costing a round trip and
+ * coming back as a bare sentence that names no field. Keep the two in step: a
+ * rule added on the server but not here just reverts to the old behaviour.
+ */
+function validateDeathDonationForm(form: FormValues): Record<string, string> {
+  const errors: Record<string, string> = {};
+
+  if (!form.relationshipToDeceased.trim()) {
+    errors.relationshipToDeceased = "Relationship to the deceased is required";
+  }
+
+  if (!form.requestedDate.trim()) {
+    errors.requestedDate = "Requested Date is required";
+  } else if (form.requestedDate > TODAY) {
+    errors.requestedDate = "Requested Date cannot be a future date";
+  }
+
+  if (form.deceasedMember && !form.deceasedMemberId.trim()) {
+    errors.deceasedMemberId = "Deceased Member ID is required when the deceased is a member";
+  }
+
+  if (!form.deceasedName.trim()) {
+    errors.deceasedName = "Name of the deceased is required";
+  }
+
+  if (!form.deceasedDate.trim()) {
+    errors.deceasedDate = "Deceased Date is required";
+  }
+
+  if (!form.deathCertificateNumber.trim()) {
+    errors.deathCertificateNumber = "Death Certificate Number is required";
+  }
+
+  return errors;
+}
+
+/** Inline message under the field it belongs to. */
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-sm text-red-600">{message}</p>;
+}
+
+/** Money for display; the server owns the arithmetic. */
+function formatAmount(value?: number | null) {
+  if (value === null || value === undefined) return "-";
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export default function DeathDonationRequestPage() {
@@ -149,21 +252,74 @@ export default function DeathDonationRequestPage() {
     concernsIdentified: "",
   });
 
+  const [relationshipOptions, setRelationshipOptions] = useState<string[]>(
+    FALLBACK_RELATIONSHIP_OPTIONS
+  );
+  const [documentTypes, setDocumentTypes] = useState(FALLBACK_DOCUMENT_TYPES);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isForwarding, setIsForwarding] = useState(false);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [isRefreshingDonation, setIsRefreshingDonation] = useState(false);
+  const [donationInputs, setDonationInputs] = useState({
+    monthsRemitted: "",
+    receivedPast12Months: "",
+    creditedToSpecialFixedAccount: "",
+  });
+
+  const { user } = useAuth();
+  const role = user?.role;
+  const canViewRequests = hasRole(role, DEATH_DONATION_VIEW_ROLES);
+  const canEnterRequests = hasRole(role, DEATH_DONATION_ENTRY_ROLES);
+
   const requestStatus = request?.status ?? "NEW";
   const requestDisplayId = request?.requestNo ?? "NEW";
   const isRequestLocked = LOCKED_STATUSES.includes(requestStatus);
-  const isEditable = !isRequestLocked;
+  // Status alone used to decide every button on this screen, which is why any
+  // authenticated user could approve a donation. Each gate now needs the role as
+  // well; the server enforces the same rules independently.
+  const isEditable = !isRequestLocked && canEnterRequests;
   const hasSavedRequest = !!request?.requestNo;
   const isEditMode = isEditing && isEditable;
   const isFormEditable = !hasSavedRequest || isEditMode;
-  const isConcernsEditable = isRequestLocked || isFormEditable;
+
+  /** MMD05-07: a decision belongs to the role owning the level it sits at. */
+  const canDecideAtCurrentLevel = canDecideDeathDonationAt(role, requestStatus);
+  const canForwardAtCurrentLevel = canForwardDeathDonationAt(role, requestStatus);
+  const nextLevel = DEATH_DONATION_NEXT_LEVEL[requestStatus];
+
+  // SRS pp.21-22: Concerns Identified stays editable in View Mode for anyone who
+  // can approve at any level.
+  const isConcernsEditable = isFormEditable || canDecideAtCurrentLevel;
+
+  // SRS p.22: the entitlement figures are editable by whoever "has the authority
+  // to change the Death Donation values".
+  const canEditDonationAmounts =
+    hasRole(role, DEATH_DONATION_AMOUNT_EDIT_ROLES) &&
+    !["APPROVED", "REJECTED", "INACTIVE"].includes(requestStatus);
+
   const showEditButton = hasSavedRequest && isEditable && !isEditMode;
   const showSaveButton = (!hasSavedRequest || isEditMode) && isEditable;
   const showWorkflowActions = hasSavedRequest && isEditable && !isEditMode;
-  const showApprovalActions =
-    hasSavedRequest && requestStatus === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
-  const showSaveConcerns =
-    isRequestLocked && requestStatus !== "SUBMITTED_FOR_APPROVAL";
+  const showApprovalActions = hasSavedRequest && canDecideAtCurrentLevel && !isEditMode;
+  // Whoever may type in Concerns Identified needs a way to save it. The plain
+  // Save button covers the entry role while the request is still editable; this
+  // covers the approver reading a locked request in View Mode, whom SRS pp.21-22
+  // explicitly allows to edit that one field.
+  //
+  // Written against isConcernsEditable rather than against showApprovalActions:
+  // keying it off the latter made it `canDecide && !canDecide`, so the button
+  // could never appear at all.
+  const showSaveConcerns = hasSavedRequest && isConcernsEditable && !showSaveButton;
+
+  // Everyone who can see the request but is not the level it is waiting on gets
+  // told who it is with, rather than an unexplained absence of buttons.
+  const waitingOnLabel =
+    hasSavedRequest && !canDecideAtCurrentLevel
+      ? DEATH_DONATION_LEVEL_LABEL[requestStatus]
+      : undefined;
+
+  const allowedStatusChanges = request?.allowedStatusChanges ?? [];
+  const showDonationDetails = hasSavedRequest;
   const pageTitle = !hasSavedRequest
     ? "Death Donation Request Entry"
     : isEditMode
@@ -181,10 +337,40 @@ export default function DeathDonationRequestPage() {
   const backLabel =
     source === "death-donation" ? "Back to Death Donation Requests" : "Back to Member Profile";
   const canModifyMember = member.status === "ACTIVE";
-  const dateRangeWarning = useMemo(
-    () => isOutsideAllowedRange(form.requestedDate, form.deceasedDate),
-    [form.requestedDate, form.deceasedDate]
-  );
+  // Once there is a saved request the server has already applied the configured
+  // eligible period; only fall back to the local three-month guess while the
+  // form is still being filled in.
+  const dateRangeWarning = useMemo(() => {
+    if (request?.eligiblePeriodWarning) return true;
+    if (hasSavedRequest) return !!request?.dateRangeWarning;
+    return isOutsideAllowedRange(form.requestedDate, form.deceasedDate);
+  }, [
+    request?.eligiblePeriodWarning,
+    request?.dateRangeWarning,
+    hasSavedRequest,
+    form.requestedDate,
+    form.deceasedDate,
+  ]);
+
+  // MMD01: the dropdown comes from the Death Donation Relationship master, not
+  // from a list hardcoded in this file, so an administrator can change it.
+  useEffect(() => {
+    if (!canViewRequests) return;
+
+    let cancelled = false;
+    getDeathDonationRelationships()
+      .then((options) => {
+        if (!cancelled && options.length > 0) {
+          setRelationshipOptions(options);
+        }
+      })
+      .catch(() => {
+        /* keep the fallback list rather than emptying the dropdown */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewRequests]);
 
   useEffect(() => {
     if (!memberIdParam) {
@@ -273,8 +459,43 @@ export default function DeathDonationRequestPage() {
       concernsIdentified: loaded.concernsIdentified ?? "",
     });
     setRelatives(loaded.relatives ?? []);
+    syncDonationInputs(loaded);
     const docs = await getDeathDonationDocuments(requestNo);
     setDocuments(docs);
+
+    try {
+      const required = await getDeathDonationRequiredDocuments(requestNo);
+      if (required.length > 0) {
+        setDocumentTypes(
+          required.map((row) => ({
+            type: row.documentType,
+            label: row.documentName ?? row.documentType,
+            mandatory: !!row.mandatory,
+          }))
+        );
+      }
+    } catch {
+      /* keep the fallback list rather than showing no document types at all */
+    }
+  };
+
+  /** Mirrors the three operator-editable figures into their input boxes. */
+  const syncDonationInputs = (loaded: DeathDonationRequest) => {
+    setDonationInputs({
+      monthsRemitted:
+        loaded.monthsRemitted === null || loaded.monthsRemitted === undefined
+          ? ""
+          : String(loaded.monthsRemitted),
+      receivedPast12Months:
+        loaded.receivedPast12Months === null || loaded.receivedPast12Months === undefined
+          ? ""
+          : String(loaded.receivedPast12Months),
+      creditedToSpecialFixedAccount:
+        loaded.creditedToSpecialFixedAccount === null ||
+        loaded.creditedToSpecialFixedAccount === undefined
+          ? ""
+          : String(loaded.creditedToSpecialFixedAccount),
+    });
   };
 
   const buildPayload = (): DeathDonationRequest => ({
@@ -293,9 +514,29 @@ export default function DeathDonationRequestPage() {
     relatives,
   });
 
+  /** Sets a form field and drops any error still showing against it. */
+  const updateField = <K extends keyof FormValues>(field: K, value: FormValues[K]) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setFieldErrors((previous) => {
+      if (!previous[field as string]) return previous;
+      const next = { ...previous };
+      delete next[field as string];
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (!canModifyMember) {
       setSaveError("Death donation is only available when the member status is Active.");
+      return;
+    }
+
+    // Check here first so a missed field is highlighted in place rather than
+    // bouncing off the server as an unattributed message.
+    const errors = validateDeathDonationForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setSaveError("Please correct the highlighted fields before saving.");
       return;
     }
 
@@ -330,7 +571,13 @@ export default function DeathDonationRequestPage() {
     try {
       setIsSaving(true);
       setSaveError("");
-      const updated = await updateDeathDonationRequest(request.requestNo, buildPayload());
+      // The dedicated endpoint, not a full-record update: this path is open to
+      // approvers who have no entry rights, and replaying every field through
+      // the save route makes the request look like an edit they may not make.
+      const updated = await updateDeathDonationConcerns(
+        request.requestNo,
+        form.concernsIdentified
+      );
       setRequest(updated);
     } catch (error) {
       console.error("Save concerns error:", error);
@@ -340,9 +587,123 @@ export default function DeathDonationRequestPage() {
     }
   };
 
+  /**
+   * MMD05 / MMD06: escalate one level instead of deciding. The concerns the user
+   * typed travel with the request, which is what the SRS asks for - the reason
+   * for escalating is exactly what the next level needs to read.
+   */
+  const handleForward = async () => {
+    if (!request?.requestNo || !nextLevel) return;
+
+    try {
+      setIsForwarding(true);
+      setSaveError("");
+      const forward =
+        requestStatus === "SUBMITTED_FOR_APPROVAL"
+          ? forwardDeathDonationToDistrictCommittee
+          : forwardDeathDonationToPdCommittee;
+      const updated = await forward(request.requestNo, form.concernsIdentified);
+      setRequest(updated);
+      setForm((previous) => ({
+        ...previous,
+        concernsIdentified: updated.concernsIdentified ?? "",
+      }));
+    } catch (error) {
+      console.error("Forward error:", error);
+      setSaveError(error instanceof Error ? error.message : "Failed to forward the request");
+    } finally {
+      setIsForwarding(false);
+    }
+  };
+
+  /** MMD04 status matrix. The server decides what is legal; this just offers it. */
+  const handleChangeStatus = async (status: string) => {
+    if (!request?.requestNo || !status) return;
+
+    try {
+      setIsChangingStatus(true);
+      setSaveError("");
+      const updated = await changeDeathDonationStatus(request.requestNo, status);
+      setRequest(updated);
+      syncDonationInputs(updated);
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Change status error:", error);
+      setSaveError(error instanceof Error ? error.message : "Failed to change the status");
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
+
+  /** SRS 2.2.3 refresh: recalculate every derived figure from the three inputs. */
+  const handleRefreshDonation = async () => {
+    if (!request?.requestNo) return;
+
+    try {
+      setIsRefreshingDonation(true);
+      setSaveError("");
+      const updated = await refreshDeathDonationEntitlement(request.requestNo, donationInputs);
+      setRequest(updated);
+      syncDonationInputs(updated);
+    } catch (error) {
+      console.error("Refresh donation error:", error);
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to recalculate the donation"
+      );
+    } finally {
+      setIsRefreshingDonation(false);
+    }
+  };
+
+  const handleDownloadDocument = async (file: DeathDonationDocument) => {
+    if (!file.id) return;
+
+    try {
+      setSaveError("");
+      await downloadDeathDonationDocument(file.id, file.fileName);
+    } catch (error) {
+      console.error("Download error:", error);
+      setSaveError(error instanceof Error ? error.message : "Failed to download the file");
+    }
+  };
+
+  /**
+   * The mandatory document types with nothing uploaded against them (MMD01).
+   *
+   * Reads the same Supporting Documents master the server validates against, so
+   * the two agree on what is mandatory.
+   */
+  const missingMandatoryDocuments = () =>
+    documentTypes
+      .filter((docType) => docType.mandatory)
+      .filter((docType) => !documents.some((doc) => doc.documentType === docType.type))
+      .map((docType) => docType.label);
+
   const handleSubmit = async () => {
     if (!request?.requestNo) {
       setSaveError("Please save the death donation request before submitting.");
+      return;
+    }
+
+    // Submit re-validates every field server-side, so check them here too rather
+    // than opening a confirmation dialog for something that cannot succeed.
+    const errors = validateDeathDonationForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setSaveError("Please correct the highlighted fields before submitting.");
+      return;
+    }
+
+    // MMD01: "the system user must upload the files to the mandatory document
+    // types before submitting the request for approval". Naming the missing ones
+    // beats the server's one-at-a-time message, which only ever reports the
+    // first and says nothing about the rest.
+    const missing = missingMandatoryDocuments();
+    if (missing.length > 0) {
+      setSaveError(
+        `Upload the mandatory ${missing.length > 1 ? "documents" : "document"} before submitting: ` +
+          `${missing.join(", ")}.`
+      );
       return;
     }
 
@@ -553,6 +914,24 @@ export default function DeathDonationRequestPage() {
   const getDocumentsForType = (documentType: string) =>
     documents.filter((doc) => doc.documentType === documentType);
 
+  // SRS Requirement 05 names only the District Office and Head Office System
+  // Users as actors, so everyone else is turned away here as well as by the
+  // server. Waits for `user` so the check never fires during hydration.
+  if (user && !canViewRequests) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-bold text-neutral-800">Access Restricted</h1>
+        <p className="max-w-md text-sm text-neutral-500">
+          Death Donation requests are restricted to District Office, District and P&amp;D
+          Committee, and Head Office personnel.
+        </p>
+        <Link href="/">
+          <Button variant="outline">Go to Dashboard</Button>
+        </Link>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex h-[50vh] items-center justify-center text-neutral-500">
@@ -663,7 +1042,40 @@ export default function DeathDonationRequestPage() {
                   >
                     Approve
                   </Button>
+                  {/* MMD05 / MMD06: escalate instead of deciding. Absent at the
+                      P&D Committee, which is the last level. */}
+                  {canForwardAtCurrentLevel && nextLevel && (
+                    <Button
+                      variant="outline"
+                      onClick={handleForward}
+                      disabled={isForwarding}
+                      className="border-[#953002] bg-white text-[#953002] hover:bg-[#fdf6f2] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isForwarding ? "Forwarding..." : `Forward to ${nextLevel.label}`}
+                    </Button>
+                  )}
                 </>
+              )}
+
+              {/* MMD04 status matrix (SRS p.24). The server sends only the
+                  transitions it will actually accept from this caller, so an
+                  option appearing here is one that works. */}
+              {hasSavedRequest && allowedStatusChanges.length > 0 && !isEditMode && (
+                <select
+                  value=""
+                  disabled={isChangingStatus}
+                  onChange={(event) => handleChangeStatus(event.target.value)}
+                  className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">
+                    {isChangingStatus ? "Changing..." : "Change Status"}
+                  </option>
+                  {allowedStatusChanges.map((status) => (
+                    <option key={status} value={status}>
+                      {formatStatus(status)}
+                    </option>
+                  ))}
+                </select>
               )}
 
               {showSaveConcerns && (
@@ -676,6 +1088,14 @@ export default function DeathDonationRequestPage() {
                 </Button>
               )}
             </div>
+
+            {/* Everyone who can see the request but is not the level it is with
+                gets told who has it, instead of an unexplained empty toolbar. */}
+            {waitingOnLabel && (
+              <p className="mt-3 text-sm text-neutral-500">
+                This request is awaiting a decision from {waitingOnLabel}.
+              </p>
+            )}
           </div>
 
           {!canModifyMember && (
@@ -750,18 +1170,17 @@ export default function DeathDonationRequestPage() {
                 <select
                   value={form.relationshipToDeceased}
                   disabled={!isFormEditable}
-                  onChange={(e) =>
-                    setForm({ ...form, relationshipToDeceased: e.target.value })
-                  }
+                  onChange={(e) => updateField("relationshipToDeceased", e.target.value)}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 disabled:bg-gray-100"
                 >
                   <option value="">Select relationship</option>
-                  {RELATIONSHIP_OPTIONS.map((option) => (
+                  {relationshipOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
                 </select>
+                <FieldError message={fieldErrors.relationshipToDeceased} />
               </div>
 
               <div>
@@ -773,8 +1192,9 @@ export default function DeathDonationRequestPage() {
                   max={TODAY}
                   disabled={!isFormEditable}
                   value={form.requestedDate}
-                  onChange={(e) => setForm({ ...form, requestedDate: e.target.value })}
+                  onChange={(e) => updateField("requestedDate", e.target.value)}
                 />
+                <FieldError message={fieldErrors.requestedDate} />
               </div>
 
               <div>
@@ -807,9 +1227,7 @@ export default function DeathDonationRequestPage() {
                     <Input
                       value={form.deceasedMemberId}
                       disabled={!isFormEditable}
-                      onChange={(e) =>
-                        setForm({ ...form, deceasedMemberId: e.target.value })
-                      }
+                      onChange={(e) => updateField("deceasedMemberId", e.target.value)}
                     />
                     <Button
                       type="button"
@@ -820,6 +1238,7 @@ export default function DeathDonationRequestPage() {
                       {isPopulating ? "..." : "Populate"}
                     </Button>
                   </div>
+                  <FieldError message={fieldErrors.deceasedMemberId} />
                 </div>
               )}
 
@@ -830,8 +1249,9 @@ export default function DeathDonationRequestPage() {
                 <Input
                   value={form.deceasedName}
                   disabled={!isFormEditable}
-                  onChange={(e) => setForm({ ...form, deceasedName: e.target.value })}
+                  onChange={(e) => updateField("deceasedName", e.target.value)}
                 />
+                <FieldError message={fieldErrors.deceasedName} />
               </div>
 
               <div>
@@ -854,8 +1274,9 @@ export default function DeathDonationRequestPage() {
                   max={TODAY}
                   disabled={!isFormEditable}
                   value={form.deceasedDate}
-                  onChange={(e) => setForm({ ...form, deceasedDate: e.target.value })}
+                  onChange={(e) => updateField("deceasedDate", e.target.value)}
                 />
+                <FieldError message={fieldErrors.deceasedDate} />
               </div>
 
               <div>
@@ -865,10 +1286,9 @@ export default function DeathDonationRequestPage() {
                 <Input
                   value={form.deathCertificateNumber}
                   disabled={!isFormEditable}
-                  onChange={(e) =>
-                    setForm({ ...form, deathCertificateNumber: e.target.value })
-                  }
+                  onChange={(e) => updateField("deathCertificateNumber", e.target.value)}
                 />
+                <FieldError message={fieldErrors.deathCertificateNumber} />
               </div>
 
               <div>
@@ -912,7 +1332,7 @@ export default function DeathDonationRequestPage() {
                   className="rounded-md border border-gray-300 px-3 py-2"
                 >
                   <option value="">Relationship</option>
-                  {RELATIONSHIP_OPTIONS.map((option) => (
+                  {relationshipOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -986,8 +1406,9 @@ export default function DeathDonationRequestPage() {
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
                   <p className="text-sm text-amber-800">
-                    Warning: Requested Date is more than 3 months after the Deceased Date. You may
-                    still submit this request, but please document any concerns below.
+                    {request?.eligiblePeriodWarning ??
+                      "Warning: the Requested Date falls outside the eligible period after the Deceased Date."}{" "}
+                    You may still submit this request, but please document any concerns below.
                   </p>
                 </div>
               </div>
@@ -1002,11 +1423,142 @@ export default function DeathDonationRequestPage() {
             />
           </div>
 
+          {/* Death Donation Details (SRS 2.2.3). Appears only once the request
+              has been saved, which is when the SRS says the amounts show up. */}
+          {showDonationDetails && (
+            <div className="mt-6 rounded-lg bg-white p-6 shadow-sm">
+              <h2 className="mb-1 text-lg font-bold text-[#953002]">Death Donation Details</h2>
+              <p className="mb-4 text-sm text-neutral-500">
+                The eligible amount is calculated from the months of remittance deducted.
+                {request?.funeralAccountNo
+                  ? ` A Special Fixed Account for Funerals exists, so the maximum and eligible
+                     amounts are multiplied by ${request.donationMultiplierApplied ?? 2}.`
+                  : ""}
+              </p>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 font-medium">
+                    Total Months Remittance Deducted
+                    {request?.monthsRemittedEdited && (
+                      <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by hand" />
+                    )}
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={donationInputs.monthsRemitted}
+                    disabled={!canEditDonationAmounts}
+                    onChange={(e) =>
+                      setDonationInputs({ ...donationInputs, monthsRemitted: e.target.value })
+                    }
+                    className="disabled:bg-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 flex items-center gap-1 font-medium">
+                    Donations Received in Past 12 Months
+                    {request?.receivedPast12MonthsEdited && (
+                      <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by hand" />
+                    )}
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={donationInputs.receivedPast12Months}
+                    disabled={!canEditDonationAmounts}
+                    onChange={(e) =>
+                      setDonationInputs({
+                        ...donationInputs,
+                        receivedPast12Months: e.target.value,
+                      })
+                    }
+                    className="disabled:bg-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 flex items-center gap-1 font-medium">
+                    Credited to Special Fixed Account
+                    {request?.creditedToSpecialFixedEdited && (
+                      <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by hand" />
+                    )}
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={donationInputs.creditedToSpecialFixedAccount}
+                    // Meaningless without a funeral account to credit.
+                    disabled={!canEditDonationAmounts || !request?.funeralAccountNo}
+                    onChange={(e) =>
+                      setDonationInputs({
+                        ...donationInputs,
+                        creditedToSpecialFixedAccount: e.target.value,
+                      })
+                    }
+                    className="disabled:bg-gray-100"
+                  />
+                </div>
+              </div>
+
+              {canEditDonationAmounts && (
+                <Button
+                  type="button"
+                  onClick={handleRefreshDonation}
+                  disabled={isRefreshingDonation}
+                  className="mt-4 bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRefreshingDonation ? "Recalculating..." : "Recalculate"}
+                </Button>
+              )}
+
+              <div className="mt-6 grid gap-4 border-t pt-4 md:grid-cols-2">
+                <div className="flex justify-between rounded-md bg-gray-50 px-3 py-2">
+                  <span className="text-sm text-neutral-600">Maximum Death Donation Amount</span>
+                  <span className="text-sm font-medium">
+                    {formatAmount(request?.maximumDonationAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between rounded-md bg-gray-50 px-3 py-2">
+                  <span className="text-sm text-neutral-600">Eligible Death Donation Amount</span>
+                  <span className="text-sm font-medium">
+                    {formatAmount(request?.eligibleDonationAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between rounded-md bg-gray-50 px-3 py-2">
+                  <span className="text-sm text-neutral-600">
+                    Special Fixed Account for Funerals
+                  </span>
+                  <span className="text-sm font-medium">
+                    {request?.funeralAccountNo ?? "None"}
+                  </span>
+                </div>
+                <div className="flex justify-between rounded-md bg-gray-50 px-3 py-2">
+                  <span className="text-sm text-neutral-600">Credited to Special Fixed Account</span>
+                  <span className="text-sm font-medium">
+                    {formatAmount(request?.creditedToSpecialFixedAccount)}
+                  </span>
+                </div>
+                <div className="flex justify-between rounded-md bg-emerald-50 px-3 py-2 md:col-span-2">
+                  <span className="text-sm font-medium text-emerald-900">
+                    Disburse Death Donation Amount (LKR)
+                  </span>
+                  <span className="text-sm font-bold text-emerald-900">
+                    {formatAmount(request?.disburseDonationAmount)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 rounded-lg bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-[#953002]">Required Documents</h2>
 
             <div className="space-y-5">
-              {DOCUMENT_TYPES.map((docType) => {
+              {documentTypes.map((docType) => {
                 const files = getDocumentsForType(docType.type);
                 return (
                   <div key={docType.type} className="rounded-lg border p-4">
@@ -1051,14 +1603,17 @@ export default function DeathDonationRequestPage() {
                             className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2"
                           >
                             <div>
-                              <a
-                                href={getDeathDonationDocumentDownloadUrl(file.id!)}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-sm font-medium text-[#953002] hover:underline"
+                              {/* A plain <a href> is a top-level navigation, so
+                                  it never carried the JWT and every download
+                                  answered 401. This pulls the bytes through the
+                                  authenticated client instead. */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadDocument(file)}
+                                className="text-left text-sm font-medium text-[#953002] hover:underline"
                               >
                                 {file.fileName}
-                              </a>
+                              </button>
                               <p className="text-xs text-gray-500">
                                 {file.fileType} • {file.uploadedAt}
                               </p>

@@ -83,6 +83,20 @@ const ROLE_CONFIG: Record<
     border: "border-blue-200",
     desc: "Creates registrations, uploads docs & manages district-level records",
   },
+  DISTRICT_COMMITTEE: {
+    label: "District Committee",
+    bg: "bg-cyan-50",
+    text: "text-cyan-700",
+    border: "border-cyan-200",
+    desc: "Second-level approval of member death records escalated by the District Office",
+  },
+  PD_COMMITTEE: {
+    label: "P&D Committee",
+    bg: "bg-orange-50",
+    text: "text-orange-700",
+    border: "border-orange-200",
+    desc: "Final approval of member death records escalated to Planning & Development",
+  },
   BOARD_SECRETARY: {
     label: "Board Secretary",
     bg: "bg-amber-50",

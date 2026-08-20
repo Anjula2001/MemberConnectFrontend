@@ -53,6 +53,7 @@ import {
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import { BOARD_MEETING_VIEW_ROLES, hasRole } from "@/lib/permissions";
 import { getEducationalDistricts } from "@/lib/api/education";
 import {
   createBoardApprovalList,
@@ -178,9 +179,10 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 export default function NewRegistrationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
 
   const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
   const userDistrict = user?.assignedDistrict || "Colombo";
 
   const applicationIdParam = searchParams.get("applicationId");
@@ -264,7 +266,15 @@ export default function NewRegistrationsPage() {
     };
   }, [openMenuId]);
 
+  // Only the Create Board Approval List modal reads these, and that button is
+  // already hidden from District Office below. BoardMeetingController refuses the
+  // role outright, so fetching regardless just bought a 403 on every district page
+  // load. isAuthLoading guards the gap where AuthProvider has not yet hydrated
+  // `user` from localStorage — without it the role check runs against null and
+  // nobody gets the meetings.
   useEffect(() => {
+    if (isAuthLoading || !canViewBoardMeetings) return;
+
     let isCancelled = false;
 
     const loadBoardMeetings = async () => {
@@ -283,7 +293,7 @@ export default function NewRegistrationsPage() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [isAuthLoading, canViewBoardMeetings]);
 
   const mapToRegistration = (
     item: MemberApplicationDTO,

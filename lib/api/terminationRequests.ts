@@ -20,6 +20,22 @@ export interface TerminationRequestResponse {
   hasIndirectObligations?: boolean;
 }
 
+/**
+ * MMT04 manual status change.
+ *
+ * Deliberately routed through apiClient rather than the raw fetch the rest of
+ * this page still uses: the server decides "Inactive rights" from the
+ * authenticated principal, so a call without the JWT would be refused as
+ * unauthorised no matter who the user actually is.
+ */
+export async function changeTerminationRequestStatus(requestNo: string, targetStatus: string) {
+  const { data } = await apiClient.patch<TerminationRequestResponse>(
+    `/api/termination-requests/${encodeURIComponent(requestNo)}/status`,
+    { targetStatus }
+  );
+  return data;
+}
+
 export async function approveTerminationRequest(requestNo: string) {
   const { data } = await apiClient.put<TerminationRequestResponse>(
     `/api/termination-requests/${encodeURIComponent(requestNo)}/approve`
