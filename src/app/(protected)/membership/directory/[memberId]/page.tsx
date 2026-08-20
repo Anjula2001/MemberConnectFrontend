@@ -18,9 +18,8 @@ import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type Upl
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
 import {
-  
-  PROFILE_CHANGE_CREATE_ROLES
 	MEMBER_TRANSFER_ROLES,
+	PROFILE_CHANGE_CREATE_ROLES,
 	TESTING_ACTIVATE_ROLES,
 	hasPermission,
 	hasRole,
