@@ -10,6 +10,7 @@ import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Up
 import { useAuth } from "@/lib/auth-context";
 import { hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
+import { authFetch } from "@/lib/api/authFetch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ function ApprovalsPageInner() {
       setDecisions({});
       setShowConfirmPopup(false);
 
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
       const data: RequestRow[] = await res.json();
 
@@ -349,7 +350,7 @@ function ApprovalsPageInner() {
   // ── Fetch board meeting options ───────────────────────────────────────────
   const fetchBoardMeetingOptions = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings");
+      const res = await authFetch("http://localhost:8080/api/board-meetings");
       if (!res.ok) return;
       const data: BoardMeetingOption[] = await res.json();
       setBoardMeetingOptions(data);
@@ -429,7 +430,7 @@ function ApprovalsPageInner() {
           ? "http://localhost:8080/api/university-scholarships/process-deviation-approvals"
           : "http://localhost:8080/api/university-scholarships/process-approvals";
 
-      const res = await fetch(endpoint, { method: "POST", body: formData });
+      const res = await authFetch(endpoint, { method: "POST", body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to process approvals");
@@ -457,7 +458,7 @@ function ApprovalsPageInner() {
         ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${approvalListId}`
         : `http://localhost:8080/api/university-scholarships/approval-list/${approvalListId}`;
 
-      const res = await fetch(endpoint, { method: "DELETE" });
+      const res = await authFetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete the approval list");

@@ -17,6 +17,7 @@ import {
 } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { getEducationalDistricts } from "@/lib/api/education";
+import { authFetch } from "@/lib/api/authFetch";
 
 type RequestRow = {
   id: number;
@@ -238,8 +239,10 @@ export default function Page() {
       filtered = filtered.filter((r) => {
         const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
         if (!requestLocation) {
-          // Legacy rows with no location stay visible rather than vanishing.
-          return true;
+          // An untagged request matches no district. It used to fall through as
+          // visible, which meant a District Office user saw every untagged request
+          // in the system on top of their own. Mirrors matchesScope on the backend.
+          return false;
         }
         return selectedLocations.some(
           (loc) => requestLocation === loc.toLowerCase().trim()
@@ -356,12 +359,21 @@ export default function Page() {
       );
     };
 
+    // A single selection shows its own name rather than "1 Selected": a District
+    // Office user is pinned to exactly one district and the whole point of the
+    // control is to tell them which one they are filtered to. Checked before the
+    // "All Selected" branch so a one-option list still names the option.
+    //
+    // Falls back to the raw value when the district master has not loaded yet, so
+    // the pinned district is never rendered as a bare count.
     const label =
       selected.length === 0
         ? placeholder
-        : selected.length === options.length
-          ? "All Selected"
-          : `${selected.length} Selected`;
+        : selected.length === 1
+          ? (options.find((o) => o.value === selected[0])?.label ?? selected[0])
+          : selected.length === options.length
+            ? "All Selected"
+            : `${selected.length} Selected`;
 
     return (
       <div ref={ref} className="relative">
@@ -460,7 +472,7 @@ export default function Page() {
 
       // The backend scopes this to the caller's own District Office before it
       // returns, so a restricted user never receives another branch's records.
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
 
       if (Array.isArray(data) && data.length > 0) {
@@ -482,7 +494,7 @@ export default function Page() {
 
   const handleOpenBoardMeetingModal = async (deviation = false) => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
+      const res = await authFetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
       if (!res.ok) {
         throw new Error("Failed to fetch board meetings");
       }
@@ -514,7 +526,7 @@ export default function Page() {
         ? "http://localhost:8080/api/university-scholarships/attach-deviation-board-meeting"
         : "http://localhost:8080/api/university-scholarships/attach-board-meeting";
 
-      const res = await fetch(endpoint, {
+      const res = await authFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
