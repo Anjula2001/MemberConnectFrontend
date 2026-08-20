@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trash2, UploadCloud } from "lucide-react";
+import { Trash2, UploadCloud, Check, AlertCircle } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
@@ -38,6 +38,7 @@ type MemberTransferOldValues = {
   natureOfOccupation: string;
   workingLocationType: string;
   workingLocation: string;
+  workingLocationAddress: string;
   educationalZone: string;
   educationalDistrict: string;
   computerNoName: string;
@@ -85,6 +86,17 @@ type MemberTransferRecord = {
     educationalDistrict?: { id?: number; name?: string };
     educationalZone?: { id?: number; name?: string };
   };
+
+  // Snapshot of member's values at the time of request creation
+  currentDesignation?: string;
+  currentNatureOfOccupation?: string;
+  currentWorkingLocationType?: string;
+  currentEducationalDistrict?: string;
+  currentEducationalZone?: string;
+  currentWorkingLocation?: string;
+  currentWorkingLocationAddress?: string;
+  currentComputerNoInPayslip?: string;
+  currentSalaryPayingOffice?: string;
 };
 
 type OptionItem = {
@@ -107,6 +119,7 @@ const emptyOldValues: MemberTransferOldValues = {
   natureOfOccupation: "",
   workingLocationType: "",
   workingLocation: "",
+  workingLocationAddress: "",
   educationalZone: "",
   educationalDistrict: "",
   computerNoName: "",
@@ -205,6 +218,9 @@ export default function ChangeMemberTransferForm() {
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<MemberTransferFormData | null>(null);
 
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -281,13 +297,39 @@ export default function ChangeMemberTransferForm() {
     const mandatoryTypes = requiredDocumentTypes.filter((t) => t.mandatory);
     if (mandatoryTypes.length === 0) return true;
 
-    const uploadedTypes = new Set([
-      ...uploadedDocuments.map((d) => d.documentType),
-      ...documentFiles.map((d) => d.documentType),
-    ]);
-
-    return mandatoryTypes.every((type) => uploadedTypes.has(type.documentType));
+    return mandatoryTypes.every((type) => {
+      const isStaged = documentFiles.some((d) => d.documentType === type.documentType);
+      const isUploaded = uploadedDocuments.some(
+        (d) => d.requiredDocumentId === type.id || d.documentType === type.documentType
+      );
+      return isStaged || isUploaded;
+    });
   }, [requiredDocumentTypes, uploadedDocuments, documentFiles]);
+
+  const handleDeleteUploadedDocument = async (docId: number) => {
+    const targetId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
+    if (!targetId) return;
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        setPopupMessage("Failed to delete uploaded document");
+        setShowPopup(true);
+        return;
+      }
+
+      setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setPopupMessage("Document deleted successfully");
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Delete uploaded document failed:", error);
+      setPopupMessage("Failed to delete uploaded document");
+      setShowPopup(true);
+    }
+  };
 
   //Get Working location type,distric,designation and nature of occupation in DB
   useEffect(() => {
@@ -324,6 +366,16 @@ export default function ChangeMemberTransferForm() {
     const targetMemberId = memberId || loadedRecord?.member?.memberId;
     if (!targetMemberId) return;
 
+    const hasSnapshot = Boolean(
+      loadedRecord &&
+      (
+        loadedRecord.currentDesignation != null ||
+        loadedRecord.currentWorkingLocationType != null ||
+        loadedRecord.currentEducationalDistrict != null ||
+        loadedRecord.currentWorkingLocation != null
+      )
+    );
+
     const fetchMember = async () => {
       try {
         const res = await fetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
@@ -332,28 +384,33 @@ export default function ChangeMemberTransferForm() {
         const data = await res.json();
         setMember(data);
 
-        setOldValues({
-          fullName: formatDisplayValue(data.fullName),
-          dateOfBirth: formatDisplayValue(data.dateOfBirth),
-          nicNumber: formatDisplayValue(data.nic),
-          gender: formatDisplayValue(data.gender),
-          preferredLanguage: formatDisplayValue(data.preferredLanguage),
-          permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
-          privateTelephone: formatDisplayValue(data.privateTelephone),
-          mobileNumber: formatDisplayValue(data.mobileNumber),
-          emailAddress: formatDisplayValue(data.emailAddress),
-          designation: formatDisplayValue(data.designation),
-          natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
-          workingLocationType: formatDisplayValue(data.workingLocationType),
-          workingLocation: formatDisplayValue(data.workingLocation),
-          educationalZone: formatDisplayValue(data.educationalZone),
-          educationalDistrict: formatDisplayValue(data.educationalDistrict),
-          computerNoName: formatDisplayValue(data.computerNoInPayslip),
-          salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
-        });
+        if (!hasSnapshot) {
+          setOldValues({
+            fullName: formatDisplayValue(data.fullName),
+            dateOfBirth: formatDisplayValue(data.dateOfBirth),
+            nicNumber: formatDisplayValue(data.nic),
+            gender: formatDisplayValue(data.gender),
+            preferredLanguage: formatDisplayValue(data.preferredLanguage),
+            permanentPrivateAddress: formatDisplayValue(data.permanentPrivateAddress),
+            privateTelephone: formatDisplayValue(data.privateTelephone),
+            mobileNumber: formatDisplayValue(data.mobileNumber),
+            emailAddress: formatDisplayValue(data.emailAddress),
+            designation: formatDisplayValue(data.designation),
+            natureOfOccupation: formatDisplayValue(data.natureOfOccupation),
+            workingLocationType: formatDisplayValue(data.workingLocationType),
+            workingLocation: formatDisplayValue(data.workingLocation),
+            workingLocationAddress: formatDisplayValue(data.workingLocationAddress),
+            educationalZone: formatDisplayValue(data.educationalZone),
+            educationalDistrict: formatDisplayValue(data.educationalDistrict),
+            computerNoName: formatDisplayValue(data.computerNoInPayslip),
+            salaryPayingOffice: formatDisplayValue(data.salaryPayingOffice),
+          });
+        }
       } catch (error) {
         console.error("Failed to load member:", error);
-        setOldValues(emptyOldValues);
+        if (!hasSnapshot) {
+          setOldValues(emptyOldValues);
+        }
       } finally {
         setLoading(false);
       }
@@ -361,6 +418,42 @@ export default function ChangeMemberTransferForm() {
 
     fetchMember();
   }, [memberId, loadedRecord?.member?.memberId]);
+
+  //When viewing an existing request that has snapshot data, populate oldValues
+  useEffect(() => {
+    if (!loadedRecord) return;
+    const hasSnapshot = Boolean(
+      loadedRecord.currentDesignation != null ||
+      loadedRecord.currentWorkingLocationType != null ||
+      loadedRecord.currentEducationalDistrict != null ||
+      loadedRecord.currentWorkingLocation != null
+    );
+    if (!hasSnapshot) return;
+
+    setOldValues((prev) => ({
+      // Keep personal detail fields from live member data 
+      fullName: prev?.fullName ?? "",
+      dateOfBirth: prev?.dateOfBirth ?? "",
+      nicNumber: prev?.nicNumber ?? "",
+      gender: prev?.gender ?? "",
+      preferredLanguage: prev?.preferredLanguage ?? "",
+      permanentPrivateAddress: prev?.permanentPrivateAddress ?? "",
+      privateTelephone: prev?.privateTelephone ?? "",
+      mobileNumber: prev?.mobileNumber ?? "",
+      emailAddress: prev?.emailAddress ?? "",
+      // Transfer-related fields: use the saved snapshot
+      designation: formatDisplayValue(loadedRecord.currentDesignation),
+      natureOfOccupation: formatDisplayValue(loadedRecord.currentNatureOfOccupation),
+      workingLocationType: formatDisplayValue(loadedRecord.currentWorkingLocationType),
+      workingLocation: formatDisplayValue(loadedRecord.currentWorkingLocation),
+      workingLocationAddress: formatDisplayValue(loadedRecord.currentWorkingLocationAddress),
+      educationalZone: formatDisplayValue(loadedRecord.currentEducationalZone),
+      educationalDistrict: formatDisplayValue(loadedRecord.currentEducationalDistrict),
+      computerNoName: formatDisplayValue(loadedRecord.currentComputerNoInPayslip),
+      salaryPayingOffice: formatDisplayValue(loadedRecord.currentSalaryPayingOffice),
+    }));
+    setLoading(false);
+  }, [loadedRecord]);
 
 
   useEffect(() => {
@@ -373,7 +466,7 @@ export default function ChangeMemberTransferForm() {
       educationalDistrictNew: findOptionIdByName(districts, oldValues.educationalDistrict),
       educationalZoneNew: "",
       workingLocationNew: "",
-      workingLocationAddressNew: oldValues.permanentPrivateAddress || "",
+      workingLocationAddressNew: "",
       computerNoNameNew: oldValues.computerNoName || "",
       salaryPayingOfficeNew: oldValues.salaryPayingOffice || "",
     } as any);
@@ -387,7 +480,7 @@ export default function ChangeMemberTransferForm() {
     reset,
   ]);
 
-  //Fetch existing request details when requestKey changes (view/edit)
+  //Fetch existing request details when requestKey changes 
   useEffect(() => {
     if (!requestKey) {
       setLoadedRecord(null);
@@ -413,7 +506,7 @@ export default function ChangeMemberTransferForm() {
     fetchRequest();
   }, [requestKey]);
 
-  // Populate form when loadedRecord changes (after fetch)
+  // Populate form when loadedRecord changes 
   useEffect(() => {
     if (!loadedRecord) return;
 
@@ -621,9 +714,15 @@ export default function ChangeMemberTransferForm() {
   }, [selectedWorkingLocation, workingLocations, setValue]);
 
   //Handle form submission for both new and existing requests
-  const onSubmit = async (data: MemberTransferFormData) => {
-    const confirmSubmit = window.confirm("After submitting, this request cannot be edited. Do you want to continue?");
-    if (!confirmSubmit) return;
+  const onSubmit = (data: MemberTransferFormData) => {
+    setPendingFormData(data);
+    setShowSubmitConfirmModal(true);
+  };
+
+  const executeSubmit = async () => {
+    setShowSubmitConfirmModal(false);
+    if (!pendingFormData) return;
+    const data = pendingFormData;
 
     setIsSubmitting(true);
     try {
@@ -716,7 +815,7 @@ export default function ChangeMemberTransferForm() {
           });
         }
 
-        setDocumentFiles(uploadedItems);
+        setDocumentFiles([]);
 
         // Refresh the uploaded documents list from backend
         try {
@@ -770,10 +869,14 @@ export default function ChangeMemberTransferForm() {
   };
 
   //Handle Approve transfer
-  const handleApproveTransfer = async () => {
+  const handleApproveTransfer = () => {
     if (!requestId) return;
-    const confirmApprove = window.confirm("Approve this member transfer?");
-    if (!confirmApprove) return;
+    setShowApproveConfirmModal(true);
+  };
+
+  const executeApproveTransfer = async () => {
+    setShowApproveConfirmModal(false);
+    if (!requestId) return;
 
     try {
       const res = await fetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
@@ -895,11 +998,11 @@ export default function ChangeMemberTransferForm() {
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">Personal Details</h3>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <FieldPair oldLabel="Full Name" oldValue={oldValues.fullName} newLabel="Full Name" newValue={oldValues.fullName} />
-              <FieldPair oldLabel="Date of Birth" oldValue={oldValues.dateOfBirth} newLabel="Date of Birth" newValue={oldValues.dateOfBirth} />
-              <FieldPair oldLabel="NIC Number" oldValue={oldValues.nicNumber} newLabel="NIC Number" newValue={oldValues.nicNumber} />
-              <FieldPair oldLabel="Gender" oldValue={oldValues.gender} newLabel="Gender" newValue={oldValues.gender} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ReadOnlyField label="Full Name" value={oldValues.fullName} />
+              <ReadOnlyField label="Date of Birth" value={oldValues.dateOfBirth} />
+              <ReadOnlyField label="NIC Number" value={oldValues.nicNumber} />
+              <ReadOnlyField label="Gender" value={oldValues.gender} />
             </div>
           </section>
 
@@ -978,7 +1081,7 @@ export default function ChangeMemberTransferForm() {
 
               <EditableInput
                 label="Working Location Address"
-                oldValue={oldValues.permanentPrivateAddress}
+                oldValue={oldValues.workingLocationAddress}
                 newValue={loadedRecord?.newWorkingLocationAddress}
                 isViewMode={isViewMode}
                 register={register("workingLocationAddressNew")}
@@ -1030,11 +1133,20 @@ export default function ChangeMemberTransferForm() {
                       className="h-10 w-full rounded-md border px-3 text-sm"
                     >
                       <option value="">Select Document Type</option>
-                      {requiredDocumentTypes.map((type) => (
-                        <option key={type.id} value={type.documentType}>
-                          {type.displayName} {type.mandatory ? "(Mandatory)" : ""}
-                        </option>
-                      ))}
+                      {requiredDocumentTypes.map((type) => {
+                        const isUploaded = uploadedDocuments.some(
+                          (d) => d.requiredDocumentId === type.id || d.documentType === type.documentType
+                        );
+                        const isStaged = documentFiles.some((d) => d.documentType === type.documentType);
+                        const isAlreadyAdded = Boolean(isUploaded || isStaged);
+
+                        return (
+                          <option key={type.id} value={type.documentType} disabled={isAlreadyAdded}>
+                            {type.displayName} {type.mandatory ? "(Mandatory)" : ""}{" "}
+                            {isAlreadyAdded ? "(Already Added)" : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -1059,6 +1171,7 @@ export default function ChangeMemberTransferForm() {
                             uploadedAt: new Date().toISOString(),
                           },
                         ]);
+                        setSelectedDocumentType("");
                         e.target.value = "";
                       }}
                     />
@@ -1081,7 +1194,6 @@ export default function ChangeMemberTransferForm() {
                       <tr>
                         <th className="px-3 py-2">Document Type</th>
                         <th className="px-3 py-2">File Name</th>
-                        <th className="px-3 py-2">Uploaded Time</th>
                         {!isInputsDisabled && <th className="px-3 py-2">Action</th>}
                       </tr>
                     </thead>
@@ -1092,9 +1204,6 @@ export default function ChangeMemberTransferForm() {
                             {requiredDocumentTypes.find((t) => t.documentType === item.documentType)?.displayName || item.documentType}
                           </td>
                           <td className="px-3 py-2 font-medium text-gray-700">{item.file.name}</td>
-                          <td className="px-3 py-2 text-gray-600">
-                            {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : "—"}
-                          </td>
                           {!isInputsDisabled && (
                             <td className="px-3 py-2">
                               <Button
@@ -1159,6 +1268,16 @@ export default function ChangeMemberTransferForm() {
                         >
                           Download
                         </a>
+                        {!isInputsDisabled && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleDeleteUploadedDocument(doc.id)}
+                            className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-3 py-1.5 text-xs h-auto"
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1181,19 +1300,155 @@ export default function ChangeMemberTransferForm() {
         </div>
       </form>
 
-      {showPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-3 text-lg font-semibold text-[#953002]">POPUP MESSAGE</h3>
-            <p className="mb-5 text-sm text-black">{popupMessage}</p>
-            <div className="flex justify-end">
-              <Button type="button" onClick={() => setShowPopup(false)} className="bg-[#953002] text-white hover:bg-[#7a2500]">
-                OK
-              </Button>
+      {showPopup && (() => {
+        const msgLower = popupMessage.toLowerCase();
+        const isError =
+          msgLower.includes("failed") ||
+          msgLower.includes("error") ||
+          msgLower.includes("duplicate") ||
+          msgLower.includes("required") ||
+          msgLower.includes("please");
+
+        let popupTitle = "Notification";
+        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+        else if (msgLower.includes("approved")) popupTitle = "Member Transfer Approved";
+        else if (msgLower.includes("rejected")) popupTitle = "Member Transfer Rejected";
+        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        else if (isError) popupTitle = "Notice";
+
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              {isError ? (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100/80">
+                  <AlertCircle className="h-7 w-7 text-amber-600 stroke-[2.5]" />
+                </div>
+              ) : (
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                  <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+                </div>
+              )}
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                {popupTitle}
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                {popupMessage}
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2">
+                <Button
+                  type="button"
+                  onClick={() => setShowPopup(false)}
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                >
+                  OK
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {showSubmitConfirmModal && (() => {
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Submit for Approval
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                The member transfer request will be submitted for approval and can no longer be edited.
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSubmitConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeSubmit}
+                >
+                  Submit
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showApproveConfirmModal && (() => {
+        const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl text-center border border-gray-100">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100/80">
+                <Check className="h-7 w-7 text-emerald-600 stroke-[2.5]" />
+              </div>
+
+              <h3 className="mb-2 text-xl font-bold text-[#953002]">
+                Approve Member Transfer
+              </h3>
+
+              <p className="mb-4 text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
+                Are you sure you want to approve this member transfer request?
+              </p>
+
+              {currentReqId && (
+                <div className="mb-6 inline-block rounded-md bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-700 border border-gray-200/60">
+                  Request ID: {currentReqId}
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 pt-4 mt-2 flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowApproveConfirmModal(false)}
+                  className="w-28 rounded-lg text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-28 bg-emerald-600 text-white hover:bg-emerald-700 font-semibold rounded-lg text-sm shadow-sm"
+                  onClick={executeApproveTransfer}
+                >
+                  Approve
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -1231,29 +1486,12 @@ export default function ChangeMemberTransferForm() {
   );
 }
 
-function FieldPair({
-  oldLabel,
-  oldValue,
-  newLabel,
-  newValue,
-}: {
-  oldLabel: string;
-  oldValue: string;
-  newLabel: string;
-  newValue: string;
-}) {
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
-    <>
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">{oldLabel} Current</label>
-        <Input value={formatDisplayValue(oldValue)} disabled />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">{newLabel} New</label>
-        <Input value={formatDisplayValue(newValue)} disabled readOnly />
-      </div>
-    </>
+    <div>
+      <label className="mb-1 block text-sm text-gray-600">{label}</label>
+      <Input value={formatDisplayValue(value)} readOnly />
+    </div>
   );
 }
 

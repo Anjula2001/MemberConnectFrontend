@@ -27,6 +27,7 @@ type DocumentProps = {
   files: DocumentFileItem[];
   setFiles: React.Dispatch<React.SetStateAction<DocumentFileItem[]>>;
   documentTypes: RequiredDocType[];
+  uploadedDocuments?: any[];
 };
 
 export default function Document({
@@ -37,6 +38,7 @@ export default function Document({
   files,
   setFiles,
   documentTypes,
+  uploadedDocuments = [],
 }: DocumentProps) {
   const [selectedDocumentType, setSelectedDocumentType] = useState("");
 
@@ -52,6 +54,7 @@ export default function Document({
       }));
 
       setFiles((prev) => [...prev, ...newFiles]);
+      setSelectedDocumentType("");
     },
     [disabled, selectedDocumentType, setFiles]
   );
@@ -114,11 +117,28 @@ export default function Document({
             >
               <option value="">Select Document Type</option>
 
-              {documentTypes.map((type) => (
-                <option key={type.id} value={type.documentType}>
-                  {type.displayName} {type.mandatory ? "(Mandatory)" : ""}
-                </option>
-              ))}
+              {documentTypes.map((type) => {
+                const isUploaded = uploadedDocuments?.some(
+                  (doc) =>
+                    doc.requiredDocumentId === type.id ||
+                    doc.documentType === type.documentType
+                );
+                const isStaged = files.some(
+                  (file) => file.documentType === type.documentType
+                );
+                const isAlreadyAdded = Boolean(isUploaded || isStaged);
+
+                return (
+                  <option
+                    key={type.id}
+                    value={type.documentType}
+                    disabled={isAlreadyAdded}
+                  >
+                    {type.displayName} {type.mandatory ? "(Mandatory)" : ""}{" "}
+                    {isAlreadyAdded ? "(Already Added)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -156,7 +176,6 @@ export default function Document({
               <tr>
                 <th className="px-3 py-2">Document Type</th>
                 <th className="px-3 py-2">File Name</th>
-                <th className="px-3 py-2">Uploaded Time</th>
                 {!disabled && <th className="px-3 py-2">Action</th>}
               </tr>
             </thead>
@@ -183,10 +202,6 @@ export default function Document({
                         {item.file.name}
                       </span>
                     )}
-                  </td>
-
-                  <td className="px-3 py-2 text-gray-600">
-                    {formatDateTime(item.uploadedAt)}
                   </td>
 
                   {!disabled && (

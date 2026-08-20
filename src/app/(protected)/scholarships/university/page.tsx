@@ -9,6 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/c
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  canAccessUniversityScholarships,
+  canSelectAllLocations,
+  hasPermission,
+} from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
+import { getEducationalDistricts } from "@/lib/api/education";
+import { authFetch } from "@/lib/api/authFetch";
 
 type RequestRow = {
   id: number;
@@ -25,9 +34,16 @@ type RequestRow = {
   examNumber?: string;
   requestDate?: string;
   approvalListId?: string;
+  submissionLocation?: string;
 };
 
 export default function Page() {
+  const { user } = useAuth();
+
+  const canViewPage = canAccessUniversityScholarships(user?.role);
+  const canCreateApprovalLists = hasPermission(user?.role, "US_LIST_CREATE");
+  const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
+
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [displayed, setDisplayed] = useState<RequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +69,8 @@ export default function Page() {
   const [createdCount, setCreatedCount] = useState(0);
   const [confirmedIsDeviation, setConfirmedIsDeviation] = useState(false);
 
-  const hasRights = true; // rights to create University Scholarship Approval List
+  // Rights to create a University Scholarship Approval List (MMS28/MMS35).
+  const hasRights = canCreateApprovalLists;
 
   const isSelectable = (item: RequestRow) => {
     const status = (item.status || "").toUpperCase();
@@ -101,33 +118,31 @@ export default function Page() {
     return dt;
   };
 
-  const locationOptions = [
-    { value: "colombo", label: "Colombo" },
-    { value: "kandy", label: "Kandy" },
-    { value: "galle", label: "Galle" },
-    { value: "matara", label: "Matara" },
-    { value: "jaffna", label: "Jaffna" },
-    { value: "kilinochchi", label: "Kilinochchi" },
-    { value: "mannar", label: "Mannar" },
-    { value: "mullaitivu", label: "Mullaitivu" },
-    { value: "vavuniya", label: "Vavuniya" },
-    { value: "puttalam", label: "Puttalam" },
-    { value: "kurunagala", label: "Kurunagala" },
-    { value: "kaluthara", label: "Kaluthara" },
-    { value: "Gampaha", label: "Gampaha" },
-    { value: "anuradhapura", label: "Anuradhapura" },
-    { value: "polonnaruwa", label: "Polonnaruwa" },
-    { value: "mathale", label: "Mathale" },
-    { value: "nuwaraeliya", label: "Nuwara Eliya" },
-    { value: "kegalla", label: "Kegalla" },
-    { value: "rathnapura", label: "Rathnapura" },
-    { value: "Trincomalee", label: "Trincomalee" },
-    { value: "batticaloa", label: "Batticaloa" },
-    { value: "ampara", label: "Ampara" },
-    { value: "badulla", label: "Badulla" },
-    { value: "monaragala", label: "Monaragala" },
-    { value: "hambantota", label: "Hambantota" }
-  ];
+  const [locationOptions, setLocationOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (cancelled) return;
+        setLocationOptions(
+          districts.map((district) => ({ value: district, label: district }))
+        );
+      })
+      .catch(() => {
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canSelectAllLocationOptions && user?.assignedDistrict) {
+      setSelectedLocations([user.assignedDistrict]);
+    }
+  }, [canSelectAllLocationOptions, user?.assignedDistrict]);
 
   const statusOptions = [
     { value: "new", label: "New" },
@@ -196,19 +211,16 @@ export default function Page() {
 
     let filtered = [...requests];
 
-    console.log("Total requests:", requests.length);
-    console.log("Selected locations:", selectedLocations);
-    console.log("Sample request data:", requests[0]);
-
-    // Filter by location
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((r) => {
-        const requestAddress = (r.address || "").toLowerCase().trim();
-        return selectedLocations.some(loc =>
-          requestAddress === loc.toLowerCase().trim()
+        const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
+        if (!requestLocation) {
+          return false;
+        }
+        return selectedLocations.some(
+          (loc) => requestLocation === loc.toLowerCase().trim()
         );
       });
-      console.log("After location filter:", filtered.length, "records");
     }
 
     // Filter by status
@@ -290,11 +302,13 @@ export default function Page() {
     selected,
     onChange,
     placeholder = "Select...",
+    disabled = false,
   }: {
     options: { value: string; label: string }[];
     selected: string[];
     onChange: (values: string[]) => void;
     placeholder?: string;
+    disabled?: boolean;
   }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -321,14 +335,17 @@ export default function Page() {
     const label =
       selected.length === 0
         ? placeholder
-        : selected.length === options.length
-          ? "All Selected"
-          : `${selected.length} Selected`;
+        : selected.length === 1
+          ? (options.find((o) => o.value === selected[0])?.label ?? selected[0])
+          : selected.length === options.length
+            ? "All Selected"
+            : `${selected.length} Selected`;
 
     return (
       <div ref={ref} className="relative">
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen((o) => !o)}
           className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -338,7 +355,7 @@ export default function Page() {
           <ChevronDown size={14} className="text-muted-foreground shrink-0" />
         </button>
 
-        {open && (
+        {open && !disabled && (
           <div className="absolute z-50 mt-1 w-full min-w-[8rem] rounded-md border border-border bg-popover shadow-md">
             <div className="p-1 flex flex-col gap-0.5">
               {options.map((opt) => (
@@ -419,29 +436,10 @@ export default function Page() {
     try {
       setIsLoading(true);
 
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       const data = await res.json();
 
-      console.log("Retrieved fresh data from backend:", data);
-
       if (Array.isArray(data) && data.length > 0) {
-        const fieldNames = Object.keys(data[0]);
-        console.log("Available fields in the data:", fieldNames);
-
-        // Check for location-related fields
-        const locationFields = fieldNames.filter(f =>
-          f.toLowerCase().includes('location') ||
-          f.toLowerCase().includes('district') ||
-          f.toLowerCase().includes('area')
-        );
-        console.log("Location-related fields found:", locationFields);
-
-        // Get all unique values for each field
-        fieldNames.forEach(field => {
-          const uniqueValues = [...new Set(data.map(r => r[field]))].slice(0, 5);
-          console.log(`${field}:`, uniqueValues);
-        });
-
         setRequests(data);
       } else {
         setRequests([]);
@@ -460,12 +458,21 @@ export default function Page() {
 
   const handleOpenBoardMeetingModal = async (deviation = false) => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
+      const res = await authFetch("http://localhost:8080/api/board-meetings/getAllBoardMeetings");
       if (!res.ok) {
         throw new Error("Failed to fetch board meetings");
       }
       const data = await res.json();
-      setBoardMeetings(data);
+
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const upcoming = (Array.isArray(data) ? data : []).filter(
+        (meeting: any) =>
+          typeof meeting?.scheduledDate === "string" &&
+          meeting.scheduledDate.slice(0, 10) >= today
+      );
+
+      setBoardMeetings(upcoming);
       setIsDeviationModal(deviation);
       setShowBoardMeetingModal(true);
     } catch (error) {
@@ -492,7 +499,7 @@ export default function Page() {
         ? "http://localhost:8080/api/university-scholarships/attach-deviation-board-meeting"
         : "http://localhost:8080/api/university-scholarships/attach-board-meeting";
 
-      const res = await fetch(endpoint, {
+      const res = await authFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -524,6 +531,12 @@ export default function Page() {
       setIsSavingApprovalList(false);
     }
   };
+
+  if (user && !canViewPage) {
+    return (
+      <AccessRestricted message="University Scholarships are restricted to District Office, Head Office and Scholarship personnel." />
+    );
+  }
 
   return (
     <div className="p-6">
@@ -571,6 +584,7 @@ export default function Page() {
                   selected={selectedLocations}
                   onChange={setSelectedLocations}
                   placeholder="Select Locations"
+                  disabled={!canSelectAllLocationOptions}
                 />
               </div>
 
@@ -816,7 +830,7 @@ export default function Page() {
                 </SelectTrigger>
                 <SelectContent className="max-h-60 overflow-y-auto">
                   {boardMeetings.length === 0 ? (
-                    <SelectItem value="none" disabled>No Board Meetings created</SelectItem>
+                    <SelectItem value="none" disabled>No upcoming Board Meetings</SelectItem>
                   ) : (
                     boardMeetings.map((meeting: any) => (
                       <SelectItem key={meeting.id} value={String(meeting.id)}>

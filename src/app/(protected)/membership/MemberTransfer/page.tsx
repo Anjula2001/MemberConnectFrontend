@@ -212,7 +212,7 @@ export default function Page() {
                 });
             }
 
-            // Filter by search query (searches Member Full name, payroll name, initials, Member ID, NIC)
+            // Filter by search query (searches Member Full name, payroll name, initials, Member ID, NIC, Request ID)
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase().trim();
                 filtered = filtered.filter((r) => {
@@ -222,13 +222,15 @@ export default function Page() {
                     const nameWithInitials = (member.nameWithInitials || "").toLowerCase();
                     const memberId = (member.memberId || "").toLowerCase();
                     const nic = (r.nic || "").toLowerCase();
+                    const requestId = (r.requestId || "").toLowerCase();
 
                     return (
                         fullName.includes(q) ||
                         nameAsInPayroll.includes(q) ||
                         nameWithInitials.includes(q) ||
                         memberId.includes(q) ||
-                        nic.includes(q)
+                        nic.includes(q) ||
+                        requestId.includes(q)
                     );
                 });
             }
@@ -239,6 +241,8 @@ export default function Page() {
             let cmp = 0;
             if (sortBy === "member-id") {
                 cmp = (a.memberId || "").localeCompare(b.memberId || "");
+            } else if (sortBy === "request-id") {
+                cmp = (a.requestId || "").localeCompare(b.requestId || "");
             } else if (sortBy === "status") {
                 cmp = (a.status || "").localeCompare(b.status || "");
             } else {
@@ -566,6 +570,7 @@ export default function Page() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="requested-date">Requested Date</SelectItem>
+                                            <SelectItem value="request-id">Request ID</SelectItem>
                                             <SelectItem value="status">Status</SelectItem>
                                             <SelectItem value="member-id">Member ID</SelectItem>
                                         </SelectContent>
@@ -647,16 +652,12 @@ export default function Page() {
                                                     />
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    {isApproved ? (
-                                                        <span className="font-medium text-gray-700">{requestKey}</span>
-                                                    ) : (
-                                                        <Link
-                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                            className="text-[#953002] hover:underline font-medium"
-                                                        >
-                                                            {requestKey}
-                                                        </Link>
-                                                    )}
+                                                    <Link
+                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                        className="text-[#953002] hover:underline font-medium"
+                                                    >
+                                                        {requestKey}
+                                                    </Link>
                                                 </td>
                                                 <td className="py-4 px-4 text-gray-600">
                                                     {item.memberId}
@@ -677,14 +678,12 @@ export default function Page() {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-4">
-                                                    {!isApproved && (
-                                                        <Link
-                                                            href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
-                                                            className="text-[#953002] hover:underline font-medium"
-                                                        >
-                                                            Open
-                                                        </Link>
-                                                    )}
+                                                    <Link
+                                                        href={`/membership/directory/change-memberTransfer?requestId=${encodeURIComponent(requestKey)}&memberId=${encodeURIComponent(item.memberId || "")}&mode=view`}
+                                                        className="text-[#953002] hover:underline font-medium"
+                                                    >
+                                                        Open
+                                                    </Link>
                                                 </td>
                                             </tr>
                                         );

@@ -7,8 +7,10 @@ import { Button } from "@/src/components/ui/button";
 import { Card } from "@/src/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Upload, X } from "lucide-react";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
+import { authFetch } from "@/lib/api/authFetch";
 
 type RequestRow = {
   id: number;
@@ -50,22 +52,18 @@ type RowDecision = {
 };
 
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 function ApprovalsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
-  // Tab state — reads ?tab=deviation from URL
   const [activeTab, setActiveTab] = useState<"normal" | "deviation">(
     searchParams.get("tab") === "deviation" ? "deviation" : "normal"
   );
 
-  // Sync tab to URL when changed by user click
   const switchTab = (tab: "normal" | "deviation") => {
     setActiveTab(tab);
     router.replace(`/scholarships/university/approvals${tab === "deviation" ? "?tab=deviation" : ""}`);
-    // Reset all list/request state on tab switch
     setAllGroupedLists([]);
     setFilteredLists([]);
     setHasRetrieved(false);
@@ -94,23 +92,19 @@ function ApprovalsPageInner() {
   const [endDate, setEndDate] = useState("");
   const [dateError, setDateError] = useState("");
 
-  // List data
   const [allGroupedLists, setAllGroupedLists] = useState<GroupedList[]>([]);
   const [filteredLists, setFilteredLists] = useState<GroupedList[]>([]);
   const [isRetrieving, setIsRetrieving] = useState(false);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
-  // Selected list + retrieved requests
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [retrievedRequests, setRetrievedRequests] = useState<RequestRow[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [hasRetrievedRequests, setHasRetrievedRequests] = useState(false);
 
-  // ── Approve / Reject decisions per row ────────────────────────────────────
   const [decisions, setDecisions] = useState<Record<string, RowDecision>>({});
   const [proceedErrors, setProceedErrors] = useState<Record<string, string>>({});
 
-  // ── Confirm popup state ────────────────────────────────────────────────────
   const [showConfirmPopup, setShowConfirmPopup] = useState(false);
   const [popupComment, setPopupComment] = useState("");
   const [boardMeetingOptions, setBoardMeetingOptions] = useState<BoardMeetingOption[]>([]);
@@ -121,8 +115,9 @@ function ApprovalsPageInner() {
   const [processError, setProcessError] = useState<string | null>(null);
   const [processSuccess, setProcessSuccess] = useState(false);
 
-  // Delete list state
-  const canDelete = true; // TODO: wire to user role/privilege check
+  const canDelete = hasPermission(user?.role, "US_LIST_DELETE");
+  const canPrint = hasPermission(user?.role, "US_LIST_PRINT");
+  const canProcess = hasPermission(user?.role, "US_LIST_PROCESS");
   const [pendingDeleteListId, setPendingDeleteListId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -149,6 +144,7 @@ function ApprovalsPageInner() {
     return normalized.toLowerCase();
   };
 
+  //date validation
   const parseYMD = (input?: string | null) => {
     if (!input) return null;
     const match = String(input).match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -221,14 +217,14 @@ function ApprovalsPageInner() {
       setDecisions({});
       setShowConfirmPopup(false);
 
-      const res = await fetch("http://localhost:8080/api/university-scholarships");
+      const res = await authFetch("http://localhost:8080/api/university-scholarships");
       if (!res.ok) throw new Error("Failed to fetch scholarship requests");
       const data: RequestRow[] = await res.json();
 
       // Collect all requests that have been attached to an approval list
       const attached = data.filter((r) => r.approvalListId);
 
-      // Build groups keyed by approvalListId (UUID) — each attach action creates a separate list
+      // Build groups keyed by approvalListId 
       const groups: Record<string, GroupedList> = {};
       attached.forEach((req) => {
         const listId = req.approvalListId!;
@@ -316,7 +312,6 @@ function ApprovalsPageInner() {
       ...prev,
       [key]: { action, reason: prev[key]?.reason || "" },
     }));
-    // Clear error when changed
     setProceedErrors((prev) => {
       const next = { ...prev };
       delete next[key];
@@ -338,15 +333,20 @@ function ApprovalsPageInner() {
     }
   };
 
-  // ── Fetch board meeting options ───────────────────────────────────────────
+  //the Actual Board Meeting Date is a selection over the Board Meeting
   const fetchBoardMeetingOptions = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/board-meetings");
-      if (!res.ok) return;
+      const res = await authFetch(
+        "http://localhost:8080/api/board-meetings/getAllBoardMeetings"
+      );
+      if (!res.ok) {
+        console.error("Failed to fetch board meetings:", res.status);
+        return;
+      }
       const data: BoardMeetingOption[] = await res.json();
-      setBoardMeetingOptions(data);
-    } catch {
-      // silently ignore; user can still proceed
+      setBoardMeetingOptions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to fetch board meetings:", error);
     }
   };
 
@@ -421,7 +421,7 @@ function ApprovalsPageInner() {
           ? "http://localhost:8080/api/university-scholarships/process-deviation-approvals"
           : "http://localhost:8080/api/university-scholarships/process-approvals";
 
-      const res = await fetch(endpoint, { method: "POST", body: formData });
+      const res = await authFetch(endpoint, { method: "POST", body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to process approvals");
@@ -449,7 +449,7 @@ function ApprovalsPageInner() {
         ? `http://localhost:8080/api/university-scholarships/deviation-approval-list/${approvalListId}`
         : `http://localhost:8080/api/university-scholarships/approval-list/${approvalListId}`;
 
-      const res = await fetch(endpoint, { method: "DELETE" });
+      const res = await authFetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete the approval list");
@@ -507,10 +507,51 @@ function ApprovalsPageInner() {
 
   // ── Selected list info ────────────────────────────────────────────────────
   const selectedGroup = filteredLists.find((g) => g.approvalListId === selectedListId);
+  const todayIsoDate = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  })();
+  const minActualBoardMeetingDate = selectedGroup?.scheduledDate?.slice(0, 10) ?? "";
+
+  const selectableBoardMeetingOptions = (() => {
+    const inRange = boardMeetingOptions
+      .filter((opt) => {
+        const date = opt.scheduledDate?.slice(0, 10);
+        if (!date) return false;
+        if (date === minActualBoardMeetingDate) return true;
+        return (
+          (!minActualBoardMeetingDate || date >= minActualBoardMeetingDate) &&
+          date <= todayIsoDate
+        );
+      })
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
+
+    if (!minActualBoardMeetingDate) return inRange;
+
+    const hasScheduled = inRange.some(
+      (opt) => opt.scheduledDate?.slice(0, 10) === minActualBoardMeetingDate
+    );
+    return hasScheduled
+      ? inRange
+      : [
+        { id: -1, boardMeetingId: "", scheduledDate: minActualBoardMeetingDate },
+        ...inRange,
+      ];
+  })();
   const isProcessed = selectedGroup ? getListStatus(selectedGroup) === "PROCEED" : false;
   const firstRequest = retrievedRequests[0];
 
-  // ─────────────────────────────────────────────────────────────────────────
+  //permission
+  if (user && !hasPermission(user.role, "US_LIST_VIEW")) {
+    return (
+      <AccessRestricted
+        message="University Scholarship Approval Lists are restricted to Head Office and Board Secretariat personnel."
+        fallbackHref="/scholarships/university"
+        fallbackLabel="Back to University Scholarships"
+      />
+    );
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -745,7 +786,7 @@ function ApprovalsPageInner() {
                     Delete List
                   </Button>
                 )}
-                {!isProcessed && (
+                {!isProcessed && canPrint && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -833,8 +874,8 @@ function ApprovalsPageInner() {
                             {isProcessed ? (
                               <div className="flex flex-col gap-1">
                                 <span className={`font-semibold px-2 py-0.5 rounded text-[11px] w-fit ${req.status === "APPROVED"
-                                    ? "bg-green-50 text-green-700 border border-green-200"
-                                    : "bg-red-50 text-red-700 border border-red-200"
+                                  ? "bg-green-50 text-green-700 border border-green-200"
+                                  : "bg-red-50 text-red-700 border border-red-200"
                                   }`}>
                                   {req.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
                                 </span>
@@ -854,8 +895,8 @@ function ApprovalsPageInner() {
                                       handleDecisionChange(key, e.target.value as "approve" | "reject")
                                     }
                                     className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${dec.action === "approve"
-                                        ? "border-green-300 bg-green-50 text-green-700"
-                                        : "border-red-300 bg-red-50 text-red-700"
+                                      ? "border-green-300 bg-green-50 text-green-700"
+                                      : "border-red-300 bg-red-50 text-red-700"
                                       }`}
                                   >
                                     <option value="approve">✓ Approve</option>
@@ -891,7 +932,7 @@ function ApprovalsPageInner() {
               </div>
 
               {/* ── PROCEED BUTTON ── */}
-              {!isProcessed && (
+              {!isProcessed && canProcess && (
                 <div className="mt-5 flex justify-end">
                   <Button
                     onClick={handleProceed}
@@ -1010,33 +1051,24 @@ function ApprovalsPageInner() {
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Actual Board Meeting Date
                   </label>
-                  {boardMeetingOptions.length > 0 ? (
-                    <div className="relative">
-                      <select
-                        value={actualBoardMeetingDate}
-                        onChange={(e) => setActualBoardMeetingDate(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 pr-8 shadow-sm"
-                      >
-                        {boardMeetingOptions.map((opt) => (
-                          <option key={opt.id} value={opt.scheduledDate}>
-                            {new Date(opt.scheduledDate + "T00:00:00").toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "long",
-                              year: "numeric",
-                            })}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                    </div>
-                  ) : (
-                    <input
-                      type="date"
+                  <div className="relative">
+                    <select
                       value={actualBoardMeetingDate}
                       onChange={(e) => setActualBoardMeetingDate(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
-                    />
-                  )}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 pr-8 shadow-sm"
+                    >
+                      {selectableBoardMeetingOptions.map((opt) => (
+                        <option key={`${opt.id}-${opt.scheduledDate}`} value={opt.scheduledDate}>
+                          {new Date(opt.scheduledDate + "T00:00:00").toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "long",
+                            year: "numeric",
+                          })}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  </div>
                   <p className="text-[10px] text-gray-400">Select if meeting was postponed</p>
                 </div>
               </div>
@@ -1067,8 +1099,8 @@ function ApprovalsPageInner() {
                 </label>
                 <div
                   className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${uploadedFile
-                      ? "border-[#953002]/40 bg-[#fff6f2]"
-                      : "border-gray-200 bg-gray-50 hover:border-[#953002]/40 hover:bg-[#fff6f2]/50"
+                    ? "border-[#953002]/40 bg-[#fff6f2]"
+                    : "border-gray-200 bg-gray-50 hover:border-[#953002]/40 hover:bg-[#fff6f2]/50"
                     }`}
                   onClick={() => fileInputRef.current?.click()}
                 >

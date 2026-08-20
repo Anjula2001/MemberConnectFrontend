@@ -3,9 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Send, ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
-import axios from 'axios';
+import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
 import { getMemberById } from '@/lib/api/member';
+import { useToast } from '@/lib/toast-context';
+import { useAuth } from '@/lib/auth-context';
+import { hasRole, PROFILE_CHANGE_EDIT_ROLES } from '@/lib/permissions';
+import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 
 // --- 1. Zod Schema Definition ---
 // Validates the nominee change request payload before sending to the backend.
@@ -25,42 +29,69 @@ interface SectionCardProps {
 
 export default function NomineeChangeRequest({ editId, memberId }: { editId?: string; memberId?: string }) {
   const router = useRouter();
+  // The shared toast used across the app (member creation, admin screens). The
+  // browser's alert() was an unstyled OS dialog that also blocked the page.
+  const { addToast } = useToast();
+  const { user } = useAuth();
+
+  // Re-opening a submitted request is not an SRS function — MMC18 forbids editing a
+  // submitted record outright — so it is held to the roles that can decide one.
+  //
+  // There is deliberately no Approve/Reject here: MMC25 places the decision on the
+  // Nominee Change Approval List, not on the request.
+  const canEdit = hasRole(user?.role, PROFILE_CHANGE_EDIT_ROLES);
   const isEditMode = Boolean(editId);
 
   const [memberName, setMemberName] = useState<string | null>(null);
-  const [currentData, setCurrentData] = useState({
-    newnommineName: 'Vihanga',
+  const EMPTY_NOMINEE = {
+    newnommineName: '',
     relationship: '',
     nic: '',
-    address: ''
-  });
-
-  const INTIAL_NOMINEE_DATA = {
-    newnommineName: 'Vihanga',
-    relationship: '',
-    nic: '',
-    address: ''
+    address: '',
   };
 
-  const STATUS_OPTIONS = [
-    { value: 'ADDED_TO_BOARD_APPROVAL_LIST', label: 'Added to Board Approval List' },
-    { value: 'REJECTED', label: 'Rejected' },
-    { value: 'INACTIVE', label: 'Inactive' },
-    { value: 'PENDING', label: 'Pending' },
-  ];
+  const [currentData, setCurrentData] = useState({ ...EMPTY_NOMINEE });
+  const [relationships, setRelationships] = useState<{ id: number; name: string }[]>([]);
 
   const [mounted, setMounted] = useState(false);
-  const [fetchedMemberId, setFetchedMemberId] = useState<string | null>(null);
 
   // --- 2. State Management ---
   // currentData stores the nominee information currently on file.
   // formData stores the requested updated nominee values that the user can edit.
-  const [formData, setFormData] = useState({ ...INTIAL_NOMINEE_DATA });
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [formData, setFormData] = useState({ ...EMPTY_NOMINEE });
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  // The membership number (MEM-2026-001). Distinct from the memberId route param,
+  // which is the Member table's numeric primary key - sending that as the request's
+  // memberId is what produced rows the list could not resolve a member for.
+  const [membershipNo, setMembershipNo] = useState<string | null>(null);
+  const [memberInitials, setMemberInitials] = useState<string | null>(null);
+  const [memberNic, setMemberNic] = useState<string | null>(null);
+  const [submissionLocation, setSubmissionLocation] = useState<string | null>(null);
+  // MMC18 locks a submitted record. Editing it in place is enabled at the product
+  // owner's direction; re-submitting returns the request to Submitted for Approval so
+  // it re-enters the approval-list queue.
+  const [isEditing, setIsEditing] = useState(false);
+  // MMC18's supporting document. existingStoragePath is the S3 key already on the
+  // request; it is sent back unchanged on an ordinary edit so the file is not dropped.
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [existingUrl, setExistingUrl] = useState<string | null>(null);
+  const [existingFileName, setExistingFileName] = useState<string | null>(null);
+  const [existingStoragePath, setExistingStoragePath] = useState<string | null>(null);
+  const [requestNo, setRequestNo] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // MMC18: "Once submitted, the user cannot edit the record."
+  const isLocked = Boolean(requestStatus) && requestStatus !== 'NEW' && !isEditing;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient
+      .get('/api/masters/nominee-relationships')
+      .then((res) => setRelationships(res.data ?? []))
+      .catch(() => setRelationships([]));
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -73,34 +104,37 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
 
       try {
         if (editId) {
-          const response = await axios.get(`http://localhost:8080/api/v3/getnommineById/${editId}`);
+          const response = await apiClient.get(`/api/v3/getnommineById/${editId}`);
           const data = response.data.data || response.data;
 
           if (data) {
-            const requestData = {
+            setFormData({
               newnommineName: data.newnommineName || "",
               relationship: data.relationship || "",
               nic: data.nic || "",
               address: data.address || "",
-            };
-            setFormData(requestData);
-            setSelectedStatus(data.newStatus || data.Status || '');
+            });
+            // The Current Value column is the snapshot stored when the request was
+            // raised. It used to be re-read from the member on every view, so an
+            // already-approved request compared against itself and showed no change.
+            setCurrentData({
+              newnommineName: data.oldNommineName || "",
+              relationship: data.oldRelationship || "",
+              nic: data.oldNic || "",
+              address: data.oldAddress || "",
+            });
+            setRequestStatus(data.status ?? null);
+            setRequestNo(data.requestNo ?? null);
+            setMembershipNo(data.memberId ?? null);
+            setMemberName(data.memberFullName ?? null);
+            setMemberInitials(data.memberNameWithInitials ?? null);
+            setMemberNic(data.memberNic ?? null);
 
-            const resolvedMemberId = data.memberId || data.memberID || data.memberid || memberId;
-            if (resolvedMemberId) {
-              setFetchedMemberId(resolvedMemberId.toString());
-              const member = await getMemberById(Number(resolvedMemberId));
-              const currentNomineeData = {
-                newnommineName: member.nomineeFullName || member.nameWithInitials || member.fullName || "",
-                relationship: member.nomineeRelationship || "",
-                nic: member.identificationNumber || member.nic || "",
-                address: member.nomineeAddress || member.permanentPrivateAddress || "",
-              };
-              setCurrentData(currentNomineeData);
-              setMemberName(member.fullName || member.nameWithInitials || null);
-            } else {
-              setCurrentData(requestData);
-              setMemberName(data.fullName || data.nameWithInitials || null);
+            if (data.documentStoragePath) {
+              setExistingStoragePath(data.documentStoragePath);
+              setExistingFileName(data.documentFileName ?? data.documentStoragePath);
+              // Served by the backend from S3; the file is never publicly exposed.
+              setExistingUrl(`/api/documents/file/${data.documentStoragePath}`);
             }
           }
         } else if (memberId) {
@@ -112,14 +146,16 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             address: member.nomineeAddress || member.permanentPrivateAddress || "",
           };
           setCurrentData(nomineeData);
+          // MMC18: the New Value section defaults to the current values.
+          setFormData(nomineeData);
+          setMembershipNo(member.memberId ?? null);
           setMemberName(member.fullName || member.nameWithInitials || null);
+          setMemberInitials(member.nameWithInitials ?? null);
+          setMemberNic(member.nic ?? null);
+          setSubmissionLocation(member.submissionLocation ?? member.educationalDistrict ?? null);
         }
-      } catch (err: any) {
-        console.error("API Error details:", err.response || err);
-        const status = err.response?.status;
-        const url = editId ? `http://localhost:8080/api/v3/getnommineById/${editId}` : `memberId=${memberId}`;
-        const msg = `Failed to fetch ${url} (Status: ${status}). Please check your Spring Boot console for exact parameter mismatch errors.`;
-        setLoadError(msg);
+      } catch (err: unknown) {
+        setLoadError(err instanceof Error ? err.message : "Could not load this nominee change request.");
       } finally {
         setLoadingRequest(false);
       }
@@ -150,6 +186,24 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
   };
 
   // --- 4. Submit to Backend ---
+  /**
+   * Leaves the screen for wherever it was opened from.
+   *
+   * The button had no onClick at all, so it did nothing. An explicit destination is
+   * used rather than router.back(): this screen is opened from two places, and history
+   * has no entry to return to when a request is opened directly by URL or after a
+   * refresh — which is exactly the case when reviewing a created request.
+   */
+  const handleBack = () => {
+    if (isEditMode) {
+      // Opened from the All Member Profile Change Requests list.
+      router.push('/membership/profile-changes');
+      return;
+    }
+    // Opened from the member's profile Actions menu.
+    router.push(memberId ? `/membership/directory/${memberId}` : '/membership/directory');
+  };
+
   // Builds the nominee change payload and sends it to the backend.
   // Edit mode reuses the same save endpoint with an Id and status if needed.
   const handleSubmit = async () => {
@@ -170,40 +224,53 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
     setIsSubmitting(true);
 
     // Data mapped to match your Spring Boot DTO
-    const currentMemberId = memberId || fetchedMemberId;
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       newnommineName: formData.newnommineName,
       relationship: formData.relationship,
       nic: formData.nic,
       address: formData.address,
     };
 
-    if (currentMemberId) {
-      payload.memberId = currentMemberId;
+    if (membershipNo) {
+      payload.memberId = membershipNo;
+    }
+    if (submissionLocation) {
+      payload.submissionLocation = submissionLocation;
+    }
+    // No new file and no existing key means "no document"; sending the existing key
+    // back tells the backend to leave the stored file alone.
+    if (!selectedFile && existingStoragePath) {
+      payload.documentStoragePath = existingStoragePath;
     }
 
-    if (isEditMode) {
-      payload.id = editId;
-      if (selectedStatus) {
-        payload.status = selectedStatus;
-        payload.newStatus = selectedStatus;
-      }
-    } else {
-      payload.newStatus = 'SUBMITTED_FOR_APPROVAL';
+    // The JSON goes as a "request" part so the backend's DTO validation still applies
+    // on a multipart submit — the same shape Basic Profile uses.
+    const body = new FormData();
+    body.append(
+      'request',
+      new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    );
+    if (selectedFile) {
+      body.append('file', selectedFile);
     }
 
     try {
       if (isEditMode) {
-        await axios.post('http://localhost:8080/api/v3/saveNommine', payload);
-        alert("Nominee change request updated successfully!");
-        router.push('/membership/profile-changes');
+        // Edits used to be re-posted to the create endpoint, relying on the id in the
+        // body making save() behave as an upsert. This is the update endpoint.
+        await apiClient.put(`/api/v3/updateNommineWithDocument/${editId}`, body);
+        setIsEditing(false);
+        setRequestStatus('SUBMITTED_FOR_APPROVAL');
+        addToast("Request updated and sent back for approval.");
       } else {
-        await axios.post('http://localhost:8080/api/v3/saveNommine', payload);
-        alert("Nominee change request submitted successfully!");
+        await apiClient.post('/api/v3/saveNommineWithDocument', body);
+        addToast("Nominee change request submitted successfully.");
       }
-    } catch (error: any) {
-      console.error(error);
-      alert("Submission failed: " + (error.response?.data?.message || "Server error"));
+      router.push('/membership/profile-changes');
+    } catch (error: unknown) {
+      // apiClient's interceptor already unwraps the backend message into an Error.
+      const message = error instanceof Error ? error.message : "Server error";
+      addToast(message || "Could not submit the request.", "destructive");
     } finally {
       setIsSubmitting(false);
     }
@@ -225,42 +292,81 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
       <div className="max-w-5xl mx-auto space-y-6">
 
         {/* Header Section */}
+        {(membershipNo || memberName) && (
+          <div className="mb-4 grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Member ID</p>
+              <p className="font-mono font-medium text-gray-800">{membershipNo ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Name with Initials</p>
+              <p className="font-medium text-gray-800">{memberInitials ?? memberName ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">NIC</p>
+              <p className="font-medium text-gray-800">{memberNic ?? '—'}</p>
+            </div>
+          </div>
+        )}
+
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <button className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back"
+              className="p-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+            >
               <ArrowLeft size={20} />
             </button>
             <div>
               <h1 className="text-2xl font-bold text-[#8A4C27]">
-                {isEditMode ? "Edit Nominee Change Request" : "New Nominee Change Request"}
+                {isEditMode ? `Nominee Change Request ${requestNo ?? 'NEW'}` : "New Nominee Change Request"}
               </h1>
               <span className="bg-[#EAEBED] px-2 py-0.5 rounded text-[12px] text-slate-600 font-mono inline-block mt-1">
-                {memberName ? `${memberName} (${memberId})` : "Johnathan Doe (MB-2023001)"}
+                {memberName
+                  ? `${memberName}${membershipNo ? ` (${membershipNo})` : ''}`
+                  : "Member details unavailable"}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {isEditMode && (
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm"
-              >
-                <option value="">Change status</option>
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+            {requestStatus && (
+              <span className="rounded-full bg-[#EDE0D6] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#8A4C27]">
+                {requestStatus.replace(/_/g, ' ')}
+              </span>
             )}
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
-                } text-white`}
-            >
-              {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
-              {isSubmitting ? "Updating..." : isEditMode ? "💾 Update Request" : "💾 Submit Request"}
-            </button>
+            {isEditMode && !isEditing && canEdit && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                disabled={isSubmitting}
+                className="px-4 py-2 rounded-lg border border-[#8A4C27] text-[#8A4C27] font-semibold hover:bg-[#8A4C27]/5 transition-colors disabled:opacity-60"
+              >
+                ✏️ Edit
+              </button>
+            )}
+            {isEditMode && isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-gray-700 font-semibold"
+              >
+                Cancel
+              </button>
+            )}
+            {(!isEditMode || isEditing) && (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className={`px-6 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors ${isSubmitting ? 'bg-slate-400' : 'bg-[#8A4C27] hover:bg-[#733F20]'
+                  } text-white`}
+              >
+                {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
+                {isSubmitting ? "Saving..." : "💾 Submit Request"}
+              </button>
+            )}
           </div>
         </header>
 
@@ -299,14 +405,14 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
                 <select
                   value={formData.relationship}
                   onChange={(e) => handleFieldChange('relationship', e.target.value)}
+                  disabled={isLocked}
                   className={`w-full px-4 py-2.5 rounded-lg border appearance-none bg-white focus:outline-none transition-all ${errors.relationship ? 'border-red-500 ring-1 ring-red-50' : 'border-slate-200 focus:border-[#8A4C27]'
                     }`}
                 >
                   <option value="">Select relationship</option>
-                  <option value="spouse">Spouse</option>
-                  <option value="child">Child</option>
-                  <option value="parent">Parent</option>
-                  <option value="sibling">Sibling</option>
+                  {relationships.map((r) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
               </div>
@@ -344,9 +450,26 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
               Nominee's NIC / Birth Certificate Copy
             </li>
           </ul>
-          <div className="w-full border-2 border-dashed border-slate-200 rounded-xl py-10 bg-slate-50 flex justify-center items-center hover:bg-white hover:border-[#8A4C27]/30 transition-all cursor-pointer group">
-            <span className="text-slate-400 italic text-sm group-hover:text-slate-500">Document upload functionality (Mock)</span>
-          </div>
+          <DocumentUploadCard
+            label="Nominee's NIC / Birth Certificate Copy"
+            disabled={isLocked}
+            existingUrl={existingUrl}
+            existingFileName={existingFileName}
+            onFileSelected={(file) => {
+              setSelectedFile(file);
+              setExistingFileName(file.name);
+              // The file is uploaded with the request, not on selection, so there is
+              // nothing to preview from the server until it has been submitted.
+              setExistingUrl(null);
+            }}
+            onDelete={async () => {
+              // Clearing both is what tells the backend to remove the stored document.
+              setSelectedFile(null);
+              setExistingUrl(null);
+              setExistingFileName(null);
+              setExistingStoragePath(null);
+            }}
+          />
         </SectionCard>
       </div>
     </div>

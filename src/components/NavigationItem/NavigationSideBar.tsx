@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import type { UserRole } from "@/lib/auth-context";
+import {
+  canAccessFundRequests,
+  canAccessGrade5,
+  canAccessUniversityScholarships,
+  hasPermission,
+} from "@/lib/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -62,6 +69,46 @@ export default function NavigationSideBar() {
   const pathname = usePathname();
   const { user } = useAuth();
 
+  /**
+   * Builds the Scholarships menu for a role, or null when the role has nothing in it.
+   *
+   * Every entry is now permission-gated — Grade 5 (MMS01–MMS20) and University
+   * (MMS21–MMS48) alike — so the menu is derived from the matrix rather than from
+   * which branch of this function a role happens to land in.
+   *
+   * Previously District Office and Head Office had no Scholarships menu at all, while
+   * Death Donation Officer got the whole thing by falling through a catch-all branch.
+   * That is backwards: those first two are the SRS's named actors for both modules.
+   */
+  const buildScholarshipsMenu = (role: UserRole | undefined): MenuItem | null => {
+    const subMenu: SubMenuItem[] = [];
+
+    if (canAccessGrade5(role)) {
+      subMenu.push({ title: "Grade 5", url: "/scholarships/grade-5" });
+    }
+
+    if (hasPermission(role, "G5_EXAM_MASTER_MANAGE")) {
+      subMenu.push({
+        title: "Grade 5 Exam & Cut-offs",
+        url: "/scholarships/grade-5/manage-exam-cutoff",
+      });
+    }
+
+    if (canAccessUniversityScholarships(role)) {
+      subMenu.push({ title: "University", url: "/scholarships/university" });
+    }
+
+    if (canAccessFundRequests(role)) {
+      subMenu.push({ title: "Fund Requests", url: "/scholarships/fund-requests" });
+    }
+
+    if (subMenu.length === 0) {
+      return null;
+    }
+
+    return { title: "Scholarships", icon: GraduationCap, subMenu };
+  };
+
   const getFilteredMenuItems = (): MenuItem[] => {
     const role = user?.role;
 
@@ -112,6 +159,11 @@ export default function NavigationSideBar() {
               url: "/membership/dormant",
               icon: UserCheck,
             },
+            {
+              title: "Profile Changes",
+              url: "/membership/profile-changes",
+              icon: FileText,
+            },
           ],
         },
         // MMD01 names the District Office System User as the actor who raises
@@ -120,6 +172,11 @@ export default function NavigationSideBar() {
         // previously offered only to Super Admin and to the catch-all branch -
         // that is, to everyone except the people who actually use it.
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
+        // District Office is the SRS's named actor for creating Grade 5 requests
+        // (MMS01–MMS05), so the module belongs in this menu.
+        ...([buildScholarshipsMenu(role)].filter(
+          Boolean
+        ) as MenuItem[]),
       ];
     }
 
@@ -195,6 +252,11 @@ export default function NavigationSideBar() {
         // MMD02 / MMD03: Head Office reads donations across every district and
         // holds the Inactive right in the MMD04 status matrix.
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
+        // Head Office / Board Secretary own the Grade 5 approval track
+        // (MMS06–MMS19) — the module was previously unreachable for them.
+        ...([buildScholarshipsMenu(role)].filter(
+          Boolean
+        ) as MenuItem[]),
         { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
@@ -297,15 +359,9 @@ export default function NavigationSideBar() {
             },
           ],
         },
-        {
-          title: "Scholarships",
-          icon: GraduationCap,
-          subMenu: [
-            { title: "Grade 5", url: "/scholarships/grade-5" },
-            { title: "University", url: "/scholarships/university" },
-            { title: "Fund Requests", url: "/scholarships/fund-requests" },
-          ],
-        },
+        ...([buildScholarshipsMenu(role)].filter(
+          Boolean
+        ) as MenuItem[]),
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
         { title: "Reports", icon: BarChart, url: "/reports" },
         {
@@ -322,6 +378,16 @@ export default function NavigationSideBar() {
               title: "Membership Eligibility",
               url: "/admin/membership-eligibility",
               icon: SlidersHorizontal,
+            },
+            {
+              title: "Member Accounts",
+              url: "/admin/member-accounts",
+              icon: Wallet,
+            },
+            {
+              title: "University Master",
+              url: "/admin/university-master",
+              icon: GraduationCap,
             },
           ],
         },
@@ -342,6 +408,11 @@ export default function NavigationSideBar() {
           icon: UserCog,
           subMenu: [
             {
+              title: "Member Accounts",
+              url: "/admin/member-accounts",
+              icon: Wallet,
+            },
+            {
               title: "Remittance Master",
               url: "/admin/remittance-master",
               icon: Wallet,
@@ -357,6 +428,10 @@ export default function NavigationSideBar() {
     // Registration spec, so they get no Membership access at all rather than silently
     // inheriting it from a catch-all branch. They keep access to their own modules only.
     //
+    // Grade 5 is no longer part of that inheritance: the Scholarships menu is built
+    // from the permissions the role actually holds, so Death Donation Officer sees the
+    // University items it already had and nothing more.
+    //
     // Death Donation is deliberately NOT here. SRS Requirement 05 names only the
     // District Office and Head Office System Users as actors, so a Scholarship
     // Officer was being shown a module they have no part in — and, despite the
@@ -367,15 +442,9 @@ export default function NavigationSideBar() {
         icon: Home,
         url: "/",
       },
-      {
-        title: "Scholarships",
-        icon: GraduationCap,
-        subMenu: [
-          { title: "Grade 5", url: "/scholarships/grade-5" },
-          { title: "University", url: "/scholarships/university" },
-          { title: "Fund Requests", url: "/scholarships/fund-requests" },
-        ],
-      },
+      ...([buildScholarshipsMenu(role)].filter(
+        Boolean
+      ) as MenuItem[]),
       { title: "Reports", icon: BarChart, url: "/reports" },
     ];
   };

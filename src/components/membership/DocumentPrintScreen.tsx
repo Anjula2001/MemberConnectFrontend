@@ -7,6 +7,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Checkbox } from "@/src/components/ui/checkbox";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { Input } from "@/src/components/ui/input";
 import {
   Select,
@@ -82,10 +83,19 @@ export default function DocumentPrintScreen({
   const { addToast } = useToast();
   const canPrint = hasRole(user?.role, CARD_PRINTING_ROLES);
 
+  // The document on its own, without the leading verb: "Print Membership Cards" ->
+  // "membership cards". The old confirm() interpolated the full title after a "Print"
+  // label and read "Print print membership cards for 1 member?".
+  const documentLabel = title.replace(/^print\s+/i, "").toLowerCase();
+
   const [members, setMembers] = useState<MemberDTO[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState(false);
+  // What the confirmation modal is asking about. null = modal closed. window.confirm()
+  // returned synchronously; a React modal cannot, so the request is parked here between
+  // the user pressing Print and confirming it.
+  const [pendingPrint, setPendingPrint] = useState<{ ids: number[]; reprint: boolean } | null>(null);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -164,16 +174,16 @@ export default function DocumentPrintScreen({
     window.open(`/membership/print/${printRoute}?ids=${ids.join(",")}`, "_blank");
   };
 
-  const handlePrint = async (ids: number[], reprint: boolean) => {
+  /** Asks for confirmation; the actual print runs from the modal's confirm button. */
+  const handlePrint = (ids: number[], reprint: boolean) => {
+    if (ids.length === 0) return;
+    setPendingPrint({ ids, reprint });
+  };
+
+  const runPrint = async (ids: number[], reprint: boolean) => {
     if (ids.length === 0) return;
     const label = reprint ? "Re-print" : "Print";
-    if (
-      !window.confirm(
-        `${label} ${title.toLowerCase()} for ${ids.length} member${ids.length === 1 ? "" : "s"}?`
-      )
-    ) {
-      return;
-    }
+    setPendingPrint(null);
 
     setPrinting(true);
     try {
@@ -419,6 +429,27 @@ export default function DocumentPrintScreen({
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={pendingPrint !== null}
+        title={pendingPrint?.reprint ? `Re-print ${documentLabel}` : title}
+        subtitle={
+          pendingPrint
+            ? `${pendingPrint.ids.length} member${pendingPrint.ids.length === 1 ? "" : "s"} selected`
+            : undefined
+        }
+        message={
+          pendingPrint
+            ? `${pendingPrint.reprint ? "Re-print" : "Print"} ${documentLabel} for ${pendingPrint.ids.length} member${pendingPrint.ids.length === 1 ? "" : "s"}?`
+            : ""
+        }
+        confirmLabel={pendingPrint?.reprint ? "Yes, Re-print" : "Yes, Print"}
+        busy={printing}
+        onCancel={() => setPendingPrint(null)}
+        onConfirm={() => {
+          if (pendingPrint) void runPrint(pendingPrint.ids, pendingPrint.reprint);
+        }}
+      />
     </div>
   );
 }

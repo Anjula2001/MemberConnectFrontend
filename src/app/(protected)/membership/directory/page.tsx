@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
-	ChevronsUpDown,
+	ArrowDownWideNarrow,
+	ArrowUpNarrowWide,
 	Filter,
 	ListFilter,
 	Loader2,
@@ -146,8 +147,12 @@ export default function MemberDirectoryPage() {
 	const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 	const [workingLocationType, setWorkingLocationType] = useState("all-types");
 	const [educationalZone, setEducationalZone] = useState("all-zones");
+	const [educationalDistrict, setEducationalDistrict] = useState("all-districts");
+	const [membershipStartFrom, setMembershipStartFrom] = useState("");
+	const [membershipStartTo, setMembershipStartTo] = useState("");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [sortBy, setSortBy] = useState("membership-date");
+	const [sortAsc, setSortAsc] = useState(true);
 	const [districtOptions, setDistrictOptions] = useState<string[]>([]);
 
 	// Load the real District Office location master (replaces a hardcoded sample list),
@@ -184,6 +189,23 @@ export default function MemberDirectoryPage() {
 	// Fetch helpers
 	// ---------------------------------------------------------------------------
 
+	// Carries the current filters into the report so the printed output matches the
+	// screen exactly (spec 5.4), and stays shareable rather than relying on state.
+	const buildReportUrl = () => {
+		const p = new URLSearchParams();
+		if (searchQuery) p.set("query", searchQuery);
+		selectedStatuses.forEach((v) => p.append("statuses", v));
+		selectedLocations.forEach((v) => p.append("locations", v));
+		if (workingLocationType !== "all-types") p.set("workingLocationType", workingLocationType);
+		if (educationalZone !== "all-zones") p.set("educationalZone", educationalZone);
+		if (educationalDistrict !== "all-districts") p.set("educationalDistrict", educationalDistrict);
+		if (membershipStartFrom) p.set("membershipStartFrom", membershipStartFrom);
+		if (membershipStartTo) p.set("membershipStartTo", membershipStartTo);
+		p.set("sortBy", sortBy);
+		p.set("sortDirection", sortAsc ? "asc" : "desc");
+		return `/membership/directory/report?${p.toString()}`;
+	};
+
 	const fetchMembers = useCallback(async () => {
 		setLoading(true);
 		setError(null);
@@ -196,22 +218,23 @@ export default function MemberDirectoryPage() {
 					workingLocationType !== "all-types" ? workingLocationType : undefined,
 				educationalZone:
 					educationalZone !== "all-zones" ? educationalZone : undefined,
+				educationalDistrict:
+					educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
+				membershipStartFrom: membershipStartFrom || undefined,
+				membershipStartTo: membershipStartTo || undefined,
 			});
 
-			// Client-side sort
+			// Client-side sort, honouring the ascending/descending toggle.
 			const sorted = [...data].sort((a, b) => {
+				let cmp = 0;
 				if (sortBy === "membership-date") {
-					return (
-						(a.membershipStartDate ?? "").localeCompare(b.membershipStartDate ?? "")
-					);
+					cmp = (a.membershipStartDate ?? "").localeCompare(b.membershipStartDate ?? "");
+				} else if (sortBy === "memberID") {
+					cmp = (a.memberId ?? "").localeCompare(b.memberId ?? "");
+				} else if (sortBy === "status") {
+					cmp = (a.status ?? "").localeCompare(b.status ?? "");
 				}
-				if (sortBy === "memberID") {
-					return (a.memberId ?? "").localeCompare(b.memberId ?? "");
-				}
-				if (sortBy === "status") {
-					return (a.status ?? "").localeCompare(b.status ?? "");
-				}
-				return 0;
+				return sortAsc ? cmp : -cmp;
 			});
 
 			setMembers(sorted);
@@ -221,13 +244,14 @@ export default function MemberDirectoryPage() {
 		} finally {
 			setLoading(false);
 		}
-	}, [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone, sortBy]);
+	}, [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
+		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
 
-	// Fetch automatically on first render so the table isn't empty
-	useEffect(() => {
-		fetchMembers();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	// Deliberately no fetch on mount. Opening the Directory shows the filters and an
+	// empty table until the user clicks Retrieve — the same pattern the other list
+	// screens follow, and what the "Click Retrieve to load members." empty state below
+	// has always described. Auto-loading also meant every visit pulled the full
+	// membership before the user had chosen any filter.
 
 	// ---------------------------------------------------------------------------
 	// Options
@@ -283,10 +307,12 @@ export default function MemberDirectoryPage() {
 						type="button"
 						variant="outline"
 						size="icon"
-						title="Toggle sort direction"
+						title={sortAsc ? "Sorted ascending — click for descending" : "Sorted descending — click for ascending"}
+						aria-label="Toggle sort direction"
+						onClick={() => setSortAsc((prev) => !prev)}
 						className="h-9 w-9 border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
 					>
-						<ChevronsUpDown className="h-4 w-4" />
+						{sortAsc ? <ArrowUpNarrowWide className="h-4 w-4" /> : <ArrowDownWideNarrow className="h-4 w-4" />}
 					</Button>
 
 					<Button
@@ -307,7 +333,9 @@ export default function MemberDirectoryPage() {
 						type="button"
 						variant="outline"
 						size="icon"
-						title="Print"
+						title="Print the retrieved membership records"
+						onClick={() => window.open(buildReportUrl(), "_blank")}
+						disabled={members.length === 0}
 						className="h-9 w-9 border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
 					>
 						<Printer className="h-4 w-4" />
@@ -430,6 +458,54 @@ export default function MemberDirectoryPage() {
 												<SelectItem value="galle-zone">Galle Zone</SelectItem>
 											</SelectContent>
 										</Select>
+									</div>
+
+									{/* Educational District — the member's WORKING district, distinct
+									    from the Location filter above (the District Office branch). */}
+									<div className="space-y-1.5">
+										<p className="text-xs font-semibold text-neutral-600">
+											Educational District
+										</p>
+										<Select
+											value={educationalDistrict}
+											onValueChange={setEducationalDistrict}
+										>
+											<SelectTrigger className="w-full border-neutral-300 bg-white">
+												<SelectValue placeholder="All Districts" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="all-districts">All Districts</SelectItem>
+												{districtOptions.map((d) => (
+													<SelectItem key={d} value={d}>
+														{d}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</div>
+
+									<div className="space-y-1.5">
+										<p className="text-xs font-semibold text-neutral-600">
+											Membership Start Date Period
+										</p>
+										<div className="grid grid-cols-2 gap-2">
+											<Input
+												type="date"
+												value={membershipStartFrom}
+												max={membershipStartTo || undefined}
+												onChange={(e) => setMembershipStartFrom(e.target.value)}
+												className="h-9 border-neutral-300 bg-white"
+												aria-label="Membership start date from"
+											/>
+											<Input
+												type="date"
+												value={membershipStartTo}
+												min={membershipStartFrom || undefined}
+												onChange={(e) => setMembershipStartTo(e.target.value)}
+												className="h-9 border-neutral-300 bg-white"
+												aria-label="Membership start date to"
+											/>
+										</div>
 									</div>
 								</div>
 

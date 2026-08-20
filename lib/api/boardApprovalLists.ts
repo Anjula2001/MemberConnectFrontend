@@ -7,7 +7,9 @@ export interface BoardApprovalListDTO {
   boardMeetingId?: number;
   boardMeetingDate?: string;
   actualMeetingDate?: string;
-  applicationIds: string[];
+  applicationIds?: string[];
+  nameChangeRequestIds?: number[];
+  nomineeChangeRequestIds?: number[];
   status?: string;
   createdAt?: string;
   processedAt?: string;
@@ -17,19 +19,42 @@ export interface BoardApprovalListDTO {
   boardRemarks?: string;
 }
 
+export interface BoardApprovalListCreatePayload {
+  boardMeetingId: number;
+  boardMeetingDate: string;
+  applicationIds?: string[];
+  nameChangeRequestIds?: number[];
+  nomineeChangeRequestIds?: number[];
+  status?: string;
+}
+
+/** One request's decision inside a Name or Nominee Change Approval List. */
+export interface ProfileChangeItemDecision {
+  requestId: number;
+  decision: "Approve" | "Reject";
+  rejectReason?: string;
+}
+
 export interface ProcessBoardApprovalListPayload {
   actualMeetingDate: string;
-  decision: "Approve" | "Reject";
+  /**
+   * The list-wide decision for membership applications. Omitted for a list that holds
+   * only Name or Nominee change requests — those are decided per request below.
+   */
+  decision?: "Approve" | "Reject";
   rejectReason?: string;
   boardRemarks?: string;
   processedBy?: string;
   /** S3 key of the scanned, signed board approval sheet. */
   approvedListDocument?: string;
+  /** MMC12 / MMC25: the board decides each change request individually. */
+  nameChangeDecisions?: ProfileChangeItemDecision[];
+  nomineeChangeDecisions?: ProfileChangeItemDecision[];
 }
 
 const BASE_PATH = "/api/board-approval-lists";
 
-export async function createBoardApprovalList(payload: BoardApprovalListDTO) {
+export async function createBoardApprovalList(payload: BoardApprovalListCreatePayload) {
   const { data } = await apiClient.post<BoardApprovalListDTO>(
     `${BASE_PATH}/createBoardApprovalList`,
     payload
@@ -58,6 +83,43 @@ export async function getBoardApprovalListApplications(listId: string) {
   return data;
 }
 
+export interface NameChangeRequestDTO {
+  nameChangeRequestID?: string;
+  newTitle?: string | null;
+  newFullName?: string | null;
+  newNameAsInPayroll?: string | null;
+  newNameWithInitials?: string | null;
+  newStatus?: string | null;
+  status?: string | null;
+  boardDecisionReason?: string | null;
+}
+
+export async function getNameChangeRequestsByListId(listId: string) {
+  const { data } = await apiClient.get<NameChangeRequestDTO[]>(
+    `${BASE_PATH}/getNameChangeRequestsByListId/${encodeURIComponent(listId)}`
+  );
+  return data;
+}
+
+export interface NommineChangeRequestDTO {
+  id?: number;
+  newnommineName?: string | null;
+  relationship?: string | null;
+  nic?: string | null;
+  address?: string | null;
+  newStatus?: string | null;
+  status?: string | null;
+  boardDecisionReason?: string | null;
+  nomineeChangeID?: number | string | null;
+  nommineChangeId?: number | string | null;
+}
+
+export async function getNomineeChangeRequestsByListId(listId: string) {
+  const { data } = await apiClient.get<NommineChangeRequestDTO[]>(
+    `${BASE_PATH}/getNomineeChangeRequestsByListId/${encodeURIComponent(listId)}`
+  );
+  return data;
+}
 export async function processBoardApprovalList(
   listId: string,
   payload: ProcessBoardApprovalListPayload

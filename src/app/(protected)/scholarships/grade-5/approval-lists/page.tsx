@@ -5,6 +5,9 @@ import { Button } from "@/src/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 const API_BASE_URL = "http://localhost:8080";
 
@@ -46,6 +49,15 @@ export default function Grade5ApprovalListsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialListId = searchParams.get("listId") || "";
+  const { user } = useAuth();
+
+  // MMS08/MMS15 view the list; MMS10/MMS17 print it; MMS11/MMS18 process it;
+  // MMS09/MMS16 delete it. Delete is deliberately the narrowest of the four —
+  // the SRS calls it out as a separate "delete privilege".
+  const canViewLists = hasPermission(user?.role, "G5_LIST_VIEW");
+  const canPrintList = hasPermission(user?.role, "G5_LIST_PRINT");
+  const canProcessList = hasPermission(user?.role, "G5_LIST_PROCESS");
+  const canDeleteList = hasPermission(user?.role, "G5_LIST_DELETE");
 
   // Active list type tab (NORMAL vs DEVIATION)
   const [activeTypeTab, setActiveTypeTab] = useState<"NORMAL" | "DEVIATION">("NORMAL");
@@ -354,6 +366,16 @@ export default function Grade5ApprovalListsPage() {
   // Filter lists by activeTypeTab (NORMAL vs DEVIATION)
   const filteredLists = lists.filter((list) => list.type === activeTypeTab);
 
+  if (user && !canViewLists) {
+    return (
+      <AccessRestricted
+        message="Grade 5 Scholarship Approval Lists are restricted to Head Office and Board Secretariat personnel."
+        fallbackHref="/scholarships/grade-5"
+        fallbackLabel="Back to Grade 5 Requests"
+      />
+    );
+  }
+
   return (
     <div className="w-full flex flex-1 flex-col gap-4 p-6 pt-0">
       {/* Title */}
@@ -547,28 +569,34 @@ export default function Grade5ApprovalListsPage() {
                 <div className="flex gap-2 print:hidden">
                   {selectedList.status === "CREATED" && (
                     <>
-                      <Button
-                        variant="outline"
-                        onClick={handleDeleteList}
-                        className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-3 text-xs"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        Delete List
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={handlePrint}
-                        className="border-[#953002]/20 text-[#953002] hover:bg-[#953002]/5 h-8 px-3 text-xs"
-                      >
-                        <Printer className="h-3.5 w-3.5 mr-1" />
-                        Print List
-                      </Button>
-                      <Button
-                        onClick={handleOpenProcessModal}
-                        className="bg-[#953002] text-white hover:bg-[#7a2700] h-8 px-3 text-xs"
-                      >
-                        Proceed
-                      </Button>
+                      {canDeleteList && (
+                        <Button
+                          variant="outline"
+                          onClick={handleDeleteList}
+                          className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-3 text-xs"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          Delete List
+                        </Button>
+                      )}
+                      {canPrintList && (
+                        <Button
+                          variant="outline"
+                          onClick={handlePrint}
+                          className="border-[#953002]/20 text-[#953002] hover:bg-[#953002]/5 h-8 px-3 text-xs"
+                        >
+                          <Printer className="h-3.5 w-3.5 mr-1" />
+                          Print List
+                        </Button>
+                      )}
+                      {canProcessList && (
+                        <Button
+                          onClick={handleOpenProcessModal}
+                          className="bg-[#953002] text-white hover:bg-[#7a2700] h-8 px-3 text-xs"
+                        >
+                          Proceed
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -623,7 +651,11 @@ export default function Grade5ApprovalListsPage() {
                       ) : (
                         requests.map((r) => {
                           const rowDecision = decisions[r.requestNo] || { status: "APPROVED", rejectReason: "" };
-                          const isProcessed = selectedList?.status === "PROCESSED";
+                          // Locked once the list is processed, and also for anyone
+                          // without approve/reject rights — a read-only viewer should
+                          // not be able to stage decisions they cannot submit.
+                          const isProcessed =
+                            selectedList?.status === "PROCESSED" || !canProcessList;
 
                           return (
                             <tr key={r.id} className="border-t hover:bg-gray-50/50 transition-colors">

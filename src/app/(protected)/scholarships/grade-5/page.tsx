@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/src/components/ui/button";
+import { useAuth } from "@/lib/auth-context";
+import AccessRestricted from "@/src/components/AccessRestricted";
+import { getEducationalDistricts } from "@/lib/api/education";
+import {
+  canAccessGrade5,
+  canSelectAllLocations,
+  hasPermission,
+} from "@/lib/permissions";
 
 const API_BASE_URL = "http://localhost:8080";
 
@@ -175,34 +183,10 @@ function MultiSelectDropdown({
   );
 }
 
-const locationOptions = [
-  { value: "ALL", label: "All" },
-  { value: "AMPARA", label: "Ampara" },
-  { value: "ANURADHAPURA", label: "Anuradhapura" },
-  { value: "BADULLA", label: "Badulla" },
-  { value: "BATTICALOA", label: "Batticaloa" },
-  { value: "COLOMBO", label: "Colombo" },
-  { value: "GALLE", label: "Galle" },
-  { value: "GAMPAHA", label: "Gampaha" },
-  { value: "HAMBANTOTA", label: "Hambantota" },
-  { value: "JAFFNA", label: "Jaffna" },
-  { value: "KALUTARA", label: "Kalutara" },
-  { value: "KANDY", label: "Kandy" },
-  { value: "KEGALLE", label: "Kegalle" },
-  { value: "KILINOCHCHI", label: "Kilinochchi" },
-  { value: "KURUNEGALA", label: "Kurunegala" },
-  { value: "MANNAR", label: "Mannar" },
-  { value: "MATALE", label: "Matale" },
-  { value: "MATARA", label: "Matara" },
-  { value: "MONARAGALA", label: "Monaragala" },
-  { value: "MULLAITIVU", label: "Mullaitivu" },
-  { value: "NUWARA_ELIYA", label: "Nuwara Eliya" },
-  { value: "POLONNARUWA", label: "Polonnaruwa" },
-  { value: "PUTTALAM", label: "Puttalam" },
-  { value: "RATNAPURA", label: "Ratnapura" },
-  { value: "TRINCOMALEE", label: "Trincomalee" },
-  { value: "VAVUNIYA", label: "Vavuniya" },
-];
+// Location options are loaded from the District Office master at runtime (see the
+// effect in the component) rather than hardcoded here. The previous inline list used
+// synthetic UPPERCASE codes such as "NUWARA_ELIYA", which never matched the district
+// names actually stored against a member, so the filter could not have worked.
 
 
 const statusOptions = [
@@ -230,7 +214,21 @@ const statusOptions = [
 ];
 
 export default function Grade5ScholarshipRequestsListPage() {
-  const [locations, setLocations] = useState<string[]>(["CURRENT_DISTRICT"]);
+  const { user } = useAuth();
+
+  // Capability flags, replacing the hardcoded `true`s this page used to run on.
+  // The page itself is shared between two audiences — District Office searching
+  // their own requests and Head Office assembling approval lists — so the page
+  // guard only asks "may you see Grade 5 at all", and each control is gated
+  // separately below.
+  const canViewPage = canAccessGrade5(user?.role);
+  const loggedUserCanEdit = hasPermission(user?.role, "G5_REQUEST_EDIT");
+  const canCreateApprovalLists = hasPermission(user?.role, "G5_LIST_CREATE");
+  const canViewApprovalLists = hasPermission(user?.role, "G5_LIST_VIEW");
+  const canManageExamMaster = hasPermission(user?.role, "G5_EXAM_MASTER_MANAGE");
+  const userHasMultipleLocations = canSelectAllLocations(user?.role);
+
+  const [locations, setLocations] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);
   const [receivedOn, setReceivedOn] = useState("ALL_DAYS");
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -246,6 +244,7 @@ export default function Grade5ScholarshipRequestsListPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [yearOptions, setYearOptions] = useState<MultiSelectOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<MultiSelectOption[]>([]);
 
   // Board list creation states
   const [selectedRequestNos, setSelectedRequestNos] = useState<string[]>([]);
@@ -259,8 +258,34 @@ export default function Grade5ScholarshipRequestsListPage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const userHasMultipleLocations = true;
-  const loggedUserCanEdit = true;
+  // Same District Office master the Member Directory filters on, so a location
+  // selected here matches the value actually stored against a request.
+  useEffect(() => {
+    let cancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (cancelled) return;
+        setLocationOptions([
+          { value: "ALL", label: "All" },
+          ...districts.map((district) => ({ value: district, label: district })),
+        ]);
+      })
+      .catch(() => {
+        /* leave empty on failure — the filter simply offers no options */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A location-restricted user (District Office) is pinned to their own branch and
+  // the dropdown is disabled. The backend re-pins them regardless of what is sent,
+  // so this only keeps the filter honest on screen.
+  useEffect(() => {
+    if (!userHasMultipleLocations && user?.assignedDistrict) {
+      setLocations([user.assignedDistrict]);
+    }
+  }, [userHasMultipleLocations, user?.assignedDistrict]);
 
   // Retrieve board meetings
   const fetchBoardMeetings = async () => {
@@ -428,6 +453,7 @@ export default function Grade5ScholarshipRequestsListPage() {
   // Eligibility to show Normal list button
   // All selected rows must be SUBMITTED_FOR_NORMAL_APPROVAL (or REJECTED with no deviation)
   const canCreateNormalList =
+    canCreateApprovalLists &&
     selectedRows.length > 0 &&
     selectedRows.every(
       (r) => r.status === "SUBMITTED_FOR_NORMAL_APPROVAL" || (!r.hasDeviation && r.status === "REJECTED")
@@ -436,6 +462,7 @@ export default function Grade5ScholarshipRequestsListPage() {
   // Eligibility to show Deviation list button
   // All selected rows must be SUBMITTED_FOR_DEVIATION_APPROVAL (or REJECTED with deviation)
   const canCreateDeviationList =
+    canCreateApprovalLists &&
     selectedRows.length > 0 &&
     selectedRows.every(
       (r) => r.status === "SUBMITTED_FOR_DEVIATION_APPROVAL" || (r.hasDeviation && r.status === "REJECTED")
@@ -505,6 +532,14 @@ export default function Grade5ScholarshipRequestsListPage() {
     }
   };
 
+  // Allow-list: a role reaches this page only by holding a Grade 5 right explicitly.
+  // Waits for `user` to load so the guard does not flash before auth resolves.
+  if (user && !canViewPage) {
+    return (
+      <AccessRestricted message="Grade 5 Scholarships are restricted to District Office, Head Office and Scholarship personnel." />
+    );
+  }
+
   return (
     <div className="w-full px-6 py-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -534,14 +569,16 @@ export default function Grade5ScholarshipRequestsListPage() {
           )}
 
           {/* View Approval Lists */}
-          <Button
-            className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-            onClick={() => {
-              window.location.href = "/scholarships/grade-5/approval-lists";
-            }}
-          >
-            View Approval Lists
-          </Button>
+          {canViewApprovalLists && (
+            <Button
+              className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+              onClick={() => {
+                window.location.href = "/scholarships/grade-5/approval-lists";
+              }}
+            >
+              View Approval Lists
+            </Button>
+          )}
         </div>
       </div>
 
@@ -816,16 +853,18 @@ export default function Grade5ScholarshipRequestsListPage() {
       </div>
 
       {/* Manage Exam Year & Cutoff Button */}
-      <div className="flex justify-end mt-4 mb-8 pb-4">
-        <Button
-          className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-          onClick={() => {
-            window.location.href = "/scholarships/grade-5/manage-exam-cutoff";
-          }}
-        >
-          Manage Exam Year & Cutoff
-        </Button>
-      </div>
+      {canManageExamMaster && (
+        <div className="flex justify-end mt-4 mb-8 pb-4">
+          <Button
+            className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
+            onClick={() => {
+              window.location.href = "/scholarships/grade-5/manage-exam-cutoff";
+            }}
+          >
+            Manage Exam Year & Cutoff
+          </Button>
+        </div>
+      )}
 
       {/* Board Meeting Selection Modal */}
       {isBoardModalOpen && (

@@ -37,7 +37,7 @@ export default function SignatureCardTemplate({ member }: { member: MemberDTO })
         width: "148mm",
         height: "105mm",
         background: "#ffffff",
-        fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-geist-sans), system-ui, -apple-system, 'Segoe UI', sans-serif",
         WebkitPrintColorAdjust: "exact",
         printColorAdjust: "exact",
       }}

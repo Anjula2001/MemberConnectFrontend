@@ -804,13 +804,19 @@ export default function NewRegistrationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {hasRetrieved && displayData.length === 0 && (
+            {displayData.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={8}
                   className="px-4 py-8 text-center text-gray-400 text-sm"
                 >
-                  No records found. Adjust your filters and click Retrieve.
+                  {/* Before the first Retrieve the table is empty because nothing has
+                      been asked for yet, not because nothing matched. Gating this row
+                      on hasRetrieved left the body completely blank on arrival, with no
+                      hint that Retrieve had to be pressed. Mirrors the Member Directory. */}
+                  {hasRetrieved
+                    ? "No records found. Adjust your filters and click Retrieve."
+                    : "Click Retrieve to load registrations."}
                 </TableCell>
               </TableRow>
             )}
