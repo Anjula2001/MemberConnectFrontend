@@ -1,295 +1,345 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2, Lock, Search } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Search, Loader2, FileCheck2, ListChecks, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
-import { getEducationalDistricts } from "@/lib/api/education";
+import { apiClient } from '@/lib/api/client';
+import { getEducationalDistricts } from '@/lib/api/education';
+import MultiSelect from './MultiSelect';
+import ConfirmDialog from '@/src/components/membership/ConfirmDialog';
+import { useAuth } from '@/lib/auth-context';
 import {
-  detailRouteFor,
+  hasRole,
+  PROFILE_CHANGE_APPROVAL_LIST_ROLES,
+  PROFILE_CHANGE_DELETE_ROLES,
+} from '@/lib/permissions';
+import { createBoardApprovalList } from '@/lib/api/boardApprovalLists';
+import { getBoardMeetings, type BoardMeetingDTO } from '@/lib/api/boardMeeting';
+import {
+  isListable,
   searchProfileChanges,
-  STATUS_LABELS,
-  TYPE_LABELS,
-  type ProfileChangeRow,
+  statusOptionsFor,
+  type ProfileChangeListItem,
   type ProfileChangeSortBy,
   type ProfileChangeStatus,
   type ProfileChangeType,
   type RequestReceivedOn,
-} from "@/lib/api/profileChanges";
-import { useAuth } from "@/lib/auth-context";
-import { MEMBER_REGISTRATION_ROLES, hasRole } from "@/lib/permissions";
+} from '@/lib/api/profileChanges';
 
 /**
- * MMC28 — All Member Profile Change Requests List.
+ * "All Member Profile Change Requests List" — Requirement 02, MMC02 / MMC06 / MMC15 /
+ * MMC19.
  *
- * One search and filter section for all five request types, replacing the separate
- * filter blocks that previously lived on this screen and on the Member Transfer
- * retrieve screen.
+ * One screen across all request types, served by a single backend query: Type, Request
+ * Received On, multi-select Status (including All), a search over the member's names /
+ * number / NIC, and Sort with a direction.
  *
- * Scope: this is a LIST/search screen only. Every row navigates into the detail
- * screen already owned by that module; no save, update, delete or approval logic
- * lives here, and none of those modules' controllers were changed to build it.
+ * There is no Location control: district users are confined to their own district by the
+ * backend on every request, so the filter added nothing they could act on.
  *
- * Authorization reuses the existing mechanism — MEMBER_REGISTRATION_ROLES matches
- * the roles on ProfileChangeController's @PreAuthorize exactly. The backend remains
- * the enforcement point; this only decides what is rendered.
- *
- * Location is freely selectable for every role, including District Office. That is
- * deliberate and follows the decision recorded in ProfileChangeController: the client
- * settled that a District Office user searches all locations, because per MMC01 a
- * member may raise a request at any district regardless of where they work.
+ * The previous version called each type's "get all" endpoint and filtered the results
+ * in the browser, which is why Location, Received On and Sort did not exist, Status was
+ * a single select defaulting to ALL, and the search box was bound to state that nothing
+ * ever read.
  */
 
-const TYPE_OPTIONS: ProfileChangeType[] = [
-  "BASIC_PROFILE",
-  "NAME",
-  "NOMINEE",
-  "REMITTANCE",
-  "MEMBER_TRANSFER",
-];
-
-const STATUS_OPTIONS: ProfileChangeStatus[] = [
-  "SUBMITTED_FOR_APPROVAL",
-  "APPROVED",
-  "REJECTED",
-  "INACTIVE",
+const TYPE_OPTIONS: { value: ProfileChangeType | 'MEMBER_TRANSFER'; label: string }[] = [
+  { value: 'BASIC_PROFILE', label: 'Basic Profile Changes' },
+  { value: 'NAME', label: 'Name Changes' },
+  { value: 'REMITTANCE', label: 'Remittance Amount Changes' },
+  { value: 'NOMINEE', label: 'Nominee Changes' },
+  { value: 'MEMBER_TRANSFER', label: 'Member Transfers' },
 ];
 
 const RECEIVED_ON_OPTIONS: { value: RequestReceivedOn; label: string }[] = [
-  { value: "ALL_DAYS", label: "All Days" },
-  { value: "THIS_MONTH", label: "This Month" },
-  { value: "THIS_AND_LAST_MONTH", label: "This and Last Month" },
-  { value: "DATE_PERIOD", label: "Date Period" },
+  { value: 'ALL_DAYS', label: 'All Days' },
+  { value: 'THIS_MONTH', label: 'This Month' },
+  { value: 'THIS_AND_LAST_MONTH', label: 'This and last month' },
+  { value: 'DATE_PERIOD', label: 'Date Period' },
 ];
 
 const SORT_OPTIONS: { value: ProfileChangeSortBy; label: string }[] = [
-  { value: "REQUESTED_DATE", label: "Requested Date" },
-  { value: "STATUS", label: "Status" },
-  { value: "MEMBER_ID", label: "Member ID" },
+  { value: 'REQUESTED_DATE', label: 'Requested Date' },
+  { value: 'STATUS', label: 'Status' },
+  { value: 'MEMBER_ID', label: 'Member ID' },
 ];
 
-/** Small multi-select used by the Location and Status filters. */
-function MultiSelect({
-  label,
-  options,
-  selected,
-  onChange,
-  renderLabel,
-}: {
-  label: string;
-  options: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  renderLabel?: (value: string) => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+const humanStatus = (status: string | null) => (status ?? '—').replace(/_/g, ' ');
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+/** Sentinel for the Status filter's "All" entry — sending no statuses means all. */
+const ALL_STATUSES = 'ALL';
 
-  const toggle = (value: string) =>
-    onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
-
-  const summary =
-    selected.length === 0
-      ? "All"
-      : selected.length === 1
-        ? (renderLabel?.(selected[0]) ?? selected[0])
-        : `${selected.length} selected`;
-
-  return (
-    <div ref={ref} className="relative">
-      <label className="mb-1.5 block text-sm font-semibold text-neutral-600">{label}</label>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700"
-      >
-        <span className="truncate">{summary}</span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
-          {options.length === 0 && (
-            <p className="px-3 py-2 text-xs text-neutral-400">No options available</p>
-          )}
-          {options.map((option) => (
-            <label
-              key={option}
-              className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-[#fdf5f2]"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(option)}
-                onChange={() => toggle(option)}
-                className="accent-[#953002]"
-              />
-              <span className="truncate">{renderLabel?.(option) ?? option}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/** Same idea for Location: "All" means send no location filter at all. */
+const ALL_LOCATIONS = 'ALL';
 
 export default function ProfileChangeRequests() {
   const router = useRouter();
   const { user } = useAuth();
-  const canAccess = hasRole(user?.role, MEMBER_REGISTRATION_ROLES);
+  // Deleting a request is open to everyone who works the module, District Office
+  // included; building a board approval list is Head Office / Board Secretary work.
+  const canDelete = hasRole(user?.role, PROFILE_CHANGE_DELETE_ROLES);
+  const canBuildApprovalList = hasRole(user?.role, PROFILE_CHANGE_APPROVAL_LIST_ROLES);
+  const [mounted, setMounted] = useState(false);
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
 
-  // ── Filters (MMC28) ──────────────────────────────────────────────────────
-  const [type, setType] = useState<ProfileChangeType>("BASIC_PROFILE");
+  // Filter defaults are the SRS's: All Days, Submitted for Approval, Requested Date
+  // ascending.
+  const [requestType, setRequestType] = useState<ProfileChangeType | 'MEMBER_TRANSFER'>('BASIC_PROFILE');
+  const [statusFilter, setStatusFilter] = useState<string[]>(['SUBMITTED_FOR_APPROVAL']);
+  // MMC02's Location filter. It is a plain filter for every role: the district lock was
+  // removed at the client's direction, so a District Office user searches all locations
+  // like everyone else and simply picks one when they want to narrow.
+  const [locationFilter, setLocationFilter] = useState<string[]>([ALL_LOCATIONS]);
   const [locations, setLocations] = useState<string[]>([]);
-  const [receivedOn, setReceivedOn] = useState<RequestReceivedOn>("ALL_DAYS");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  // MMC28: "By default, Submitted for Approval status will be selected."
-  const [statuses, setStatuses] = useState<ProfileChangeStatus[]>(["SUBMITTED_FOR_APPROVAL"]);
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<ProfileChangeSortBy>("REQUESTED_DATE");
-  const [ascending, setAscending] = useState(true);
+  const [receivedOn, setReceivedOn] = useState<RequestReceivedOn>('ALL_DAYS');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<ProfileChangeSortBy>('REQUESTED_DATE');
+  const [descending, setDescending] = useState(false);
 
-  const [districtOptions, setDistrictOptions] = useState<string[]>([]);
-  const [rows, setRows] = useState<ProfileChangeRow[]>([]);
+  const [results, setResults] = useState<ProfileChangeListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasRetrieved, setHasRetrieved] = useState(false);
-  const [dateError, setDateError] = useState("");
+
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [showMeetingModal, setShowMeetingModal] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState('');
+  const [savingList, setSavingList] = useState(false);
+  const [createdList, setCreatedList] = useState<{ listId?: string; count: number } | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProfileChangeListItem | null>(null);
+
+  const isSupportedType = requestType !== 'MEMBER_TRANSFER';
+  const supportsApprovalList = requestType === 'NAME' || requestType === 'NOMINEE';
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    let cancelled = false;
-    getEducationalDistricts()
-      .then((districts) => {
-        if (!cancelled) setDistrictOptions(districts);
-      })
-      .catch(() => {
-        /* filter simply shows no options */
-      });
-    return () => {
-      cancelled = true;
-    };
+    getBoardMeetings()
+      .then(setBoardMeetings)
+      .catch(() => setBoardMeetings([]));
   }, []);
 
-  // No fetch on mount — the table stays empty until Retrieve is pressed, matching
-  // the Member Directory and New Registrations screens.
-  const handleRetrieve = async () => {
-    if (receivedOn === "DATE_PERIOD" && fromDate && toDate && fromDate > toDate) {
-      setDateError("From Date cannot be after To Date.");
+  useEffect(() => {
+    // An empty list just leaves the filter showing "All locations"; it is a convenience,
+    // not something the screen depends on.
+    getEducationalDistricts()
+      .then(setLocations)
+      .catch(() => setLocations([]));
+  }, []);
+
+  // The available statuses depend on the type: only Name and Nominee pass through a
+  // board approval list, so only they can sit on "Added to Board Approval List".
+  const availableStatuses = useMemo(
+    () => (isSupportedType ? statusOptionsFor(requestType) : []),
+    [requestType, isSupportedType]
+  );
+
+  useEffect(() => {
+    setStatusFilter((prev) => {
+      if (prev.includes(ALL_STATUSES)) return prev;
+      const kept = prev.filter((s) => availableStatuses.includes(s as ProfileChangeStatus));
+      return kept.length > 0 ? kept : ['SUBMITTED_FOR_APPROVAL'];
+    });
+    setHasSearched(false);
+    setResults([]);
+    setSelectedKeys([]);
+  }, [availableStatuses]);
+
+  const rowKey = (row: ProfileChangeListItem) => `${row.type}:${row.requestId}`;
+
+  const handleRetrieve = useCallback(async () => {
+    if (!isSupportedType) {
+      setError('Member Transfers have their own screen and are not listed here yet.');
+      setResults([]);
+      setHasSearched(false);
       return;
     }
-    setDateError("");
+
     setLoading(true);
     setError(null);
+    setSelectedKeys([]);
+
     try {
-      const result = await searchProfileChanges({
-        types: [type],
-        statuses: statuses.length ? statuses : undefined,
-        locations: locations.length ? locations : undefined,
+      const selectedStatuses = statusFilter.includes(ALL_STATUSES)
+        ? undefined
+        : (statusFilter as ProfileChangeStatus[]);
+
+      const selectedLocations = locationFilter.includes(ALL_LOCATIONS)
+        ? undefined
+        : locationFilter;
+
+      const data = await searchProfileChanges({
+        types: [requestType],
+        statuses: selectedStatuses && selectedStatuses.length > 0 ? selectedStatuses : undefined,
+        locations: selectedLocations && selectedLocations.length > 0 ? selectedLocations : undefined,
         receivedOn,
-        from: receivedOn === "DATE_PERIOD" && fromDate ? fromDate : undefined,
-        to: receivedOn === "DATE_PERIOD" && toDate ? toDate : undefined,
-        search: search || undefined,
+        from: receivedOn === 'DATE_PERIOD' && fromDate ? fromDate : undefined,
+        to: receivedOn === 'DATE_PERIOD' && toDate ? toDate : undefined,
+        search: searchQuery.trim() || undefined,
         sortBy,
-        descending: !ascending,
+        descending,
       });
-      setRows(result);
-      setHasRetrieved(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to retrieve requests.");
-      setRows([]);
-      setHasRetrieved(true);
+      setResults(data);
+      setHasSearched(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not retrieve profile change requests.');
+      setResults([]);
     } finally {
       setLoading(false);
     }
+  }, [
+    isSupportedType,
+    requestType,
+    statusFilter,
+    locationFilter,
+    receivedOn,
+    fromDate,
+    toDate,
+    searchQuery,
+    sortBy,
+    descending,
+  ]);
+
+  const selectableRows = useMemo(() => results.filter(isListable), [results]);
+
+  const toggleRow = (key: string) =>
+    setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const toggleAll = (checked: boolean) =>
+    setSelectedKeys(checked ? selectableRows.map(rowKey) : []);
+
+  /** MMC03 / MMC07 / MMC16 / MMC20: records are opened from the Member ID. */
+  const openRecord = (row: ProfileChangeListItem) => {
+    if (row.requestId == null) return;
+    switch (row.type) {
+      case 'NAME':
+        router.push(`/membership/name-changes/${row.requestId}`);
+        break;
+      case 'NOMINEE':
+        router.push(`/membership/nommine-changes/${row.requestId}`);
+        break;
+      case 'REMITTANCE':
+        router.push(`/membership/directory/change-remittance?editId=${row.requestId}`);
+        break;
+      default:
+        router.push(`/membership/profile-changes/${row.requestId}`);
+    }
   };
 
-  const openRow = (row: ProfileChangeRow) => {
-    const route = detailRouteFor(row);
-    if (route) router.push(route);
+  const DELETE_PATHS: Record<ProfileChangeType, string> = {
+    BASIC_PROFILE: '/api/v2/deletRequest',
+    NAME: '/api5/namechange/deletnameChange',
+    NOMINEE: '/api/v3/deleteNommine',
+    REMITTANCE: '/api4/remitance/deleteRemitance',
   };
 
-  if (user && !canAccess) {
-    return (
-      <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600">
-          <Lock className="h-8 w-8" />
-        </div>
-        <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
-        <p className="mt-2 max-w-md text-sm text-neutral-500">
-          Member Profile Change Requests are available to District Office and Head Office
-          personnel.
-        </p>
-      </div>
-    );
-  }
+  const handleDelete = async (row: ProfileChangeListItem) => {
+    if (row.requestId == null) return;
+    const label = row.requestNo ?? 'this request';
+
+    setDeletingKey(rowKey(row));
+    setError(null);
+    try {
+      await apiClient.delete(`${DELETE_PATHS[row.type]}/${row.requestId}`);
+      setResults((prev) => prev.filter((r) => rowKey(r) !== rowKey(row)));
+      setSelectedKeys((prev) => prev.filter((k) => k !== rowKey(row)));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : `Could not delete ${label}.`);
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const handleCreateApprovalList = async () => {
+    if (!selectedMeeting) return;
+
+    const meeting = boardMeetings.find((m) => m.id === Number(selectedMeeting));
+    if (!meeting?.id || !meeting.scheduledDate) {
+      setError('The selected board meeting is no longer available.');
+      return;
+    }
+
+    const ids = results
+      .filter((row) => selectedKeys.includes(rowKey(row)))
+      .map((row) => row.requestId)
+      .filter((id): id is number => id != null);
+
+    if (ids.length === 0) return;
+
+    setSavingList(true);
+    setError(null);
+    try {
+      const created = await createBoardApprovalList({
+        boardMeetingId: Number(meeting.id),
+        boardMeetingDate: meeting.scheduledDate.slice(0, 10),
+        ...(requestType === 'NAME'
+          ? { nameChangeRequestIds: ids }
+          : { nomineeChangeRequestIds: ids }),
+      });
+
+      setCreatedList({ listId: created?.listId, count: ids.length });
+      setSelectedKeys([]);
+      setShowMeetingModal(false);
+      setSelectedMeeting('');
+      await handleRetrieve();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not create the approval list.');
+    } finally {
+      setSavingList(false);
+    }
+  };
+
+  if (!mounted) return null;
+
+  const typeLabel = TYPE_OPTIONS.find((t) => t.value === requestType)?.label ?? '';
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#953002]">All Member Profile Change Requests</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Search every profile change request type from one place (MMC28).
-        </p>
+    <div className="p-6 bg-[#F9FAFB] min-h-screen">
+      <div className="max-w-7xl mx-auto mb-6">
+        <h1 className="text-2xl font-bold text-[#8B3205]">All Member Profile Change Requests</h1>
       </div>
 
-      {/* ── The single Search &amp; Filter section ─────────────────────────── */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-5 text-lg font-bold text-[#953002]">Search &amp; Filter</h2>
-
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-          {/* Type */}
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">Type</label>
+      <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
+        <h2 className="text-lg font-bold text-[#8B3205] mb-6">Search &amp; Filter</h2>
+        {/* Filters, in the order the SRS lists them: what, where, when, which status. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-600">Type</label>
             <select
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value as ProfileChangeType);
-                setHasRetrieved(false);
-                setRows([]);
-              }}
-              className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700"
+              value={requestType}
+              onChange={(e) =>
+                setRequestType(e.target.value as ProfileChangeType | 'MEMBER_TRANSFER')
+              }
+              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
             >
               {TYPE_OPTIONS.map((t) => (
-                <option key={t} value={t}>
-                  {TYPE_LABELS[t]}
+                <option key={t.value} value={t.value}>
+                  {t.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Location */}
           <MultiSelect
             label="Location"
-            options={districtOptions}
-            selected={locations}
-            onChange={setLocations}
+            allValue={ALL_LOCATIONS}
+            allLabel="All locations"
+            options={locations.map((d) => ({ value: d, label: d }))}
+            selected={locationFilter}
+            onChange={setLocationFilter}
+            emptyText="No districts configured"
           />
 
-          {/* Status */}
-          <MultiSelect
-            label="Status"
-            options={STATUS_OPTIONS}
-            selected={statuses}
-            onChange={(next) => setStatuses(next as ProfileChangeStatus[])}
-            renderLabel={(v) => STATUS_LABELS[v] ?? v}
-          />
-
-          {/* Request Received On */}
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">
-              Request Received On
-            </label>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-600">Request Received On</label>
             <select
               value={receivedOn}
               onChange={(e) => setReceivedOn(e.target.value as RequestReceivedOn)}
-              className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700"
+              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
             >
               {RECEIVED_ON_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -299,55 +349,65 @@ export default function ProfileChangeRequests() {
             </select>
           </div>
 
-          {/* From / To — only meaningful for Date Period */}
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">From Date</label>
-            <input
-              type="date"
-              value={fromDate}
-              disabled={receivedOn !== "DATE_PERIOD"}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 disabled:bg-neutral-100 disabled:text-neutral-400"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">To Date</label>
-            <input
-              type="date"
-              value={toDate}
-              disabled={receivedOn !== "DATE_PERIOD"}
-              onChange={(e) => setToDate(e.target.value)}
-              className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 disabled:bg-neutral-100 disabled:text-neutral-400"
-            />
-          </div>
+          <MultiSelect
+            label="Status"
+            allValue={ALL_STATUSES}
+            allLabel="All statuses"
+            options={availableStatuses.map((st) => ({ value: st, label: humanStatus(st) }))}
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            disabled={!isSupportedType}
+            emptyText="Pick a type first"
+          />
 
-          {/* Search — MMC28: Full Name, Name as in Payroll, Name with Initials,
-              Member Number and NIC */}
-          <div className="md:col-span-2">
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">
-              Search Member
-            </label>
+          {/* Only shown for Date Period, so the row does not sit empty the rest of the time. */}
+          {receivedOn === 'DATE_PERIOD' && (
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-semibold text-gray-600">Date range</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  aria-label="From date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 p-2 text-sm"
+                />
+                <span className="text-sm text-gray-400">to</span>
+                <input
+                  type="date"
+                  aria-label="To date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 p-2 text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-semibold text-gray-600">Search Member</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Member name, Member number or NIC..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void handleRetrieve()}
-                className="h-10 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm text-neutral-700"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleRetrieve();
+                }}
+                placeholder="Name, Member No. or NIC…"
+                className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3 text-sm"
               />
             </div>
           </div>
 
-          {/* Sort + direction */}
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-neutral-600">Sort By</label>
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-semibold text-gray-600">Sort By</label>
             <div className="flex gap-2">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as ProfileChangeSortBy)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700"
+                className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -355,113 +415,297 @@ export default function ProfileChangeRequests() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => setAscending((v) => !v)}
-                title={ascending ? "Ascending" : "Descending"}
-                className="h-10 shrink-0 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+              <select
+                aria-label="Sort direction"
+                value={descending ? 'desc' : 'asc'}
+                onChange={(e) => setDescending(e.target.value === 'desc')}
+                className="w-32 shrink-0 rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
               >
-                {ascending ? "Asc" : "Desc"}
-              </button>
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
             </div>
           </div>
         </div>
 
-        {dateError && <p className="mt-3 text-sm text-red-600">{dateError}</p>}
-
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex justify-end gap-3">
+          {supportsApprovalList && hasSearched && canBuildApprovalList && (
+            <button
+              onClick={() => setShowMeetingModal(true)}
+              disabled={selectedKeys.length === 0 || loading}
+              className="bg-[#EAB308] text-white px-6 py-2.5 rounded-lg font-bold disabled:opacity-60"
+            >
+              Create {typeLabel.replace(' Changes', '')} Change Approval List
+              {selectedKeys.length > 0 ? ` (${selectedKeys.length})` : ''}
+            </button>
+          )}
           <button
-            type="button"
             onClick={() => void handleRetrieve()}
             disabled={loading}
-            className="flex h-10 items-center gap-2 rounded-lg bg-[#953002] px-10 text-sm font-bold text-white hover:bg-[#7a2500] disabled:opacity-60"
+            className="bg-[#8B3205] text-white px-10 py-2.5 rounded-lg font-bold flex items-center gap-2 disabled:opacity-60"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Retrieve"}
+            {loading ? <Loader2 className="animate-spin w-4 h-4" /> : 'Retrieve'}
           </button>
         </div>
       </div>
 
-      {/* ── One normalised result list ────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+      {error && (
+        <div className="max-w-7xl mx-auto mb-4 rounded-lg border border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {hasSearched && (
+        <div className="max-w-7xl mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
           <table className="w-full text-left">
-            <thead className="border-b border-neutral-100 bg-[#fdfdfd] text-xs uppercase tracking-wide text-neutral-500">
+            <thead className="bg-[#FDFDFD] border-b border-gray-100 text-gray-500 text-sm">
               <tr>
-                <th className="px-4 py-3 font-semibold">Request No</th>
-                <th className="px-4 py-3 font-semibold">Type</th>
-                <th className="px-4 py-3 font-semibold">Member ID</th>
-                <th className="px-4 py-3 font-semibold">Member Name</th>
-                <th className="px-4 py-3 font-semibold">NIC</th>
-                <th className="px-4 py-3 font-semibold">Location</th>
-                <th className="px-4 py-3 font-semibold">Requested Date</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
+                {supportsApprovalList && (
+                  <th className="p-4 w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all eligible requests"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={
+                        selectableRows.length > 0 &&
+                        selectableRows.every((r) => selectedKeys.includes(rowKey(r)))
+                      }
+                      onChange={(e) => toggleAll(e.target.checked)}
+                    />
+                  </th>
+                )}
+                <th className="p-4">Request ID</th>
+                <th className="p-4">Member ID</th>
+                <th className="p-4">Member Name</th>
+                <th className="p-4">NIC</th>
+                <th className="p-4">Requested Date</th>
+                <th className="p-4">Location</th>
+                <th className="p-4 text-center">Status</th>
+                <th className="p-4 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-50">
-              {error && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-red-600">
-                    {error}
-                  </td>
-                </tr>
-              )}
-
-              {!error && rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-neutral-500">
-                    {hasRetrieved
-                      ? "No records found. Adjust your filters and click Retrieve."
-                      : "Click Retrieve to load requests."}
-                  </td>
-                </tr>
-              )}
-
-              {!error &&
-                rows.map((row, i) => (
-                  <tr
-                    key={`${row.type}-${row.requestId ?? row.requestNo ?? i}`}
-                    className="hover:bg-[#fdf5f2]/60"
-                  >
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openRow(row)}
-                        className="font-medium text-[#953002] hover:underline"
-                      >
-                        {row.requestNo ?? `#${row.requestId ?? "—"}`}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">
-                      {row.typeLabel ?? TYPE_LABELS[row.type]}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">{row.memberId ?? "—"}</td>
-                    <td className="px-4 py-3 text-sm text-neutral-700">
-                      {row.nameWithInitials || row.fullName || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">{row.nic ?? "—"}</td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">
-                      {row.submissionLocation ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">
-                      {row.requestedDate ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
-                        {STATUS_LABELS[row.status ?? ""] ?? row.status ?? "—"}
+            <tbody className="divide-y divide-gray-50">
+              {results.map((row) => {
+                const key = rowKey(row);
+                const listable = isListable(row);
+                return (
+                  <tr key={key} className="hover:bg-gray-50">
+                    {supportsApprovalList && (
+                      <td className="p-4">
+                        {listable ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${row.requestNo ?? 'request'}`}
+                            checked={selectedKeys.includes(key)}
+                            onChange={() => toggleRow(key)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    )}
+                    <td className="p-4 font-mono text-sm text-gray-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        {/* MMC02: icons mark submitted requests and those already on a list. */}
+                        {row.status === 'SUBMITTED_FOR_APPROVAL' && (
+                          <FileCheck2
+                            className="w-4 h-4 text-[#EAB308]"
+                            aria-label="Submitted for approval"
+                          />
+                        )}
+                        {row.status === 'ADDED_TO_BOARD_APPROVAL_LIST' && (
+                          <ListChecks
+                            className="w-4 h-4 text-blue-600"
+                            aria-label="Added to approval list"
+                          />
+                        )}
+                        {row.requestNo ?? 'NEW'}
                       </span>
                     </td>
+                    <td className="p-4">
+                      <button
+                        onClick={() => openRecord(row)}
+                        className="text-blue-600 font-bold hover:underline"
+                      >
+                        {row.memberId ?? '—'}
+                      </button>
+                    </td>
+                    <td className="p-4 text-gray-700">
+                      {row.fullName ?? row.nameWithInitials ?? '—'}
+                    </td>
+                    <td className="p-4 text-gray-600">{row.nic ?? '—'}</td>
+                    <td className="p-4 text-gray-600 tabular-nums">{row.requestedDate ?? '—'}</td>
+                    <td className="p-4 text-gray-600">{row.submissionLocation ?? '—'}</td>
+                    <td className="p-4 text-center">
+                      <span
+                        className={`text-[10px] font-bold px-3 py-1 rounded-full text-white ${
+                          row.status === 'APPROVED'
+                            ? 'bg-green-600'
+                            : row.status === 'REJECTED'
+                              ? 'bg-red-600'
+                              : row.status === 'INACTIVE'
+                                ? 'bg-gray-400'
+                                : 'bg-[#EAB308]'
+                        }`}
+                      >
+                        {humanStatus(row.status)}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      {canDelete && (
+                      <button
+                        onClick={() => setPendingDelete(row)}
+                        disabled={deletingKey === key}
+                        title={`Delete ${row.requestNo ?? 'request'}`}
+                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        {deletingKey === key
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Trash2 className="w-4 h-4" />}
+                        Delete
+                      </button>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                );
+              })}
+              {results.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={supportsApprovalList ? 9 : 8}
+                    className="p-8 text-center text-gray-500"
+                  >
+                    No requests found matching your criteria.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+      )}
 
-        {hasRetrieved && rows.length > 0 && (
-          <div className="border-t border-neutral-100 px-4 py-2.5 text-xs text-neutral-500">
-            {rows.length} request{rows.length === 1 ? "" : "s"}
+      {showMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-2xl font-semibold text-[#8B3205]">Select Board Meeting</h2>
+                <p className="text-sm text-gray-500">
+                  Select the meeting date for these {selectedKeys.length} requests.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMeetingModal(false)}
+                className="text-gray-500"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 pb-5 pt-6">
+              <label className="text-sm font-medium text-gray-700">Meeting Date</label>
+              <select
+                value={selectedMeeting}
+                onChange={(e) => setSelectedMeeting(e.target.value)}
+                className="mt-1.5 w-full p-2.5 border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="">Select meeting</option>
+                {boardMeetings.map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.scheduledDate}
+                    {m.boardMeetingId ? ` (${m.boardMeetingId})` : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMeetingModal(false)}
+                  className="px-4 py-2 text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateApprovalList()}
+                  disabled={!selectedMeeting || savingList}
+                  className="bg-[#8B3205] text-white px-4 py-2 rounded-lg disabled:opacity-60"
+                >
+                  {savingList ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+
+      {createdList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-2xl font-semibold text-[#8B3205]">Confirmation</h2>
+              <button type="button" onClick={() => setCreatedList(null)} className="text-gray-500">
+                ✕
+              </button>
+            </div>
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-base leading-relaxed text-gray-600">
+                {createdList.listId
+                  ? `The approval list ${createdList.listId} for ${createdList.count} requests has been created. Do you want to view the list?`
+                  : 'The approval list has been created. Do you want to view the list?'}
+              </p>
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreatedList(null)}
+                  className="bg-[#EAB308] text-white px-4 py-2 rounded-lg"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const listId = createdList.listId;
+                    setCreatedList(null);
+                    router.push(
+                      listId
+                        ? `/membership/board-approvals?listId=${encodeURIComponent(listId)}`
+                        : '/membership/board-approvals'
+                    );
+                  }}
+                  className="bg-[#8B3205] text-white px-4 py-2 rounded-lg"
+                >
+                  Yes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        destructive
+        busy={deletingKey !== null}
+        title="Delete this request?"
+        message={
+          <>
+            <span className="font-medium text-gray-900">
+              {pendingDelete?.requestNo ?? 'This request'}
+            </span>{' '}
+            for {pendingDelete?.fullName ?? 'this member'} will be removed permanently.
+            An audit record is kept, but the request itself cannot be recovered.
+          </>
+        }
+        confirmLabel="Delete request"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const row = pendingDelete;
+          setPendingDelete(null);
+          if (row) void handleDelete(row);
+        }}
+      />
+</div>
   );
 }
