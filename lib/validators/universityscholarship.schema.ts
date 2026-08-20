@@ -60,14 +60,16 @@ export const universityScholarshipSchema = z.object({
     }),
 
   examYear: z
-  .string()
-  .regex(/^\d{4}$/, "Exam year must be exactly 4 digits")
-  .refine((val) => {
-    const currentYear = new Date().getFullYear();
-    return Number(val) <= currentYear;
-  }, {
-    message: "Exam year cannot be a future year",
-  }),
+    .string()
+    .min(1, "Exam year is required")
+    .regex(/^\d{4}$/, "Exam year must be exactly 4 digits")
+    .refine((val) => {
+      const year = Number(val);
+      const currentYear = new Date().getFullYear();
+      return year >= 1950 && year <= currentYear;
+    }, {
+      message: `Exam year must be between 1950 and ${new Date().getFullYear()}`,
+    }),
 
   examNo: z
     .string()
