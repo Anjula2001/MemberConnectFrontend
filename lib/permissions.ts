@@ -7,6 +7,10 @@ import type { UserRole } from "@/lib/auth-context";
  *   1. Member Registration (MR01–MR18) — expressed as role lists, below.
  *   2. Grade 5 Scholarships (MMS01–MMS20)   — named permissions, further down.
  *   3. University Scholarships (MMS21–MMS48) — named permissions, same map.
+ *   4. Member Profile Changes (Requirement 02) — role lists, at the end of the file.
+ *
+ * Death Donation, Termination/Retirement and Dormant Membership are not governed
+ * here and keep whatever access they already have.
  *
  * The two shapes coexist on purpose. Member Registration shipped with role lists and
  * works; converting it would be a refactor of live code for no behavioural gain. The
@@ -15,8 +19,8 @@ import type { UserRole } from "@/lib/auth-context";
  * authorized user who has the delete privileges", MMS41's "special authorization"),
  * which a role list cannot express.
  *
- * Still out of scope and unrestricted: Death Donation, Termination/Retirement,
- * Dormant Membership, Profile Changes.
+ * Still out of scope and unrestricted: Death Donation, Termination/Retirement and
+ * Dormant Membership.
  *
  * Everything here is UX only — it decides what is shown, never what is allowed. The
  * backend enforces the same matrix independently in RolePermissions.java, and that
@@ -81,6 +85,79 @@ export const REMITTANCE_MASTER_ROLES: UserRole[] = ["ACCOUNTS", "SUPER_ADMIN"];
 // Membership eligibility age limits — a membership-policy setting, deliberately NOT
 // delegated to Accounts.
 export const ELIGIBILITY_CONFIG_ROLES: UserRole[] = ["SUPER_ADMIN"];
+
+// ─── Member Profile Changes (Requirement 02, MMC01–MMC26) ────────────────────
+//
+// Distinct from the Member Registration sets above: the actors the SRS names for
+// profile changes are not the same, and conflating them is what previously left
+// District Office — the primary creator of all four request types — with no access
+// to the module at all.
+
+// Raise a Basic Profile / Name / Nominee / Remittance change request from a member's
+// profile. MMC01, MMC05, MMC14 and MMC18 all name the District Office System User.
+export const PROFILE_CHANGE_CREATE_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "DISTRICT_OFFICE",
+];
+
+// View the "All Member Profile Change Requests List". MMC02/06/15/19 name both the
+// District Office and Head Office System User.
+export const PROFILE_CHANGE_VIEW_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+  "DISTRICT_OFFICE",
+];
+
+// Approve or reject a request that is decided directly, with no board step — Basic
+// Profile (MMC04) and Remittance (MMC17).
+//
+// This departs from the SRS on the client's instruction. MMC04 names the District
+// Office System User as the approver; here District Office raises the request but
+// never decides it, and Board Secretary — which the SRS does not name for this
+// function at all — decides every type.
+export const PROFILE_CHANGE_DIRECT_APPROVAL_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Re-open a submitted request and change its values. Not an SRS function: MMC01 says
+// a submitted record cannot be edited. Enabled at the client's direction, for the same
+// roles that may decide the request — a District Office user cannot revise what they
+// have already sent for approval.
+export const PROFILE_CHANGE_EDIT_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Delete a request outright. Also not an SRS function; the audit row is what keeps it
+// traceable. Available to everyone who works with the module, District Office included.
+export const PROFILE_CHANGE_DELETE_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+  "DISTRICT_OFFICE",
+];
+
+// Build, view and print a Name or Nominee Change Approval List for the board meeting.
+// MMC08–MMC11 and MMC21–MMC24 name the Head Office System User throughout.
+export const PROFILE_CHANGE_APPROVAL_LIST_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "HEAD_OFFICE",
+  "BOARD_SECRETARY",
+];
+
+// Record the board's decisions on that list (MMC12 / MMC25). Deliberately narrower
+// than the list above: Head Office prepares the board pack but does not decide what
+// the board decided. Anything routed through a Board Approval List is settled by the
+// Board Secretary.
+export const PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "BOARD_SECRETARY",
+];
 
 export function hasRole(role: UserRole | undefined | null, allowed: UserRole[]): boolean {
   return !!role && allowed.includes(role);

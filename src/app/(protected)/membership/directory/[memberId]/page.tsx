@@ -18,6 +18,8 @@ import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type Upl
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
 import {
+  
+  PROFILE_CHANGE_CREATE_ROLES
 	MEMBER_TRANSFER_ROLES,
 	TESTING_ACTIVATE_ROLES,
 	hasPermission,
@@ -90,6 +92,10 @@ export default function MemberProfilePage({
 	const [isActivating, setIsActivating] = useState(false);
 	const { addToast } = useToast();
 	const { user } = useAuth();
+	// MMC01/05/14/18 name the District Office System User as the one who raises a
+	// profile change request. Board Secretary decides them but never opens one, so the
+	// Actions entries are hidden rather than shown and refused.
+	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
 	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
 	// Raising a request is the originating office's job. Head Office holds neither
 	// right, so it reviews these rather than creating them.
@@ -292,6 +298,17 @@ export default function MemberProfilePage({
 			return;
 		}
 
+		// Requirement 02 gates every profile change request on an active membership.
+		const activeOnlyActions = [
+			"Basic Profile Changes",
+			"Change Name",
+			"Change Remittance",
+			"Change Nominee",
+		];
+		if (activeOnlyActions.includes(action) && profile.status !== "ACTIVE") {
+			return;
+		}
+
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
 		const routeMap: Record<string, string> = {
@@ -388,27 +405,27 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{actionGroups.profileRequests.map((item) => {
-										const disabledReason = actionDisabledReason(item);
-										const isDisabled = disabledReason !== null;
+{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
+    const disabledReason = actionDisabledReason(item);
+    const isDisabled = disabledReason !== null;
 
-										return (
-											<button
-												key={item}
-												type="button"
-												onClick={() => handleActionClick(item)}
-												disabled={isDisabled}
-												title={disabledReason ?? undefined}
-												className={
-													isDisabled
-														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
-														: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-												}
-											>
-												{item}
-											</button>
-										);
-									})}
+    return (
+        <button
+            key={item}
+            type="button"
+            onClick={() => handleActionClick(item)}
+            disabled={isDisabled}
+            title={disabledReason ?? undefined}
+            className={
+                isDisabled
+                    ? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+                    : "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+            }
+        >
+            {item}
+        </button>
+    );
+})}
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2">

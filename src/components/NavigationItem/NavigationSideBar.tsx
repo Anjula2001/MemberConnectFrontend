@@ -139,6 +139,11 @@ export default function NavigationSideBar() {
               url: "/membership/dispatch",
               icon: Send,
             },
+            {
+              title: "Profile Changes",
+              url: "/membership/profile-changes",
+              icon: FileText,
+            },
           ],
         },
         // District Office is the SRS's named actor for creating Grade 5 requests
