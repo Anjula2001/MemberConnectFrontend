@@ -97,24 +97,17 @@ export default function FundDisbursementRequest() {
   const isViewMode = Boolean(fundRequestId) && mode !== "edit";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isSubmittedForApproval = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
-  // MMS42-MMS46 — preparing a fund request. The save endpoint accepts either right,
-  // so a role holding just one of them can still work on the form.
+
   const canPrepareFundRequest =
     hasPermission(user?.role, "US_FUND_CREATE") || hasPermission(user?.role, "US_FUND_EDIT");
   const canSubmitFundRequest = hasPermission(user?.role, "US_FUND_SUBMIT");
   const canMarkFundRequestIncomplete = hasPermission(user?.role, "US_FUND_INCOMPLETE");
   const canEditRequest = !isViewMode && isEditableStatus && canPrepareFundRequest;
-  // MMS47 — approving or rejecting a disbursement is its own right, held by Head
-  // Office and Board Secretary. Without this check the buttons rendered for every
-  // role and the PATCH came back 403.
+
   const canChangeSubmittedFundRequestStatus = hasPermission(user?.role, "US_FUND_APPROVE");
   const canReviewSubmittedFundRequest =
     isViewMode && isSubmittedForApproval && canChangeSubmittedFundRequestStatus;
 
-  // MMS45 — status changes available from View Mode, keyed by current status.
-  // Mirrors the closed table enforced in UniversityScholarshipService. INCOMPLETE is
-  // absent as a source status because the spec for this screen does not list it, and
-  // APPROVED is terminal once the money has been released.
   const FUND_STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
     NEW: ["INACTIVE"],
     SUBMITTED_FOR_COMMITTEE_APPROVAL: ["NEW", "INACTIVE"],
@@ -122,11 +115,6 @@ export default function FundDisbursementRequest() {
     INACTIVE: ["NEW"],
   };
 
-  // Both rights sit with Super Admin, Head Office and Board Secretary, so District
-  // Office — which raises fund requests — never sees this control.
-  // MMS48 — hand-over to the Finance Module. Held by Head Office, Accounts and Super
-  // Admin. Only offered on an approved request, and only until it has been handed over
-  // once; the timestamp comes from the server so a reload cannot re-enable it.
   const canIntegrateWithFinance = hasPermission(user?.role, "US_FINANCE_DISBURSE");
   const canReopenFundRequest = hasPermission(user?.role, "US_FUND_REOPEN");
   const canSetFundRequestInactive = hasPermission(user?.role, "US_FUND_SET_INACTIVE");
@@ -145,8 +133,6 @@ export default function FundDisbursementRequest() {
   const [member, setMember] = useState<MemberSummary | null>(null);
   const [currentFundRequest, setCurrentFundRequest] = useState<ScholarshipFundRequest | null>(null);
 
-  // Derived here rather than with the other permission flags above, because it reads
-  // currentFundRequest and so has to sit after that state is declared.
   const isFinanceIntegrated = Boolean(currentFundRequest?.financeIntegratedAt);
   const showFinanceIntegration =
     isViewMode && status === "APPROVED" && canIntegrateWithFinance;
@@ -314,6 +300,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // Delete uploaded document from the backend for a given fund request ID
   const handleDeleteUploadedDocument = async (docId: number) => {
     const targetId = fundRequestNo || fundRequestId || requestId;
     if (!targetId) return;
@@ -339,6 +326,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // Save fund request to the backend for a given scholarship request ID
   const handleSaveFundRequest = async (data: FundRequestFormOutput) => {
     try {
       const response = await authFetch(
@@ -447,6 +435,7 @@ export default function FundDisbursementRequest() {
     fetchUploadedDocuments();
   }, [fundRequestNo, fundRequestId]);
 
+  // Fetch scholarship summary for the given scholarship request ID
   const fetchScholarshipSummary = async () => {
     if (!scholarshipRequestId) return;
 
@@ -471,6 +460,7 @@ export default function FundDisbursementRequest() {
     fetchScholarshipSummary();
   }, [scholarshipRequestId]);
 
+  // Fetch member details for the given scholarship request ID
   useEffect(() => {
     const memberId = scholarshipSummary?.memberId;
     if (!memberId) return;
@@ -529,6 +519,7 @@ export default function FundDisbursementRequest() {
     setShowSubmitConfirmModal(true);
   };
 
+  // Submit fund request to the backend for a given scholarship request ID
   const executeSubmitFundRequest = async () => {
     setShowSubmitConfirmModal(false);
     const targetFundRequestId = fundRequestNo || fundRequestId;
@@ -570,6 +561,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // Mark fund request as incomplete to the backend for a given scholarship request ID
   const handleMarkIncomplete = async (reason: string) => {
     const targetFundRequestId = fundRequestNo || fundRequestId;
     if (!scholarshipRequestId || !targetFundRequestId) return;
@@ -629,6 +621,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
+  // Update submitted fund request status to the backend for a given scholarship request ID
   const updateSubmittedFundRequestStatus = async (
     nextStatus: "APPROVED" | "REJECTED",
     reason?: string
@@ -679,7 +672,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
-  // MMS45 — apply a View Mode status change.
+  //apply a View Mode status change.
   const executeFundStatusChange = async () => {
     const targetFundRequestId = fundRequestNo || fundRequestId;
     if (!statusChangeTarget || isChangingStatus) return;
@@ -725,7 +718,7 @@ export default function FundDisbursementRequest() {
     }
   };
 
-  // MMS48 — hand this approved fund request to the Finance Module.
+  //hand this approved fund request to the Finance Module.
   const handleIntegrateWithFinance = async () => {
     const targetFundRequestId = fundRequestNo || fundRequestId;
     if (isIntegratingFinance || isFinanceIntegrated) return;
@@ -811,10 +804,6 @@ export default function FundDisbursementRequest() {
                 </span>
               )}
             </p>
-
-            {/* MMS48 — shown to anyone who can see the request, not just the roles that
-                may perform the hand-over, so the state of the disbursement is legible
-                to everyone reviewing it. */}
             {isFinanceIntegrated && (
               <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700">
                 <Check className="h-4 w-4 stroke-[2.5]" />
@@ -1179,10 +1168,7 @@ export default function FundDisbursementRequest() {
 
           {/* ACTION BUTTONS */}
           <div className="flex justify-end gap-3">
-            {/* Preparation actions, so they exist only while the request is still being
-                prepared (New / Incomplete). Previously keyed off !isSubmittedForApproval,
-                which left them rendered-but-greyed on a decided request — an Approved or
-                Rejected fund request is finished and has nothing left to submit. */}
+
             {isEditableStatus && canMarkFundRequestIncomplete && (
               <Button
                 type="button"

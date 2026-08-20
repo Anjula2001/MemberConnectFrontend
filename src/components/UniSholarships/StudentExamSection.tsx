@@ -106,8 +106,6 @@ export default function StudentExamSection() {
   const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Ref mirrors isSubmitting so a double-click in the same tick is rejected before
-  // React has re-rendered the disabled button.
   const isSubmittingRef = useRef(false);
   const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
@@ -147,13 +145,9 @@ export default function StudentExamSection() {
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  // MMS41 — amending an approved award (academic start date, special degree flag,
-  // disbursement bank account) is "a special authorization", held by Head Office and
-  // Board Secretary but not District Office.
+
   const canEditApprovedScholarshipDetails = hasPermission(user?.role, "US_APPROVED_EDIT");
-  // The right is part of the mode, not just the button: without it, a District Office
-  // user could enter the edit form by putting ?mode=approved-edit in the URL and only
-  // discover the 403 on save.
+
   const isApprovedDetailsEditMode =
     isExistingRequest
     && mode === "approved-edit"
@@ -164,9 +158,6 @@ export default function StudentExamSection() {
   const cannotEdit = !isEditMode && isSaved;
   const incomplete = status === "INCOMPLETE";
 
-  // MMS25 — status changes available from View Mode, keyed by current status.
-  // Mirrors the closed table enforced in UniversityScholarshipService; APPROVED and
-  // the ADDED_TO_*_LIST states are absent on purpose and so offer nothing.
   const STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
     NEW: ["INACTIVE"],
     INCOMPLETE: ["NEW", "INACTIVE"],
@@ -177,9 +168,6 @@ export default function StudentExamSection() {
     INACTIVE: ["NEW"],
   };
 
-  // Returning a request to New needs US_REQUEST_REOPEN and deactivating it needs
-  // US_REQUEST_SET_INACTIVE. Both sit with Super Admin, Head Office and Board
-  // Secretary, so District Office never sees this control.
   const canReopenToNew = hasPermission(user?.role, "US_REQUEST_REOPEN");
   const canSetInactive = hasPermission(user?.role, "US_REQUEST_SET_INACTIVE");
 
@@ -704,8 +692,6 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    // Only NEW and INCOMPLETE requests may be submitted. The button is disabled for
-    // every other status, but pressing Enter in a field still fires the form submit.
     if (!isEditableStatus) return;
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
@@ -787,7 +773,7 @@ export default function StudentExamSection() {
     }
   };
 
-  // MMS25 — apply a View Mode status change.
+  //apply a View Mode status change.
   const executeStatusChange = async () => {
     if (!statusChangeTarget || isChangingStatus) return;
 
@@ -1293,8 +1279,7 @@ export default function StudentExamSection() {
     : isExistingRequest
       ? "University Scholarship"
       : "New University Scholarship";
-  // MMS26 — only the University Scholarship Committee decides at this gate. Being
-  // able to view a submitted request is not the same as being able to clear it.
+
   const canReviewSubmission =
     isViewMode
     && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL"
@@ -1303,8 +1288,7 @@ export default function StudentExamSection() {
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =
     (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
-  // District Office holds no fund request rights at all, so it can neither open the
-  // Fund Requests tab nor raise one from an approved scholarship it can otherwise see.
+
   const canViewFundRequests = hasPermission(user?.role, "US_FUND_VIEW");
   const canCreateFundRequest = hasPermission(user?.role, "US_FUND_CREATE");
   const canAddFundRequest =
@@ -1377,6 +1361,7 @@ export default function StudentExamSection() {
     }
   };
 
+  // Handle new fund request
   const handleNewFundRequest = () => {
     if (!requestId) return;
 
@@ -1409,6 +1394,7 @@ export default function StudentExamSection() {
     );
   };
 
+  // Handle view member scholarships
   const handleViewMemberScholarships = async () => {
     const targetMemberId = member?.memberId || loadedRecord?.memberId;
     if (!targetMemberId) return;
