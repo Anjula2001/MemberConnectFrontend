@@ -12,8 +12,6 @@ import { hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { authFetch } from "@/lib/api/authFetch";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type RequestRow = {
   id: number;
   requestId?: string;
@@ -54,23 +52,18 @@ type RowDecision = {
 };
 
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 function ApprovalsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
 
-  // Tab state — reads ?tab=deviation from URL
   const [activeTab, setActiveTab] = useState<"normal" | "deviation">(
     searchParams.get("tab") === "deviation" ? "deviation" : "normal"
   );
 
-  // Sync tab to URL when changed by user click
   const switchTab = (tab: "normal" | "deviation") => {
     setActiveTab(tab);
     router.replace(`/scholarships/university/approvals${tab === "deviation" ? "?tab=deviation" : ""}`);
-    // Reset all list/request state on tab switch
     setAllGroupedLists([]);
     setFilteredLists([]);
     setHasRetrieved(false);
@@ -99,23 +92,19 @@ function ApprovalsPageInner() {
   const [endDate, setEndDate] = useState("");
   const [dateError, setDateError] = useState("");
 
-  // List data
   const [allGroupedLists, setAllGroupedLists] = useState<GroupedList[]>([]);
   const [filteredLists, setFilteredLists] = useState<GroupedList[]>([]);
   const [isRetrieving, setIsRetrieving] = useState(false);
   const [hasRetrieved, setHasRetrieved] = useState(false);
 
-  // Selected list + retrieved requests
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [retrievedRequests, setRetrievedRequests] = useState<RequestRow[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [hasRetrievedRequests, setHasRetrievedRequests] = useState(false);
 
-  // ── Approve / Reject decisions per row ────────────────────────────────────
   const [decisions, setDecisions] = useState<Record<string, RowDecision>>({});
   const [proceedErrors, setProceedErrors] = useState<Record<string, string>>({});
 
-  // ── Confirm popup state ────────────────────────────────────────────────────
   const [showConfirmPopup, setShowConfirmPopup] = useState(false);
   const [popupComment, setPopupComment] = useState("");
   const [boardMeetingOptions, setBoardMeetingOptions] = useState<BoardMeetingOption[]>([]);
@@ -126,9 +115,6 @@ function ApprovalsPageInner() {
   const [processError, setProcessError] = useState<string | null>(null);
   const [processSuccess, setProcessSuccess] = useState(false);
 
-  // Delete list state
-  // MMS37 calls delete out as a separate "delete privilege", narrower than ordinary
-  // access to the approval list screens.
   const canDelete = hasPermission(user?.role, "US_LIST_DELETE");
   const canPrint = hasPermission(user?.role, "US_LIST_PRINT");
   const canProcess = hasPermission(user?.role, "US_LIST_PROCESS");
@@ -158,6 +144,7 @@ function ApprovalsPageInner() {
     return normalized.toLowerCase();
   };
 
+  //date validation
   const parseYMD = (input?: string | null) => {
     if (!input) return null;
     const match = String(input).match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -237,7 +224,7 @@ function ApprovalsPageInner() {
       // Collect all requests that have been attached to an approval list
       const attached = data.filter((r) => r.approvalListId);
 
-      // Build groups keyed by approvalListId (UUID) — each attach action creates a separate list
+      // Build groups keyed by approvalListId 
       const groups: Record<string, GroupedList> = {};
       attached.forEach((req) => {
         const listId = req.approvalListId!;
@@ -325,7 +312,6 @@ function ApprovalsPageInner() {
       ...prev,
       [key]: { action, reason: prev[key]?.reason || "" },
     }));
-    // Clear error when changed
     setProceedErrors((prev) => {
       const next = { ...prev };
       delete next[key];
@@ -347,13 +333,7 @@ function ApprovalsPageInner() {
     }
   };
 
-  // ── Fetch board meeting options ───────────────────────────────────────────
-  // MMS34 — the Actual Board Meeting Date is a selection over the Board Meeting
-  // records, so this has to succeed for the field to work at all.
-  //
-  // Was pointing at /api/board-meetings, which does not exist — the controller only
-  // exposes /getAllBoardMeetings. The 404 fell into a silent catch, the option list
-  // stayed empty, and the field quietly degraded to a free-text date picker.
+  //the Actual Board Meeting Date is a selection over the Board Meeting
   const fetchBoardMeetingOptions = async () => {
     try {
       const res = await authFetch(
@@ -527,26 +507,12 @@ function ApprovalsPageInner() {
 
   // ── Selected list info ────────────────────────────────────────────────────
   const selectedGroup = filteredLists.find((g) => g.approvalListId === selectedListId);
-
-  // The Actual Board Meeting Date is bounded by the meeting itself and today: a
-  // postponement moves the meeting later, never earlier, and a meeting cannot be
-  // recorded as having happened on a date that has not arrived.
-  //
-  // Built as a yyyy-mm-dd string from local parts rather than toISOString(), which
-  // would report the UTC day and roll over early evening in UTC+5:30.
   const todayIsoDate = (() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   })();
   const minActualBoardMeetingDate = selectedGroup?.scheduledDate?.slice(0, 10) ?? "";
 
-  // Board Meeting records that could be the actual date: the meeting's own scheduled
-  // date, plus any other meeting between that date and today — a postponement moves
-  // the meeting later, and it cannot have happened in the future.
-  //
-  // The scheduled date is always kept, even when it is itself in the future, because
-  // the requirement makes it the default and a default that is not in the list would
-  // leave the field blank.
   const selectableBoardMeetingOptions = (() => {
     const inRange = boardMeetingOptions
       .filter((opt) => {
@@ -562,9 +528,6 @@ function ApprovalsPageInner() {
 
     if (!minActualBoardMeetingDate) return inRange;
 
-    // The scheduled date is the default, so it has to be selectable even if the
-    // records call failed or does not contain it. Synthesised rather than left out,
-    // so the field never renders with nothing in it.
     const hasScheduled = inRange.some(
       (opt) => opt.scheduledDate?.slice(0, 10) === minActualBoardMeetingDate
     );
@@ -578,7 +541,7 @@ function ApprovalsPageInner() {
   const isProcessed = selectedGroup ? getListStatus(selectedGroup) === "PROCEED" : false;
   const firstRequest = retrievedRequests[0];
 
-  // ─────────────────────────────────────────────────────────────────────────
+  //permission
   if (user && !hasPermission(user.role, "US_LIST_VIEW")) {
     return (
       <AccessRestricted
@@ -911,8 +874,8 @@ function ApprovalsPageInner() {
                             {isProcessed ? (
                               <div className="flex flex-col gap-1">
                                 <span className={`font-semibold px-2 py-0.5 rounded text-[11px] w-fit ${req.status === "APPROVED"
-                                    ? "bg-green-50 text-green-700 border border-green-200"
-                                    : "bg-red-50 text-red-700 border border-red-200"
+                                  ? "bg-green-50 text-green-700 border border-green-200"
+                                  : "bg-red-50 text-red-700 border border-red-200"
                                   }`}>
                                   {req.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
                                 </span>
@@ -932,8 +895,8 @@ function ApprovalsPageInner() {
                                       handleDecisionChange(key, e.target.value as "approve" | "reject")
                                     }
                                     className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${dec.action === "approve"
-                                        ? "border-green-300 bg-green-50 text-green-700"
-                                        : "border-red-300 bg-red-50 text-red-700"
+                                      ? "border-green-300 bg-green-50 text-green-700"
+                                      : "border-red-300 bg-red-50 text-red-700"
                                       }`}
                                   >
                                     <option value="approve">✓ Approve</option>
@@ -1088,9 +1051,6 @@ function ApprovalsPageInner() {
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Actual Board Meeting Date
                   </label>
-                  {/* Always a selection over the Board Meeting records — a free date
-                      picker would let a date be entered that no meeting was ever held
-                      on. The list is bounded by the meeting's own date and today. */}
                   <div className="relative">
                     <select
                       value={actualBoardMeetingDate}
@@ -1139,8 +1099,8 @@ function ApprovalsPageInner() {
                 </label>
                 <div
                   className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${uploadedFile
-                      ? "border-[#953002]/40 bg-[#fff6f2]"
-                      : "border-gray-200 bg-gray-50 hover:border-[#953002]/40 hover:bg-[#fff6f2]/50"
+                    ? "border-[#953002]/40 bg-[#fff6f2]"
+                    : "border-gray-200 bg-gray-50 hover:border-[#953002]/40 hover:bg-[#fff6f2]/50"
                     }`}
                   onClick={() => fileInputRef.current?.click()}
                 >
