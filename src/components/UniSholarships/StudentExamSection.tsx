@@ -936,7 +936,7 @@ export default function StudentExamSection() {
         ? {
           ...prev,
           status: nextStatus,
-          decisionReason: nextStatus === "REJECTED" ? reason || "" : prev.decisionReason,
+          decisionReason: nextStatus === "REJECTED" ? rejectReason || "" : prev.decisionReason,
         }
         : prev
     );
@@ -981,8 +981,8 @@ export default function StudentExamSection() {
       updateScholarshipStatus(serverStatus as any);
       setExamNoPopupMessage(
         deviationFlag
-          ? "Scholarship Approved(Submitted for Deviation Board Approval)"
-          : "Scholarship Approved(Submitted for Normal Board Approval)"
+          ? "Submitted for Deviation Board Approval"
+          : "Submitted for Normal Board Approval"
       );
       setShowExamNoPopup(true);
     } catch (error) {

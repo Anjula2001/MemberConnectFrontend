@@ -1004,11 +1004,14 @@ export default function ChangeMemberTransferForm() {
           <section className="rounded-lg border bg-white p-4">
             <h3 className="mb-4 text-xl font-bold text-[#953002]">Personal Details</h3>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <FieldPair oldLabel="Full Name" oldValue={oldValues.fullName} newLabel="Full Name" newValue={oldValues.fullName} />
-              <FieldPair oldLabel="Date of Birth" oldValue={oldValues.dateOfBirth} newLabel="Date of Birth" newValue={oldValues.dateOfBirth} />
-              <FieldPair oldLabel="NIC Number" oldValue={oldValues.nicNumber} newLabel="NIC Number" newValue={oldValues.nicNumber} />
-              <FieldPair oldLabel="Gender" oldValue={oldValues.gender} newLabel="Gender" newValue={oldValues.gender} />
+            {/* Single value per field rather than a Current/New pair: a transfer never
+                changes these, and both columns were rendering the same value. The
+                Current/New treatment stays on Occupation and Location, which do change. */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ReadOnlyField label="Full Name" value={oldValues.fullName} />
+              <ReadOnlyField label="Date of Birth" value={oldValues.dateOfBirth} />
+              <ReadOnlyField label="NIC Number" value={oldValues.nicNumber} />
+              <ReadOnlyField label="Gender" value={oldValues.gender} />
             </div>
           </section>
 
@@ -1492,29 +1495,19 @@ export default function ChangeMemberTransferForm() {
   );
 }
 
-function FieldPair({
-  oldLabel,
-  oldValue,
-  newLabel,
-  newValue,
-}: {
-  oldLabel: string;
-  oldValue: string;
-  newLabel: string;
-  newValue: string;
-}) {
+/**
+ * One read-only detail. Replaces the old FieldPair, which rendered a Current and a New
+ * column for Personal Details even though a transfer leaves those values untouched.
+ *
+ * readOnly rather than disabled so the value reads as normal text instead of greyed
+ * out — it is information, not an input the user is being refused.
+ */
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
-    <>
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">{oldLabel} Current</label>
-        <Input value={formatDisplayValue(oldValue)} disabled />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">{newLabel} New</label>
-        <Input value={formatDisplayValue(newValue)} disabled readOnly />
-      </div>
-    </>
+    <div>
+      <label className="mb-1 block text-sm text-gray-600">{label}</label>
+      <Input value={formatDisplayValue(value)} readOnly />
+    </div>
   );
 }
 
