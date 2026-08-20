@@ -57,10 +57,18 @@ const grade5Schema = z.object({
 
   studentName: z.string().min(1, "Student name is required"),
 
+  // At least 8 characters, of which at least 2 must be digits. Letters and
+  // separators are allowed, so formats such as "BC/1234/56" pass, but a value with
+  // fewer than two digits in it is not a certificate number.
   birthCertificateNo: z
     .string()
+    .trim()
     .min(1, "Birth certificate number is required")
-    .min(8, "Birth Certificate number must be at least 8 characters"),
+    .min(8, "Birth certificate number must be at least 8 characters")
+    .refine(
+      (value) => (value.match(/[0-9]/g) ?? []).length >= 2,
+      "Birth certificate number must include at least 2 digits"
+    ),
 
   school: z.string().min(1, "School is required"),
 
@@ -83,10 +91,14 @@ const grade5Schema = z.object({
     .min(0, "Marks must be at least 0")
     .max(200, "Marks cannot exceed 200"),
 
+  // An examination number is digits only, and never shorter than 8 of them. The
+  // previous rule counted characters, so "ABC-12" padded out to 8 passed.
   examinationNumber: z
     .string()
+    .trim()
     .min(1, "Examination number is required")
-    .min(8, "Examination number must be at least 8 characters"),
+    .regex(/^[0-9]+$/, "Examination number must contain digits only")
+    .min(8, "Examination number must be at least 8 digits"),
 
   districtCutOff: z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -210,6 +222,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
 
     const [checkingExamNo, setCheckingExamNo] = useState(false);
+    const [checkingBirthCertNo, setCheckingBirthCertNo] = useState(false);
     const [examValidated, setExamValidated] = useState(false);
     const [examYears, setExamYears] = useState<number[]>([]);
 
@@ -266,6 +279,17 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         return false;
       }
 
+      // Shape first, duplicate check second: a number the schema would reject must
+      // not come back from this button marked validated.
+      if (!/^[0-9]{8,}$/.test(examNo.trim())) {
+        setError("examinationNumber", {
+          type: "manual",
+          message: "Examination number must be at least 8 digits",
+        });
+        setExamValidated(false);
+        return false;
+      }
+
       try {
         setCheckingExamNo(true);
 
@@ -304,6 +328,70 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         return false;
       } finally {
         setCheckingExamNo(false);
+      }
+    };
+
+    // Validate birth certificate duplication by calling backend. One birth certificate
+    // identifies one student, so a second request carrying it duplicates an existing
+    // one. Skipped when editing a request that already owns the number.
+    const validateBirthCertificateNumber = async () => {
+      const birthCertNo = getValues("birthCertificateNo")?.trim();
+
+      if (!birthCertNo) {
+        setError("birthCertificateNo", {
+          type: "manual",
+          message: "Birth certificate number is required",
+        });
+        return false;
+      }
+
+      const ownedAlready =
+        (initialData?.birthCertificateNumber ?? initialData?.birthCertificateNo)
+          ?.trim() === birthCertNo;
+      if (ownedAlready) {
+        return true;
+      }
+
+      try {
+        setCheckingBirthCertNo(true);
+
+        const res = await fetch(
+          `http://localhost:8080/api/grade5/exists-birth-certificate?birthCertificateNo=${encodeURIComponent(
+            birthCertNo
+          )}`
+        );
+
+        // This check is a courtesy: saveRequest/updateRequest reject a duplicate
+        // server-side regardless. So an unreachable or not-yet-deployed endpoint must
+        // not block the save — it would turn a backend outage into a dead form.
+        if (!res.ok) {
+          console.warn(
+            `[grade5] birth certificate duplicate check unavailable (HTTP ${res.status}) — deferring to the backend check on save`
+          );
+          return true;
+        }
+
+        const data: { exists: boolean } = await res.json();
+
+        if (data.exists) {
+          setError("birthCertificateNo", {
+            type: "manual",
+            message:
+              "Entered Birth Certificate Number is duplicating with another Scholarship Request",
+          });
+          return false;
+        }
+
+        clearErrors("birthCertificateNo");
+        return true;
+      } catch (error) {
+        console.warn(
+          "[grade5] birth certificate duplicate check failed — deferring to the backend check on save",
+          error
+        );
+        return true;
+      } finally {
+        setCheckingBirthCertNo(false);
       }
     };
 
@@ -386,6 +474,11 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
         await handleSubmit(
           async (data) => {
+            // The backend rejects a duplicate too, but only as a popup message —
+            // checking here puts the error on the field the user has to fix.
+            const birthCertOk = await validateBirthCertificateNumber();
+            if (!birthCertOk) return;
+
             savedRequest = await onValid(data, extraData, requestNo);
           },
           onInvalid
@@ -403,6 +496,9 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               initialData?.examinationNumber === data.examinationNumber ||
               (await validateExamNumber());
             if (!examOk) return;
+
+            const birthCertOk = await validateBirthCertificateNumber();
+            if (!birthCertOk) return;
 
             payload = buildPayload(data);
           },
@@ -486,6 +582,11 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               Birth Certificate No
             </label>
             <Input {...register("birthCertificateNo")} disabled={readOnly} />
+            {checkingBirthCertNo && (
+              <p className="text-gray-500 text-sm">
+                Checking birth certificate number...
+              </p>
+            )}
             {errors.birthCertificateNo && (
               <p className="text-red-500 text-sm">
                 {errors.birthCertificateNo.message}
@@ -586,8 +687,18 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
           <div>
             <label className="block font-medium mb-1">Marks Obtained</label>
+            {/* Marks are typed in, never nudged: the spinner buttons, the scroll
+                wheel and the arrow keys can all silently change a submitted mark by
+                one, which is exactly the kind of edit nobody notices on review. */}
             <Input
               type="number"
+              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-inner-spin-button]:m-0"
+              onWheel={(e) => e.currentTarget.blur()}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                }
+              }}
               {...register("marksObtained", {
                 setValueAs: (value) =>
                   value === "" ? undefined : Number(value),

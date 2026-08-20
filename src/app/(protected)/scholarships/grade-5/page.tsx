@@ -183,10 +183,40 @@ function MultiSelectDropdown({
   );
 }
 
-// Location options are loaded from the District Office master at runtime (see the
-// effect in the component) rather than hardcoded here. The previous inline list used
-// synthetic UPPERCASE codes such as "NUWARA_ELIYA", which never matched the district
-// names actually stored against a member, so the filter could not have worked.
+// The 25 administrative districts of Sri Lanka, spelled exactly as the District Office
+// master stores them. An earlier inline list used synthetic UPPERCASE codes such as
+// "NUWARA_ELIYA", which never matched the district names actually stored against a
+// member, so the filter could not have worked — these must stay in master casing.
+//
+// The master table is seeded with only a handful of districts, so the dropdown merges
+// this list with whatever the master returns rather than relying on either alone.
+const SRI_LANKA_DISTRICTS = [
+  "Ampara",
+  "Anuradhapura",
+  "Badulla",
+  "Batticaloa",
+  "Colombo",
+  "Galle",
+  "Gampaha",
+  "Hambantota",
+  "Jaffna",
+  "Kalutara",
+  "Kandy",
+  "Kegalle",
+  "Kilinochchi",
+  "Kurunegala",
+  "Mannar",
+  "Matale",
+  "Matara",
+  "Monaragala",
+  "Mullaitivu",
+  "Nuwara Eliya",
+  "Polonnaruwa",
+  "Puttalam",
+  "Ratnapura",
+  "Trincomalee",
+  "Vavuniya",
+];
 
 
 const statusOptions = [
@@ -225,7 +255,6 @@ export default function Grade5ScholarshipRequestsListPage() {
   const loggedUserCanEdit = hasG5Permission(user?.role, "G5_REQUEST_EDIT");
   const canCreateApprovalLists = hasG5Permission(user?.role, "G5_LIST_CREATE");
   const canViewApprovalLists = hasG5Permission(user?.role, "G5_LIST_VIEW");
-  const canManageExamMaster = hasG5Permission(user?.role, "G5_EXAM_MASTER_MANAGE");
   const userHasMultipleLocations = canSelectAllG5Locations(user?.role);
 
   const [locations, setLocations] = useState<string[]>([]);
@@ -262,16 +291,26 @@ export default function Grade5ScholarshipRequestsListPage() {
   // selected here matches the value actually stored against a request.
   useEffect(() => {
     let cancelled = false;
+    const buildOptions = (districts: string[]) => {
+      const merged = Array.from(
+        new Set([...SRI_LANKA_DISTRICTS, ...districts])
+      ).sort((a, b) => a.localeCompare(b));
+
+      setLocationOptions([
+        { value: "ALL", label: "All" },
+        ...merged.map((district) => ({ value: district, label: district })),
+      ]);
+    };
+
     getEducationalDistricts()
       .then((districts) => {
         if (cancelled) return;
-        setLocationOptions([
-          { value: "ALL", label: "All" },
-          ...districts.map((district) => ({ value: district, label: district })),
-        ]);
+        buildOptions(districts);
       })
       .catch(() => {
-        /* leave empty on failure — the filter simply offers no options */
+        // Master unreachable — still offer the 25 districts so the filter works.
+        if (cancelled) return;
+        buildOptions([]);
       });
     return () => {
       cancelled = true;
@@ -851,20 +890,6 @@ export default function Grade5ScholarshipRequestsListPage() {
           </tbody>
         </table>
       </div>
-
-      {/* Manage Exam Year & Cutoff Button */}
-      {canManageExamMaster && (
-        <div className="flex justify-end mt-4 mb-8 pb-4">
-          <Button
-            className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-            onClick={() => {
-              window.location.href = "/scholarships/grade-5/manage-exam-cutoff";
-            }}
-          >
-            Manage Exam Year & Cutoff
-          </Button>
-        </div>
-      )}
 
       {/* Board Meeting Selection Modal */}
       {isBoardModalOpen && (

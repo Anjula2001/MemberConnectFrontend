@@ -85,13 +85,6 @@ export default function NavigationSideBar() {
       subMenu.push({ title: "Grade 5", url: "/scholarships/grade-5" });
     }
 
-    if (hasG5Permission(role, "G5_EXAM_MASTER_MANAGE")) {
-      subMenu.push({
-        title: "Grade 5 Exam & Cut-offs",
-        url: "/scholarships/grade-5/manage-exam-cutoff",
-      });
-    }
-
     if (options.includeUniversity) {
       subMenu.push({ title: "University", url: "/scholarships/university" });
       subMenu.push({ title: "Fund Requests", url: "/scholarships/fund-requests" });
@@ -102,6 +95,36 @@ export default function NavigationSideBar() {
     }
 
     return { title: "Scholarships", icon: GraduationCap, subMenu };
+  };
+
+  /**
+   * Builds the Administration menu from a role's own admin items, plus the Grade 5
+   * Exam & Cut-offs master screen when the role holds G5_EXAM_MASTER_MANAGE.
+   *
+   * Exam years and district cut-off marks are master data, not a scholarship request
+   * action, so the screen belongs here rather than under Scholarships. Roles that hold
+   * the permission but have no other admin items still get the menu with this entry
+   * alone — otherwise the screen would be unreachable from the sidebar.
+   */
+  const buildAdministrationMenu = (
+    role: UserRole | undefined,
+    items: SubMenuItem[]
+  ): MenuItem | null => {
+    const subMenu: SubMenuItem[] = [...items];
+
+    if (hasG5Permission(role, "G5_EXAM_MASTER_MANAGE")) {
+      subMenu.push({
+        title: "Grade 5 Exam & Cut-offs",
+        url: "/scholarships/grade-5/manage-exam-cutoff",
+        icon: GraduationCap,
+      });
+    }
+
+    if (subMenu.length === 0) {
+      return null;
+    }
+
+    return { title: "Administration", icon: UserCog, subMenu };
   };
 
   const getFilteredMenuItems = (): MenuItem[] => {
@@ -133,6 +156,14 @@ export default function NavigationSideBar() {
               title: "Documentation Dispatch",
               url: "/membership/dispatch",
               icon: Send,
+            },
+            // District Office is the SRS's actor for MMT13 — "Searching the existing
+            // Member Retirement Requests" — and holds RET_REQUEST_VIEW in the matrix,
+            // so the list screen worked for them but was unreachable from the sidebar.
+            {
+              title: "Termination & Retirement",
+              url: "/membership/termination",
+              icon: UserMinus,
             },
           ],
         },
@@ -286,10 +317,8 @@ export default function NavigationSideBar() {
         ) as MenuItem[]),
         { title: "Death Donation", icon: Heart, url: "/death-donation" },
         { title: "Reports", icon: BarChart, url: "/reports" },
-        {
-          title: "Administration",
-          icon: UserCog,
-          subMenu: [
+        ...([
+          buildAdministrationMenu(role, [
             { title: "User Management", url: "/admin/users", icon: UserCog },
             {
               title: "Remittance Master",
@@ -306,8 +335,8 @@ export default function NavigationSideBar() {
               url: "/admin/member-accounts",
               icon: Wallet,
             },
-          ],
-        },
+          ]),
+        ].filter(Boolean) as MenuItem[]),
       ];
     }
 
@@ -320,10 +349,8 @@ export default function NavigationSideBar() {
           icon: Home,
           url: "/",
         },
-        {
-          title: "Administration",
-          icon: UserCog,
-          subMenu: [
+        ...([
+          buildAdministrationMenu(role, [
             {
               title: "Member Accounts",
               url: "/admin/member-accounts",
@@ -334,8 +361,8 @@ export default function NavigationSideBar() {
               url: "/admin/remittance-master",
               icon: Wallet,
             },
-          ],
-        },
+          ]),
+        ].filter(Boolean) as MenuItem[]),
         { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
@@ -359,6 +386,7 @@ export default function NavigationSideBar() {
       ) as MenuItem[]),
       { title: "Death Donation", icon: Heart, url: "/death-donation" },
       { title: "Reports", icon: BarChart, url: "/reports" },
+      ...([buildAdministrationMenu(role, [])].filter(Boolean) as MenuItem[]),
     ];
   };
 

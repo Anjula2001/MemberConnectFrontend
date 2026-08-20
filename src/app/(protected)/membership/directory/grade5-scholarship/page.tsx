@@ -144,12 +144,15 @@ export default function Grade5ScholarshipPage() {
   // requiredPermissionForStatusChange() on the backend:
   //   -> INACTIVE       SRS 2.3.4 attaches "the user needs Inactive rights" to it.
   //   REJECTED -> NEW   reverses a Board decision, so it needs reopen rights.
-  // Every other move to New (INCOMPLETE -> NEW, SUBMITTED -> NEW) stays ordinary.
+  // District Office users cannot change request status via the view-mode dropdown.
   const viewModeStatusActions = (
     grade5Request?.status
       ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
       : []
   ).filter((action) => {
+    if (user?.role === "DISTRICT_OFFICE") {
+      return false;
+    }
     if (action.status === "INACTIVE") {
       return hasG5Permission(user?.role, "G5_REQUEST_SET_INACTIVE");
     }
@@ -163,6 +166,7 @@ export default function Grade5ScholarshipPage() {
     !!grade5Request?.id &&
     isViewRequestMode &&
     !isEditMode &&
+    user?.role !== "DISTRICT_OFFICE" &&
     viewModeStatusActions.length > 0;
 
   useEffect(() => {

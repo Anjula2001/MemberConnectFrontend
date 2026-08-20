@@ -14,6 +14,15 @@ import {
   createTerminationApprovalList,
   type TerminationApprovalListDTO,
 } from "@/lib/api/terminationApprovalLists";
+import { searchRetirementRequests } from "@/lib/api/retirementRequests";
+import { useAuth } from "@/lib/auth-context";
+import {
+  BOARD_GOVERNANCE_ROLES,
+  hasRetPermission,
+  hasRole,
+  isLocationRestricted,
+} from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 interface TerminationRequest {
   id: string;
@@ -240,9 +249,12 @@ function StatusMultiSelect({
 function LocationMultiSelect({
   selectedLocations,
   onLocationChange,
+  disabled = false,
 }: {
   selectedLocations: string[];
   onLocationChange: (locations: string[]) => void;
+  /** SRS 3.2.2: a user with access to only their own district gets this un-editable. */
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -287,7 +299,14 @@ function LocationMultiSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between"
+        disabled={disabled}
+        title={disabled ? "You can only view your own district's requests." : undefined}
+        className={cn(
+          "w-full px-3 py-2 text-left border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between",
+          disabled
+            ? "bg-gray-100 text-gray-600 cursor-not-allowed"
+            : "bg-white hover:bg-gray-50"
+        )}
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown
@@ -295,7 +314,7 @@ function LocationMultiSelect({
         />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
           <div className="p-2 max-h-64 overflow-y-auto">
             {locationOptions.map((location) => (
@@ -317,6 +336,29 @@ function LocationMultiSelect({
     </div>
   );
 }
+
+/**
+ * Resolves the district stored on the user account onto an AVAILABLE_LOCATIONS id.
+ *
+ * `assignedDistrict` is a display name ("Nuwara Eliya"); the options below are keyed by
+ * slug ("nuwara_eliya"). Matching on the name first and the slugified name second means
+ * either shape on the account resolves, and an unrecognised district returns null so the
+ * filter stays empty rather than silently pinning to the wrong place.
+ */
+const resolveLocationId = (district: string | null | undefined): string | null => {
+  if (!district?.trim()) return null;
+
+  const target = district.trim().toLowerCase();
+  const slug = target.replace(/\s+/g, "_");
+
+  const match = AVAILABLE_LOCATIONS.find(
+    (location) =>
+      location.id !== "all" &&
+      (location.name.toLowerCase() === target || location.id === slug)
+  );
+
+  return match?.id ?? null;
+};
 
 // Location configuration
 const AVAILABLE_LOCATIONS = [
@@ -372,6 +414,25 @@ const getThisAndLastMonthRange = () => {
 
 export default function TerminationPage() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  // This screen lists three request types; only Retirement is access-controlled so far,
+  // so the checks below are scoped to retirement rows and the retirement fetch. The
+  // termination and member-death halves stay open, as they are today.
+  const canViewRetirement = hasRetPermission(user?.role, "RET_REQUEST_VIEW");
+  const canEditRetirement = hasRetPermission(user?.role, "RET_REQUEST_EDIT");
+
+  // Board meetings and termination approval lists are Head Office / Board Secretary
+  // territory — BoardMeetingController carries the matching @PreAuthorize. District
+  // Office can now reach this screen for the retirement list, so everything hanging off
+  // the board-meeting flow has to be gated or it 403s on mount.
+  const canManageApprovalLists = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
+
+  // SRS 3.2.2: "If the logged in user has only access to the current district location,
+  // this field will be un-editable and the current location will be auto selected."
+  // District Office is the only role that lands here.
+  const locationRestricted = isLocationRestricted(user?.role);
+  const pinnedLocationId = resolveLocationId(user?.assignedDistrict);
 
   //Fiter state value
   const [requestType, setRequestType] = useState<RequestType>("all");
@@ -397,7 +458,8 @@ export default function TerminationPage() {
   const [approvalListError, setApprovalListError] = useState("");
   const showRequestTypeColumn = requestType === "all";
   const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
-  const showApprovalListActions = requestType === "termination";
+  const showApprovalListActions =
+    requestType === "termination" && canManageApprovalLists;
 
   const selectableRowIds = requests
     .filter(
@@ -428,7 +490,19 @@ export default function TerminationPage() {
   // Get current status options based on request type
   const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
 
+  // Pins a location-restricted user to their own district. Runs when the user resolves
+  // rather than on mount alone, because auth-context hydrates asynchronously.
   useEffect(() => {
+    if (locationRestricted && pinnedLocationId) {
+      setSelectedLocations([pinnedLocationId]);
+    }
+  }, [locationRestricted, pinnedLocationId]);
+
+  useEffect(() => {
+    if (!canManageApprovalLists) {
+      return;
+    }
+
     const loadBoardMeetings = async () => {
       try {
         const meetings = await getBoardMeetings();
@@ -439,7 +513,7 @@ export default function TerminationPage() {
     };
 
     loadBoardMeetings();
-  }, []);
+  }, [canManageApprovalLists]);
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
@@ -606,6 +680,27 @@ export default function TerminationPage() {
     return normalizeApiRows(data, sourceType);
   };
 
+  /**
+   * Retirement goes through the authenticated apiClient rather than the bare fetch above,
+   * because /api/retirement-requests now requires RET_REQUEST_VIEW and a request with no
+   * Bearer token would be rejected before it reached the permission check.
+   */
+  const fetchRetirementRequestsFromApi = async (
+    statuses: StatusType[] = selectedStatuses
+  ) => {
+    const params = buildQueryParams(statuses);
+    const data = (await searchRetirementRequests({
+      statuses: params.getAll("statuses"),
+      fromDate: params.get("fromDate") ?? undefined,
+      toDate: params.get("toDate") ?? undefined,
+      searchKey: params.get("searchKey") ?? undefined,
+      sortBy: params.get("sortBy") ?? undefined,
+      sortOrder: params.get("sortOrder") ?? undefined,
+    })) as TerminationRequestApiResponse;
+
+    return normalizeApiRows(data, "retirement");
+  };
+
   const sortMergedRequests = (requests: TerminationRequest[]) => {
     return [...requests].sort((a, b) => {
       let result = 0;
@@ -645,10 +740,14 @@ export default function TerminationPage() {
       let retrievedRequests: TerminationRequest[];
 
       if (requestType === "all") {
+        // A role without RET_REQUEST_VIEW would get a 403 here and fail the whole
+        // retrieval, so it contributes an empty list instead of a rejected promise.
         const [terminationRequests, retirementRequests, memberDeathRequests] =
           await Promise.all([
             fetchRequestsFromApi("termination-requests", "termination", statuses),
-            fetchRequestsFromApi("retirement-requests", "retirement", statuses),
+            canViewRetirement
+              ? fetchRetirementRequestsFromApi(statuses)
+              : Promise.resolve([] as TerminationRequest[]),
             fetchMemberDeathRequestsFromApi(statuses),
           ]);
         retrievedRequests = sortMergedRequests([
@@ -663,11 +762,7 @@ export default function TerminationPage() {
           statuses
         );
       } else if (requestType === "retirement") {
-        retrievedRequests = await fetchRequestsFromApi(
-          "retirement-requests",
-          "retirement",
-          statuses
-        );
+        retrievedRequests = await fetchRetirementRequestsFromApi(statuses);
       } else {
         retrievedRequests = await fetchMemberDeathRequestsFromApi(statuses);
       }
@@ -906,6 +1001,7 @@ export default function TerminationPage() {
             <LocationMultiSelect
               selectedLocations={selectedLocations}
               onLocationChange={setSelectedLocations}
+              disabled={locationRestricted}
             />
           </div>
 
@@ -918,7 +1014,9 @@ export default function TerminationPage() {
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="termination">Termination</SelectItem>
-                <SelectItem value="retirement">Retirement</SelectItem>
+                {canViewRetirement && (
+                  <SelectItem value="retirement">Retirement</SelectItem>
+                )}
                 <SelectItem value="member_deaths">Member Deaths</SelectItem>
               </SelectContent>
             </Select>
@@ -1123,13 +1221,14 @@ export default function TerminationPage() {
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
-                      {!NON_EDITABLE_STATUSES.includes(request.status) && (
-                        <Button variant="ghost" size="sm"
-                          onClick={() => handleEditRequest(request)}
-                          className="h-8 w-8 p-0">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
+                      {!NON_EDITABLE_STATUSES.includes(request.status) &&
+                        (request.sourceType !== "retirement" || canEditRetirement) && (
+                          <Button variant="ghost" size="sm"
+                            onClick={() => handleEditRequest(request)}
+                            className="h-8 w-8 p-0">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
                     </div>
                   </TableCell>
                 </TableRow>

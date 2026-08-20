@@ -17,7 +17,7 @@ import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
-import { TESTING_ACTIVATE_ROLES, hasRole } from "@/lib/permissions";
+import { TESTING_ACTIVATE_ROLES, hasRole, hasRetPermission, hasG5Permission } from "@/lib/permissions";
 
 const detailTabs = [
 	"Profile Details",
@@ -27,6 +27,12 @@ const detailTabs = [
 	"Scholarships",
 	"Progress",
 ];
+
+const NO_RAISE_HINT =
+	"Your role approves requests, it does not raise them.";
+
+const INACTIVE_MEMBER_HINT =
+	"This member is not Active, so a Grade 5 request cannot be raised for them.";
 
 const actionGroups = {
 	profileRequests: [
@@ -109,7 +115,70 @@ export default function MemberProfilePage({
 	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
 	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
 
-	const isRetirementAvailable = profile?.status === "ACTIVE";
+	// MMT12 needs both: the member must be Active, and the user must hold the right to
+	// raise a retirement request in the first place.
+	const isRetirementAvailable =
+		profile?.status === "ACTIVE" &&
+		hasRetPermission(user?.role, "RET_REQUEST_CREATE");
+
+	// Head Office approves requests, it does not raise them — the SRS actor tables and
+	// G5_ROLE_PERMISSIONS both put creation at District Office. Reaching a member's
+	// profile is not permission to start a request from it, so every request-raising
+	// entry in the Actions menu is disabled for Head Office. "Add Documents" is not a
+	// request, so it stays available.
+	const canRaiseRequests = user?.role !== "HEAD_OFFICE";
+
+	// Grade 5 is the one entry with a real permission behind it, so it answers to that
+	// rather than to the role name.
+	const canRaiseGrade5 =
+		canRaiseRequests && hasG5Permission(user?.role, "G5_REQUEST_CREATE");
+
+	const NON_REQUEST_ACTIONS = ["Add Documents"];
+
+	const isGrade5Action = (action: string) =>
+		action === "Grade 5 Scholarship" || action === "Grade 5 Scholarships";
+
+	const isActionDisabled = (action: string) => {
+		if (isGrade5Action(action)) {
+			// saveRequest rejects a member who is not Active on the exam's last date, so
+			// an inactive member cannot hold a Grade 5 request at all — the entry is
+			// disabled rather than leading to a form that cannot be saved.
+			return !canRaiseGrade5 || profile?.status !== "ACTIVE";
+		}
+
+		if (!canRaiseRequests && !NON_REQUEST_ACTIONS.includes(action)) {
+			return true;
+		}
+
+		if (action === "Death Donation Request") {
+			return profile?.status !== "ACTIVE";
+		}
+
+		if (action === "Record Member Death") {
+			return (
+				profile?.status !== "ACTIVE" &&
+				profile?.status !== "MEMBER_DEATH_RECORDED"
+			);
+		}
+
+		if (action === "Retirement") {
+			return !isRetirementAvailable;
+		}
+
+		return false;
+	};
+
+	const actionDisabledReason = (action: string) => {
+		if (!isActionDisabled(action)) {
+			return undefined;
+		}
+
+		if (isGrade5Action(action) && canRaiseGrade5) {
+			return INACTIVE_MEMBER_HINT;
+		}
+
+		return canRaiseRequests ? undefined : NO_RAISE_HINT;
+	};
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -239,18 +308,7 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
-
-		if (action === "Death Donation Request" && profile.status !== "ACTIVE") {
-			return;
-		}
-
-		if (
-			action === "Record Member Death" &&
-			profile.status !== "ACTIVE" &&
-			profile.status !== "MEMBER_DEATH_RECORDED"
-		) {
-			return;
-		}
+		if (isActionDisabled(action)) return;
 
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
@@ -333,16 +391,26 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{actionGroups.profileRequests.map((item) => (
-										<button
-											key={item}
-											type="button"
-											onClick={() => handleActionClick(item)}
-											className="block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-										>
-											{item}
-										</button>
-									))}
+									{actionGroups.profileRequests.map((item) => {
+										const isDisabled = isActionDisabled(item);
+
+										return (
+											<button
+												key={item}
+												type="button"
+												onClick={() => handleActionClick(item)}
+												disabled={isDisabled}
+												title={actionDisabledReason(item)}
+												className={
+													isDisabled
+														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+														: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+												}
+											>
+												{item}
+											</button>
+										);
+									})}
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2">
@@ -352,31 +420,35 @@ export default function MemberProfilePage({
 											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
 										</summary>
 										<div className="mt-1 space-y-1 pl-3">
-											{actionGroups.scholarshipRequests.map((item) => (
-												<button
-													key={item}
-													type="button"
-													onClick={() => handleActionClick(item)}
-													className="block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-												>
-													{item}
-												</button>
-											))}
+											{actionGroups.scholarshipRequests.map((item) => {
+												const isDisabled = isActionDisabled(item);
+
+												return (
+													<button
+														key={item}
+														type="button"
+														onClick={() => handleActionClick(item)}
+														disabled={isDisabled}
+														title={actionDisabledReason(item)}
+														className={
+															isDisabled
+																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
+																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+														}
+													>
+														{item}
+													</button>
+												);
+											})}
 										</div>
 									</details>
 								</div>
 
 								<div className="px-5 py-2 space-y-1">
 									{actionGroups.secondary.map((item) => {
-										const isRetirementItem = item === "Retirement";
-										const isDeathDonation = item === "Death Donation Request";
-										const isRecordMemberDeath = item === "Record Member Death";
-										const isDisabled =
-											(isDeathDonation && profile.status !== "ACTIVE") ||
-											(isRecordMemberDeath &&
-												profile.status !== "ACTIVE" &&
-												profile.status !== "MEMBER_DEATH_RECORDED") || (isRetirementItem && !isRetirementAvailable);
-										;
+										// Member status rules and the raise-a-request rule both live in
+										// isActionDisabled, so the two cannot drift apart.
+										const isDisabled = isActionDisabled(item);
 
 										return (
 											<button
@@ -384,11 +456,12 @@ export default function MemberProfilePage({
 												onClick={() => handleActionClick(item)}
 												type="button"
 												disabled={isDisabled}
+												title={actionDisabledReason(item)}
 												className={
-													item === "Member Termination"
-														? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-														: isDisabled
-															? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+													isDisabled
+														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+														: item === "Member Termination"
+															? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
 															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
 												}
 											>
