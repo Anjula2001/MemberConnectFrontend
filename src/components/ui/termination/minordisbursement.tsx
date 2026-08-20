@@ -25,6 +25,10 @@ export interface MinorSavingsAccountInfo {
 // re-derived on the client by matching against the loaded bank/branch lists.
 export interface SavedMinorDisbursement {
   minorAccountNo: string;
+  /** Master ids, authoritative when present. */
+  disbursementBankId?: number | string | null;
+  disbursementBranchId?: number | string | null;
+  /** Resolved names, kept for display and for pre-id rows. */
   disbursementBankName?: string | null;
   disbursementBranchName?: string | null;
   disbursementAccountNo?: string | null;
@@ -106,8 +110,10 @@ const MinorDisbursementSection = forwardRef<MinorDisbursementSectionRef, Props>(
     };
 
     // Rebuild the row state whenever the minor-account list, saved data, or the
-    // bank list changes. Saved bank/branch names are reconciled back to ids by
-    // matching against the loaded master-data lists, since only names are stored.
+    // bank list changes. The server now returns the bank/branch ids it stored, so
+    // they are used directly; matching by name is only a fallback for rows saved
+    // before those ids were persisted, and is ambiguous when two branches share
+    // a name.
     useEffect(() => {
       let cancelled = false;
 
@@ -124,24 +130,33 @@ const MinorDisbursementSection = forwardRef<MinorDisbursementSectionRef, Props>(
             continue;
           }
 
-          const matchedBank = saved.disbursementBankName
-            ? banks.find((bank) => bank.name === saved.disbursementBankName)
-            : undefined;
+          const bankId = saved.disbursementBankId
+            ? String(saved.disbursementBankId)
+            : saved.disbursementBankName
+              ? banks.find((bank) => bank.name === saved.disbursementBankName)?.id || ""
+              : "";
 
-          let matchedBranchId = "";
+          let branchId = saved.disbursementBranchId ? String(saved.disbursementBranchId) : "";
 
-          if (matchedBank && saved.disbursementBranchName) {
-            const branchList = await fetchBranches(account.minorAccountNo, matchedBank.id);
-            const matchedBranch = branchList.find(
-              (branch) => branch.name === saved.disbursementBranchName
-            );
-            matchedBranchId = matchedBranch?.id || "";
+          if (bankId) {
+            const branchList = await fetchBranches(account.minorAccountNo, bankId);
+
+            if (branchId) {
+              // Guard against a branch that has since been retired or moved to
+              // another bank: an id that is no longer offered must not be kept.
+              if (!branchList.some((branch) => branch.id === branchId)) {
+                branchId = "";
+              }
+            } else if (saved.disbursementBranchName) {
+              branchId =
+                branchList.find((branch) => branch.name === saved.disbursementBranchName)?.id || "";
+            }
           }
 
           nextRows[account.minorAccountNo] = {
             minorAccountNo: account.minorAccountNo,
-            disbursementBankId: matchedBank?.id || "",
-            disbursementBranchId: matchedBranchId,
+            disbursementBankId: bankId,
+            disbursementBranchId: branchId,
             disbursementAccountNo: saved.disbursementAccountNo || "",
           };
         }

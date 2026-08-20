@@ -54,6 +54,36 @@ export interface MemberDeathRecord {
   nomineeBranchName?: string;
   nomineeAccountNo?: string;
   deathDonationAmount?: number | string | null;
+
+  // Death Donation entitlement (SRS 4.2.3). The *Edited flags drive the
+  // "changed by hand" marker next to each editable figure.
+  monthsRemitted?: number | null;
+  monthsRemittedEdited?: boolean;
+  maximumDonationAmount?: number | string | null;
+  eligibleDonationAmount?: number | string | null;
+  receivedPast12Months?: number | string | null;
+  receivedPast12MonthsEdited?: boolean;
+  funeralAccountNo?: string | null;
+  funeralAccountCredited?: number | string | null;
+  funeralAccountMaximum?: number | string | null;
+  creditedToSpecialFixedAccount?: number | string | null;
+  creditedToSpecialFixedEdited?: boolean;
+  disburseDonationAmount?: number | string | null;
+  donationMultiplierApplied?: number | string | null;
+
+  /** MMT20 warning when the death was informed outside the eligible period. */
+  eligiblePeriodWarning?: string | null;
+
+  // Decision trail (MMT22 / MMT23 / MMT24).
+  submissionLocation?: string;
+  createdBy?: string;
+  level1DecidedBy?: string;
+  level1DecidedAt?: string;
+  level2DecidedBy?: string;
+  level2DecidedAt?: string;
+  level3DecidedBy?: string;
+  level3DecidedAt?: string;
+
   incompleteReason?: string;
   rejectReason?: string;
   editable?: boolean;
@@ -98,6 +128,7 @@ export async function searchMemberDeathRecords(params?: {
   searchKey?: string;
   sortBy?: string;
   sortOrder?: string;
+  locations?: string[];
 }) {
   const query = new URLSearchParams();
 
@@ -107,6 +138,9 @@ export async function searchMemberDeathRecords(params?: {
   if (params?.searchKey?.trim()) query.append("searchKey", params.searchKey.trim());
   if (params?.sortBy) query.append("sortBy", params.sortBy);
   if (params?.sortOrder) query.append("sortOrder", params.sortOrder);
+  // A District Office user is pinned to their own district server-side, so what
+  // is sent here only ever narrows the result for Head Office and committees.
+  params?.locations?.forEach((location) => query.append("locations", location));
 
   const { data } = await apiClient.get<MemberDeathRecord[]>(
     `${BASE_PATH}?${query.toString()}`
@@ -205,6 +239,65 @@ export async function rejectMemberDeathRecord(recordNo: string, reason: string) 
   const { data } = await apiClient.put<MemberDeathRecord>(
     `${BASE_PATH}/${encodeURIComponent(recordNo)}/reject`,
     { reason }
+  );
+  return data;
+}
+
+/**
+ * MMT22: escalate from the District Office to the District Committee, carrying
+ * the concern that prompted the escalation.
+ */
+export async function forwardMemberDeathToDistrictCommittee(recordNo: string, concerns?: string) {
+  const { data } = await apiClient.put<MemberDeathRecord>(
+    `${BASE_PATH}/${encodeURIComponent(recordNo)}/forward-to-district-committee`,
+    { concerns: concerns ?? "" }
+  );
+  return data;
+}
+
+/** MMT23: escalate from the District Committee to the P&D Committee. */
+export async function forwardMemberDeathToPdCommittee(recordNo: string, concerns?: string) {
+  const { data } = await apiClient.put<MemberDeathRecord>(
+    `${BASE_PATH}/${encodeURIComponent(recordNo)}/forward-to-pd-committee`,
+    { concerns: concerns ?? "" }
+  );
+  return data;
+}
+
+/**
+ * The SRS refresh button: sends whatever the three editable inputs currently
+ * hold and gets the recalculated entitlement back. Omitted fields are left as
+ * they are rather than cleared.
+ */
+export async function refreshMemberDeathDonation(
+  recordNo: string,
+  payload: {
+    monthsRemitted?: string | number | null;
+    receivedPast12Months?: string | number | null;
+    creditedToSpecialFixedAccount?: string | number | null;
+  }
+) {
+  const body: Record<string, string> = {};
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && `${value}`.trim() !== "") {
+      body[key] = `${value}`.trim();
+    }
+  });
+
+  const { data } = await apiClient.post<MemberDeathRecord>(
+    `${BASE_PATH}/${encodeURIComponent(recordNo)}/donation/refresh`,
+    body
+  );
+  return data;
+}
+
+/**
+ * MMT25 Finance callback. Restricted to ACCOUNTS and SUPER_ADMIN server-side;
+ * exposed here so the flow is exercisable before the Finance Module exists.
+ */
+export async function completeMemberDeath(recordNo: string) {
+  const { data } = await apiClient.patch<MemberDeathRecord>(
+    `/api/finance/member-deaths/${encodeURIComponent(recordNo)}/complete`
   );
   return data;
 }

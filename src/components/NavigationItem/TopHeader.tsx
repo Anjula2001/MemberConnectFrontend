@@ -18,6 +18,8 @@ import {
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
   DISTRICT_OFFICE: "District Office",
+  DISTRICT_COMMITTEE: "District Committee",
+  PD_COMMITTEE: "P&D Committee",
   BOARD_SECRETARY: "Board Secretary",
   HEAD_OFFICE: "Head Office",
   ACCOUNTS: "Accounts",

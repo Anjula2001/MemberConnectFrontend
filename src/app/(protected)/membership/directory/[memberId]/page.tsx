@@ -18,6 +18,8 @@ import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type Upl
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
 import {
+	DEATH_DONATION_ENTRY_ROLES,
+	MEMBER_DEATH_ENTRY_ROLES,
 	MEMBER_TRANSFER_ROLES,
 	PROFILE_CHANGE_CREATE_ROLES,
 	TESTING_ACTIVATE_ROLES,
@@ -96,6 +98,14 @@ export default function MemberProfilePage({
 	// Actions entries are hidden rather than shown and refused.
 	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
 	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
+	// MMT18 names the District Office System User as the sole actor who initiates a
+	// Member Death Record. The approval levels reach an existing record through the
+	// requests list, never by starting a new one from the profile.
+	const canRecordMemberDeath = hasRole(user?.role, MEMBER_DEATH_ENTRY_ROLES);
+	// MMD01 names the District Office System User as the sole actor who raises a
+	// death donation request. Everyone else was previously offered the option and
+	// only found out it was refused after filling the form in.
+	const canRaiseDeathDonation = hasRole(user?.role, DEATH_DONATION_ENTRY_ROLES);
 	// Raising a request is the originating office's job. Head Office holds neither
 	// right, so it reviews these rather than creating them.
 	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
@@ -266,8 +276,15 @@ export default function MemberProfilePage({
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
 
-		if (action === "Death Donation Request" && profile.status !== "ACTIVE") {
-			return;
+		if (action === "Death Donation Request") {
+			if (!canRaiseDeathDonation) {
+				return;
+			}
+			// MMD01: "The Member states need to be Active to have the Death
+			// Donation option available."
+			if (profile.status !== "ACTIVE") {
+				return;
+			}
 		}
 
 		// Two separate reasons an action can be unavailable: the member is inactive, or
@@ -289,12 +306,16 @@ export default function MemberProfilePage({
 			return;
 		}
 
-		if (
-			action === "Record Member Death" &&
-			profile.status !== "ACTIVE" &&
-			profile.status !== "MEMBER_DEATH_RECORDED"
-		) {
-			return;
+		if (action === "Record Member Death") {
+			if (!canRecordMemberDeath) {
+				return;
+			}
+			if (
+				profile.status !== "ACTIVE" &&
+				profile.status !== "MEMBER_DEATH_RECORDED"
+			) {
+				return;
+			}
 		}
 
 		// Requirement 02 gates every profile change request on an active membership.
@@ -460,15 +481,31 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="px-5 py-2 space-y-1">
-									{actionGroups.secondary.map((item) => {
+									{actionGroups.secondary
+										// A role that cannot raise a Member Death Record is not shown
+										// the option at all (MMT18); the backend refuses it either way.
+										.filter((item) => item !== "Record Member Death" || canRecordMemberDeath)
+										// Same for Death Donation (MMD01): hidden outright rather than
+										// shown and then refused by the server.
+										.filter((item) => item !== "Death Donation Request" || canRaiseDeathDonation)
+										.map((item) => {
 										const isRetirementItem = item === "Retirement";
 										const isDeathDonation = item === "Death Donation Request";
 										const isRecordMemberDeath = item === "Record Member Death";
+										// MMT01: "The Member states need to be 'Active' to have the
+										// Termination option available." An existing request leaves the
+										// member at TERMINATION_REQUESTED, which must stay reachable so
+										// the request can be reopened.
+										const isTermination = item === "Member Termination";
 										const isDisabled =
 											(isDeathDonation && profile.status !== "ACTIVE") ||
 											(isRecordMemberDeath &&
 												profile.status !== "ACTIVE" &&
-												profile.status !== "MEMBER_DEATH_RECORDED") || (isRetirementItem && !isRetirementAvailable);
+												profile.status !== "MEMBER_DEATH_RECORDED") ||
+											(isTermination &&
+												profile.status !== "ACTIVE" &&
+												profile.status !== "TERMINATION_REQUESTED") ||
+											(isRetirementItem && !isRetirementAvailable);
 										;
 
 										return (

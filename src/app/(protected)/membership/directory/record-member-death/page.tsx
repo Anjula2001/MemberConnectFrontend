@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Banknote,
   Loader2,
+  Pencil,
   ShieldAlert,
   Wallet,
 } from "lucide-react";
@@ -24,12 +25,15 @@ import { type MemberDTO } from "@/lib/api/member";
 import {
   approveMemberDeathRecord,
   changeMemberDeathStatus,
+  forwardMemberDeathToDistrictCommittee,
+  forwardMemberDeathToPdCommittee,
   getActiveMemberDeathRecord,
+  getMemberDeathRecord,
+  refreshMemberDeathDonation,
   getBanks,
   getBranches,
   getCauseOfDeathOptions,
   getMemberBankAccounts,
-  getMemberDeathDocumentDownloadUrl,
   getMemberDeathValidation,
   getMinorSavingsAccounts,
   markMemberDeathIncomplete,
@@ -37,25 +41,26 @@ import {
   saveMemberDeathRecord,
   submitMemberDeathRecord,
   updateMemberDeathRecord,
-  uploadMemberDeathDocument,
-  deleteMemberDeathDocument,
   type BankOption,
   type BranchOption,
   type CauseOfDeath,
-  type MemberDeathDocument,
   type MemberDeathMinorDisbursement,
   type MemberDeathRecord,
   type MemberDeathValidation,
   type MinorSavingsAccount,
 } from "@/lib/api/memberDeath";
 import { apiClient } from "@/lib/api/client";
+import DocumentUpload from "@/src/components/ui/documentupload";
+import { useAuth } from "@/lib/auth-context";
+import {
+  MEMBER_DEATH_DECISION_ROLE_BY_STATUS,
+  MEMBER_DEATH_ENTRY_ROLES,
+  MEMBER_DEATH_VIEW_ROLES,
+  canDecideMemberDeathAt,
+  hasRole,
+} from "@/lib/permissions";
 
 const TODAY = new Date().toISOString().split("T")[0];
-
-const DOCUMENT_TYPES = [
-  { type: "DEATH_CERTIFICATE", label: "Death Certificate", mandatory: true },
-  { type: "OTHER", label: "Other Documents", mandatory: false },
-] as const;
 
 const STATUS_LABELS: Record<string, string> = {
   NEW: "New",
@@ -75,6 +80,26 @@ const LOCKED_STATUSES = new Set([
   "APPROVED",
   "REJECTED",
 ]);
+
+// Which role owns the decision at each level (MMT22 / MMT23 / MMT24) now lives in
+// lib/permissions as MEMBER_DEATH_DECISION_ROLE_BY_STATUS, alongside the rest of
+// the module's role matrix. The backend re-checks all of it, so getting it wrong
+// here hides buttons rather than granting anything.
+
+const NEXT_LEVEL_LABEL: Record<string, string> = {
+  SUBMITTED_FOR_APPROVAL: "District Committee",
+  DISTRICT_COMMITTEE: "P&D Committee",
+};
+
+function formatAmount(value?: number | string | null) {
+  if (value === null || value === undefined || value === "") return "-";
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return String(value);
+  return numeric.toLocaleString("en-LK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 function formatStatus(status?: string) {
   if (!status) return "New";
@@ -103,6 +128,7 @@ export default function RecordMemberDeathPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [memberId, setMemberId] = useState("");
   const [member, setMember] = useState<MemberDTO | null>(null);
@@ -113,17 +139,24 @@ export default function RecordMemberDeathPage() {
   const [nomineeBranches, setNomineeBranches] = useState<BranchOption[]>([]);
   const [minorBranches, setMinorBranches] = useState<Record<string, BranchOption[]>>({});
   const [minorAccounts, setMinorAccounts] = useState<MinorSavingsAccount[]>([]);
-  const [documents, setDocuments] = useState<MemberDeathDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [openIncompleteModal, setOpenIncompleteModal] = useState(false);
   const [openSubmitConfirm, setOpenSubmitConfirm] = useState(false);
   const [openSubmitSuccess, setOpenSubmitSuccess] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [forwardConcerns, setForwardConcerns] = useState("");
+  const [showForwardInput, setShowForwardInput] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [refreshingDonation, setRefreshingDonation] = useState(false);
+  const [donationForm, setDonationForm] = useState({
+    monthsRemitted: "",
+    receivedPast12Months: "",
+    creditedToSpecialFixedAccount: "",
+  });
 
   const [form, setForm] = useState({
     informedDate: "",
@@ -136,16 +169,56 @@ export default function RecordMemberDeathPage() {
     bankId: "",
     branchId: "",
     accountNo: "",
-    deathDonationAmount: "",
   });
   const [minorDisbursements, setMinorDisbursements] = useState<MemberDeathMinorDisbursement[]>([]);
 
   const recordNo = record?.recordNo;
   const status = record?.status ?? "NEW";
+  const role = user?.role;
+
+  /**
+   * MMT18 / MMT21: entering and editing a record belongs to the District Office.
+   * Everyone else who reaches this screen is here to read it and, at their own
+   * level, decide on it. Mirrors ENTRY_ROLES on MemberDeathRecordController and
+   * DEATH_ENTRY_ROLES in MemberDeathRecordService, both of which re-check.
+   */
+  const canEnterRecords = hasRole(role, MEMBER_DEATH_ENTRY_ROLES);
+  const canViewRecords = hasRole(role, MEMBER_DEATH_VIEW_ROLES);
+
   const isLocked = LOCKED_STATUSES.has(status);
-  const isEditable = !isLocked;
+  // "Editable" now means both that the record's status allows a change and that
+  // this user is allowed to make one.
+  const isEditable = !isLocked && canEnterRecords;
   const hasSavedRecord = !!record?.id;
   const canSubmitByLoans = validation?.canSubmit ?? false;
+
+  /** True when this user owns the level the record is currently sitting at. */
+  const canDecideAtCurrentLevel = canDecideMemberDeathAt(role, status);
+
+  const nextLevelLabel = NEXT_LEVEL_LABEL[status];
+
+  /**
+   * MMT20: "The Concerns Identified Field will be editable even in the View mode
+   * for the users who can approve the record on any level." Without this the
+   * whole escalation flow is unusable - a committee could see concerns but never
+   * add one.
+   */
+  const canEditConcerns = isEditable || canDecideAtCurrentLevel;
+
+  /**
+   * The SRS lets an authorised user adjust the donation figures in View Mode, so
+   * the panel stays live for whoever owns the current level. It closes for good
+   * once the record is approved, rejected or made inactive.
+   */
+  const canEditDonation =
+    (isEditable || canDecideAtCurrentLevel) &&
+    status !== "APPROVED" &&
+    status !== "REJECTED" &&
+    status !== "INACTIVE";
+
+  // The requests list opens a specific record, not just "whatever is live for
+  // this member", so the record number is honoured when it is supplied.
+  const requestedRecordNo = searchParams.get("requestId");
 
   useEffect(() => {
     let id = searchParams.get("memberId");
@@ -201,13 +274,10 @@ export default function RecordMemberDeathPage() {
           bankId: deathRecord.nomineeBankId ? String(deathRecord.nomineeBankId) : "",
           branchId: deathRecord.nomineeBranchId ? String(deathRecord.nomineeBranchId) : "",
           accountNo: deathRecord.nomineeAccountNo ?? "",
-          deathDonationAmount:
-            deathRecord.deathDonationAmount != null ? String(deathRecord.deathDonationAmount) : "",
         });
         setMinorDisbursements(
           buildMinorDisbursements(accounts, deathRecord.minorDisbursements ?? [])
         );
-        setDocuments(deathRecord.documents ?? []);
 
         if (deathRecord.nomineeBankId) {
           const branches = await loadBranches(String(deathRecord.nomineeBankId));
@@ -225,10 +295,8 @@ export default function RecordMemberDeathPage() {
           bankId: primaryBank?.bankId ?? "",
           branchId: primaryBank?.branchId ?? "",
           accountNo: primaryBank?.accountNumber ?? "",
-          deathDonationAmount: "",
         });
         setMinorDisbursements(buildMinorDisbursements(accounts));
-        setDocuments([]);
 
         if (primaryBank?.bankId) {
           const branches = await loadBranches(primaryBank.bankId);
@@ -254,12 +322,22 @@ export default function RecordMemberDeathPage() {
             getBanks(),
             getMemberDeathValidation(memberId),
             getMinorSavingsAccounts(memberId).catch(() => [] as MinorSavingsAccount[]),
-            getActiveMemberDeathRecord(memberId).catch(() => null),
+            requestedRecordNo
+              ? getMemberDeathRecord(requestedRecordNo).catch(() => null)
+              : getActiveMemberDeathRecord(memberId).catch(() => null),
           ]);
 
         const profile = profileRes.data;
 
-        if (profile.status !== "ACTIVE" && profile.status !== "MEMBER_DEATH_RECORDED") {
+        // A member who is already MEMBER_DEATH_APPROVED or DECEASED cannot have a
+        // NEW record raised, but their existing one must still open - that is how
+        // the committees and Finance read it after the fact.
+        const openingExistingRecord = !!requestedRecordNo;
+        if (
+          !openingExistingRecord &&
+          profile.status !== "ACTIVE" &&
+          profile.status !== "MEMBER_DEATH_RECORDED"
+        ) {
           setError("Record Member Death is only available for active members.");
           setMember(profile);
           return;
@@ -292,7 +370,27 @@ export default function RecordMemberDeathPage() {
     };
 
     loadPage();
-  }, [memberId, applyRecordToForm, loadBranches]);
+  }, [memberId, requestedRecordNo, applyRecordToForm, loadBranches]);
+
+  // The three editable donation inputs mirror the record; everything else in the
+  // panel is derived server-side and only ever displayed.
+  useEffect(() => {
+    setDonationForm({
+      monthsRemitted:
+        record?.monthsRemitted !== null && record?.monthsRemitted !== undefined
+          ? String(record.monthsRemitted)
+          : "",
+      receivedPast12Months:
+        record?.receivedPast12Months !== null && record?.receivedPast12Months !== undefined
+          ? String(record.receivedPast12Months)
+          : "",
+      creditedToSpecialFixedAccount:
+        record?.creditedToSpecialFixedAccount !== null &&
+        record?.creditedToSpecialFixedAccount !== undefined
+          ? String(record.creditedToSpecialFixedAccount)
+          : "",
+    });
+  }, [record]);
 
   const nomineeDetails = useMemo(
     () => ({
@@ -318,9 +416,6 @@ export default function RecordMemberDeathPage() {
     nomineeBankId: form.bankId ? Number(form.bankId) : null,
     nomineeBranchId: form.branchId ? Number(form.branchId) : null,
     nomineeAccountNo: form.accountNo,
-    deathDonationAmount: form.deathDonationAmount
-      ? Number(form.deathDonationAmount)
-      : null,
     minorDisbursements,
   });
 
@@ -369,7 +464,6 @@ export default function RecordMemberDeathPage() {
         : await saveMemberDeathRecord(memberId, payload);
 
       setRecord(saved);
-      setDocuments(saved.documents ?? []);
       addToast("Member death record saved successfully.");
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : "Failed to save record";
@@ -427,53 +521,18 @@ export default function RecordMemberDeathPage() {
     }
   };
 
-  const handleDocumentUpload = async (documentType: string, file: File) => {
-    const activeRecordNo = record?.recordNo;
-    if (!activeRecordNo) {
-      addToast("Please save the record before uploading documents.", "destructive");
-      return;
-    }
-
-    setUploadingType(documentType);
-    try {
-      const uploaded = await uploadMemberDeathDocument(activeRecordNo, documentType, file);
-      setDocuments((prev) => [
-        ...prev.filter((doc) => doc.documentType !== documentType),
-        uploaded,
-      ]);
-      addToast("Document uploaded successfully.");
-    } catch (uploadError) {
-      addToast(
-        uploadError instanceof Error ? uploadError.message : "Failed to upload document",
-        "destructive"
-      );
-    } finally {
-      setUploadingType(null);
-    }
-  };
-
-  const handleDocumentDelete = async (documentId?: number) => {
-    if (!documentId) return;
-
-    try {
-      await deleteMemberDeathDocument(documentId);
-      setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
-      addToast("Document deleted.");
-    } catch (deleteError) {
-      addToast(
-        deleteError instanceof Error ? deleteError.message : "Failed to delete document",
-        "destructive"
-      );
-    }
-  };
-
-  const handleStatusChange = async (newStatus: string) => {
+  /**
+   * Manual status change within the MMT21 matrix - in practice the "Revert to
+   * New" escape hatch. The approval ladder itself moves through the dedicated
+   * approve / reject / forward actions, which carry the per-level role checks.
+   */
+  const handleStatusChange = async (nextStatus: string) => {
     if (!recordNo) return;
 
     try {
-      const updated = await changeMemberDeathStatus(recordNo, newStatus);
+      const updated = await changeMemberDeathStatus(recordNo, nextStatus);
       setRecord(updated);
-      addToast(`Status updated to ${formatStatus(newStatus)}.`);
+      addToast(`Status changed to ${formatStatus(nextStatus)}.`);
     } catch (statusError) {
       addToast(
         statusError instanceof Error ? statusError.message : "Failed to change status",
@@ -485,15 +544,68 @@ export default function RecordMemberDeathPage() {
   const handleApprove = async () => {
     if (!recordNo) return;
 
+    setDeciding(true);
     try {
       const updated = await approveMemberDeathRecord(recordNo);
       setRecord(updated);
-      addToast("Record approved.");
+      addToast("Record approved. The member is now awaiting Finance completion.");
     } catch (approveError) {
       addToast(
         approveError instanceof Error ? approveError.message : "Failed to approve record",
         "destructive"
       );
+    } finally {
+      setDeciding(false);
+    }
+  };
+
+  /**
+   * MMT22 / MMT23: escalate to the next level, carrying the concern that prompted
+   * it. Which endpoint applies is decided by the level the record sits at, not by
+   * the button, so the two cannot drift apart.
+   */
+  const handleForward = async () => {
+    if (!recordNo) return;
+
+    setDeciding(true);
+    try {
+      const updated =
+        status === "SUBMITTED_FOR_APPROVAL"
+          ? await forwardMemberDeathToDistrictCommittee(recordNo, forwardConcerns.trim())
+          : await forwardMemberDeathToPdCommittee(recordNo, forwardConcerns.trim());
+
+      setRecord(updated);
+      setForwardConcerns("");
+      setShowForwardInput(false);
+      addToast(`Record forwarded to the ${nextLevelLabel}.`);
+    } catch (forwardError) {
+      addToast(
+        forwardError instanceof Error ? forwardError.message : "Failed to forward record",
+        "destructive"
+      );
+    } finally {
+      setDeciding(false);
+    }
+  };
+
+  /** The SRS refresh button next to the editable death donation figures. */
+  const handleRefreshDonation = async () => {
+    if (!recordNo) return;
+
+    setRefreshingDonation(true);
+    try {
+      const updated = await refreshMemberDeathDonation(recordNo, donationForm);
+      setRecord(updated);
+      addToast("Death donation amounts recalculated.");
+    } catch (refreshError) {
+      addToast(
+        refreshError instanceof Error
+          ? refreshError.message
+          : "Failed to recalculate death donation amounts",
+        "destructive"
+      );
+    } finally {
+      setRefreshingDonation(false);
     }
   };
 
@@ -505,10 +617,12 @@ export default function RecordMemberDeathPage() {
 
     try {
       const updated = await rejectMemberDeathRecord(recordNo, rejectReason.trim());
+      setRejectReason("");
+      setShowRejectInput(false);
       setRecord(updated);
       setShowRejectInput(false);
       setRejectReason("");
-      addToast("Record rejected.");
+      addToast("Record rejected. The member profile has been set back to Active.");
     } catch (rejectError) {
       addToast(
         rejectError instanceof Error ? rejectError.message : "Failed to reject record",
@@ -517,13 +631,22 @@ export default function RecordMemberDeathPage() {
     }
   };
 
-  const documentsByType = useMemo(() => {
-    const map: Record<string, MemberDeathDocument[]> = {};
-    for (const docType of DOCUMENT_TYPES) {
-      map[docType.type] = documents.filter((doc) => doc.documentType === docType.type);
-    }
-    return map;
-  }, [documents]);
+  // Server-side @PreAuthorize is the real gate; this keeps a role that has no
+  // business in SRS section 4 from being shown a screen of failing requests.
+  if (user && !canViewRecords) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-6 text-center">
+        <h1 className="text-xl font-bold text-gray-800">Access Restricted</h1>
+        <p className="max-w-md text-sm text-gray-500">
+          Member Death records are restricted to District Office, District and P&amp;D
+          Committee, and Head Office personnel.
+        </p>
+        <Button variant="outline" onClick={() => router.back()}>
+          Go Back
+        </Button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -697,13 +820,23 @@ export default function RecordMemberDeathPage() {
           </div>
           <div className="md:col-span-2">
             <label className="text-sm font-medium text-gray-600">Concerns Identified</label>
+            {record?.eligiblePeriodWarning && (
+              <p className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {record.eligiblePeriodWarning}
+              </p>
+            )}
             <textarea
-              disabled={!isEditable}
+              disabled={!canEditConcerns}
               value={form.concerns}
               onChange={(e) => setForm({ ...form, concerns: e.target.value })}
               rows={3}
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
             />
+            {!isEditable && canEditConcerns && (
+              <p className="mt-1 text-xs text-gray-500">
+                Concerns you add when forwarding this record stay visible to every later level.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -817,27 +950,150 @@ export default function RecordMemberDeathPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
-            <h2 className="text-lg font-semibold text-gray-800">Death Donation Amount</h2>
+            <h2 className="text-lg font-semibold text-gray-800">Death Donation Details</h2>
           </div>
+
           <div className="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4">
             <Banknote className="mt-0.5 h-5 w-5 text-amber-700" />
-            <div className="flex-1">
-              <p className="text-sm text-amber-900">
-                Verify or update the death donation amount. This can be adjusted after the record is saved.
-              </p>
-              <div className="mt-3 max-w-xs">
-                <label className="text-sm font-medium text-gray-600">Amount (LKR)</label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  disabled={!isEditable && status !== "SUBMITTED_FOR_APPROVAL" && status !== "DISTRICT_COMMITTEE" && status !== "PD_COMMITTEE"}
-                  value={form.deathDonationAmount}
-                  onChange={(e) => setForm({ ...form, deathDonationAmount: e.target.value })}
-                  className="mt-1"
-                  placeholder="0.00"
-                />
-              </div>
+            <p className="text-sm text-amber-900">
+              The entitlement is calculated from the months of remittance deducted. Correct any
+              of the three editable figures below and click Recalculate to update the rest.
+              {record?.funeralAccountNo ? (
+                <>
+                  {" "}
+                  This member holds a Special Fixed Account for Funerals, so the maximum and
+                  eligible amounts are multiplied by{" "}
+                  {formatAmount(record.donationMultiplierApplied)}.
+                </>
+              ) : null}
+            </p>
+          </div>
+
+          {/* Editable inputs. Each carries the SRS "field was edited" marker. */}
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label className="flex items-center gap-1 text-sm font-medium text-gray-600">
+                Total Months Remittance Deducted
+                {record?.monthsRemittedEdited && (
+                  <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by a user" />
+                )}
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                disabled={!canEditDonation}
+                value={donationForm.monthsRemitted}
+                onChange={(e) =>
+                  setDonationForm({ ...donationForm, monthsRemitted: e.target.value })
+                }
+                className="mt-1"
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1 text-sm font-medium text-gray-600">
+                Donations Received in Past 12 Months
+                {record?.receivedPast12MonthsEdited && (
+                  <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by a user" />
+                )}
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                disabled={!canEditDonation}
+                value={donationForm.receivedPast12Months}
+                onChange={(e) =>
+                  setDonationForm({ ...donationForm, receivedPast12Months: e.target.value })
+                }
+                className="mt-1"
+                placeholder="0.00"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1 text-sm font-medium text-gray-600">
+                Credited to Special Fixed Account
+                {record?.creditedToSpecialFixedEdited && (
+                  <Pencil className="h-3 w-3 text-amber-600" aria-label="Edited by a user" />
+                )}
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                disabled={!canEditDonation || !record?.funeralAccountNo}
+                value={donationForm.creditedToSpecialFixedAccount}
+                onChange={(e) =>
+                  setDonationForm({
+                    ...donationForm,
+                    creditedToSpecialFixedAccount: e.target.value,
+                  })
+                }
+                className="mt-1"
+                placeholder={record?.funeralAccountNo ? "0.00" : "No funeral account"}
+              />
+            </div>
+          </div>
+
+          {canEditDonation && (
+            <div className="mt-3">
+              <Button
+                variant="outline"
+                onClick={handleRefreshDonation}
+                disabled={refreshingDonation}
+              >
+                {refreshingDonation ? "Recalculating..." : "Recalculate"}
+              </Button>
+            </div>
+          )}
+
+          {/* Derived figures. Read-only: they follow from the inputs above. */}
+          <div className="mt-5 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 md:grid-cols-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Maximum Death Donation Amount</span>
+              <span className="font-medium text-gray-900">
+                {formatAmount(record?.maximumDonationAmount)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Eligible Death Donation Amount</span>
+              <span className="font-medium text-gray-900">
+                {formatAmount(record?.eligibleDonationAmount)}
+              </span>
+            </div>
+
+            {record?.funeralAccountNo && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Special Fixed Account (Funerals)</span>
+                  <span className="font-medium text-gray-900">{record.funeralAccountNo}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Already Credited / Maximum</span>
+                  <span className="font-medium text-gray-900">
+                    {formatAmount(record.funeralAccountCredited)} /{" "}
+                    {formatAmount(record.funeralAccountMaximum)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">To Credit to Special Fixed Account</span>
+                  <span className="font-medium text-gray-900">
+                    {formatAmount(record.creditedToSpecialFixedAccount)}
+                  </span>
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-between border-t border-gray-300 pt-3 text-sm md:col-span-2">
+              <span className="font-semibold text-gray-800">
+                Disburse Death Donation Amount
+              </span>
+              <span className="font-semibold text-[#8B4513]">
+                LKR {formatAmount(record?.disburseDonationAmount)}
+              </span>
             </div>
           </div>
         </div>
@@ -928,83 +1184,32 @@ export default function RecordMemberDeathPage() {
         </div>
       )}
 
+      {/*
+        Documents come from the Supporting Documents for Applications Master, not
+        from a hardcoded list: MMT18 says the required set is pre-defined
+        configuration and grows when the member has minor savings accounts to
+        close. This is the same component termination and retirement use, so the
+        master, the upload path and the mandatory-document check on submit are
+        all the same ones the backend gates on.
+      */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
           <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
           <h2 className="text-lg font-semibold text-gray-800">Required Documents</h2>
         </div>
-        <div className="space-y-5">
-          {DOCUMENT_TYPES.map((docType) => {
-            const uploaded = documentsByType[docType.type] ?? [];
-            return (
-              <div key={docType.type} className="rounded-lg border border-gray-200 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-700">{docType.label}</span>
-                    {docType.mandatory && (
-                      <span className="text-xs font-semibold text-red-500">* Mandatory</span>
-                    )}
-                  </div>
-                  {isEditable && (
-                    <label className="cursor-pointer rounded-md bg-[#8B4513] px-3 py-1 text-sm text-white hover:opacity-90">
-                      {uploadingType === docType.type ? "Uploading..." : "Add"}
-                      <input
-                        type="file"
-                        className="hidden"
-                        disabled={!hasSavedRecord || uploadingType !== null}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleDocumentUpload(docType.type, file);
-                            e.target.value = "";
-                          }
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
-                {!hasSavedRecord && (
-                  <p className="text-sm text-amber-700">Save the record before uploading documents.</p>
-                )}
-                {uploaded.length > 0 ? (
-                  <div className="space-y-2">
-                    {uploaded.map((file) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2"
-                      >
-                        <div className="text-sm">
-                          <a
-                            href={file.id ? getMemberDeathDocumentDownloadUrl(file.id) : "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-medium text-[#8B4513] hover:underline"
-                          >
-                            {file.fileName}
-                          </a>
-                          <p className="text-xs text-gray-500">
-                            {file.fileType} • {file.uploadedAt}
-                          </p>
-                        </div>
-                        {isEditable && (
-                          <button
-                            type="button"
-                            onClick={() => handleDocumentDelete(file.id)}
-                            className="text-sm text-red-500 hover:underline"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400">No files uploaded</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {hasSavedRecord && recordNo ? (
+          <DocumentUpload
+            requestNo={recordNo}
+            memberId={memberId}
+            requestStatus={status}
+            requestType="member-death-records"
+            readOnly={!isEditable}
+          />
+        ) : (
+          <p className="text-sm text-amber-700">
+            Save the record before uploading documents.
+          </p>
+        )}
       </div>
 
       {hasSavedRecord && isLocked && (
@@ -1013,38 +1218,69 @@ export default function RecordMemberDeathPage() {
             <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
             <h2 className="text-lg font-semibold text-gray-800">Workflow Actions</h2>
           </div>
+          <p className="mb-3 text-sm text-gray-600">
+            {MEMBER_DEATH_DECISION_ROLE_BY_STATUS[status]
+              ? `This record is awaiting a decision from the ${
+                  status === "SUBMITTED_FOR_APPROVAL"
+                    ? "District Office"
+                    : status === "DISTRICT_COMMITTEE"
+                      ? "District Committee"
+                      : "P&D Committee"
+                }.`
+              : `This record is ${formatStatus(status)}. No further decision is required.`}
+          </p>
+
           <div className="flex flex-wrap gap-2">
             {["SUBMITTED_FOR_APPROVAL", "DISTRICT_COMMITTEE", "PD_COMMITTEE"].includes(status) && (
               <Button variant="outline" onClick={() => handleStatusChange("NEW")}>
                 Revert to New
               </Button>
             )}
-            {status === "SUBMITTED_FOR_APPROVAL" && (
+
+            {/* Approve, Reject and Forward are offered at EVERY level, but only to
+                the role that owns the level the record is actually sitting at. */}
+            {canDecideAtCurrentLevel && (
               <>
-                <Button variant="outline" onClick={() => handleStatusChange("DISTRICT_COMMITTEE")}>
-                  District Committee
-                </Button>
-                <Button variant="outline" onClick={() => handleStatusChange("PD_COMMITTEE")}>
-                  P&amp;D Committee
-                </Button>
-                <Button className="bg-green-600 text-white hover:bg-green-700" onClick={handleApprove}>
+                <Button
+                  className="bg-green-600 text-white hover:bg-green-700"
+                  onClick={handleApprove}
+                  disabled={deciding}
+                >
                   Approve
                 </Button>
                 <Button
                   variant="outline"
                   className="border-red-300 text-red-600"
-                  onClick={() => setShowRejectInput((prev) => !prev)}
+                  onClick={() => {
+                    setShowRejectInput((prev) => !prev);
+                    setShowForwardInput(false);
+                  }}
+                  disabled={deciding}
                 >
                   Reject
                 </Button>
+                {nextLevelLabel && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowForwardInput((prev) => !prev);
+                      setShowRejectInput(false);
+                    }}
+                    disabled={deciding}
+                  >
+                    Forward to {nextLevelLabel}
+                  </Button>
+                )}
               </>
             )}
-            {(status === "DISTRICT_COMMITTEE" || status === "PD_COMMITTEE") && (
-              <Button className="bg-green-600 text-white hover:bg-green-700" onClick={handleApprove}>
-                Approve
-              </Button>
-            )}
           </div>
+
+          {!canDecideAtCurrentLevel && MEMBER_DEATH_DECISION_ROLE_BY_STATUS[status] && (
+            <p className="mt-3 text-sm text-gray-500">
+              Your role cannot decide on this record at its current level.
+            </p>
+          )}
+
           {showRejectInput && (
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <Input
@@ -1053,9 +1289,51 @@ export default function RecordMemberDeathPage() {
                 placeholder="Enter reject reason"
                 className="flex-1"
               />
-              <Button className="bg-red-600 text-white hover:bg-red-700" onClick={handleReject}>
+              <Button
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={handleReject}
+                disabled={deciding || !rejectReason.trim()}
+              >
                 Confirm Reject
               </Button>
+            </div>
+          )}
+
+          {showForwardInput && nextLevelLabel && (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={forwardConcerns}
+                onChange={(e) => setForwardConcerns(e.target.value)}
+                placeholder={`Concern to pass on to the ${nextLevelLabel} (optional)`}
+                className="flex-1"
+              />
+              <Button
+                className="bg-[#8B4513] text-white hover:opacity-90"
+                onClick={handleForward}
+                disabled={deciding}
+              >
+                Confirm Forward
+              </Button>
+            </div>
+          )}
+
+          {(record?.level1DecidedBy || record?.level2DecidedBy || record?.level3DecidedBy) && (
+            <div className="mt-4 space-y-1 border-t border-gray-200 pt-3 text-xs text-gray-500">
+              {record?.level1DecidedBy && (
+                <p>
+                  District Office: {record.level1DecidedBy} on {record.level1DecidedAt}
+                </p>
+              )}
+              {record?.level2DecidedBy && (
+                <p>
+                  District Committee: {record.level2DecidedBy} on {record.level2DecidedAt}
+                </p>
+              )}
+              {record?.level3DecidedBy && (
+                <p>
+                  P&amp;D Committee: {record.level3DecidedBy} on {record.level3DecidedAt}
+                </p>
+              )}
             </div>
           )}
           {record?.incompleteReason && (

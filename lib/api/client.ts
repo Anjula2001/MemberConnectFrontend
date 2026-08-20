@@ -17,12 +17,15 @@ apiClient.interceptors.request.use((config) => {
     }
   }
 
-  // A FormData body must set its own Content-Type, because only the browser knows the
-  // multipart boundary it generated. The instance-wide "application/json" default above
-  // overrode it, so multipart uploads reached the backend announced as JSON and were
-  // rejected with: Content-Type 'application/json' is not supported.
+  // File uploads must carry their own multipart boundary, and the browser only
+  // generates one when the Content-Type header is absent. The instance-wide
+  // application/json default above would otherwise survive onto a FormData body
+  // and the server would reject the request as "Current request is not a
+  // multipart request". Clearing it here lets axios set the correct type per
+  // request, and keeps every upload in the app on one rule rather than each
+  // caller remembering to override the header itself.
   if (typeof FormData !== "undefined" && config.data instanceof FormData) {
-    delete config.headers["Content-Type"];
+    config.headers.delete("Content-Type");
   }
 
   return config;
@@ -44,18 +47,6 @@ apiClient.interceptors.response.use(
     if (error?.response?.status === 403) {
       return Promise.reject(
         new Error("You do not have permission to perform this action.")
-      );
-    }
-
-    // 403 means authenticated but not permitted. Without this the backend's
-    // AccessDeniedException message surfaces raw, or as a blank failure, which reads
-    // as a bug rather than as a permission boundary.
-    if (error?.response?.status === 403) {
-      return Promise.reject(
-        new Error(
-          error?.response?.data?.message ??
-            "You do not have permission to perform this action."
-        )
       );
     }
 

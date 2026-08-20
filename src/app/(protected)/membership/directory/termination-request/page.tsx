@@ -20,6 +20,14 @@ import MinorDisbursementSection, {
   type MinorDisbursementSectionRef,
   type SavedMinorDisbursement,
 } from "@/src/components/ui/termination/minordisbursement";
+import { apiClient } from "@/lib/api/client";
+import { changeTerminationRequestStatus } from "@/lib/api/terminationRequests";
+import { useAuth } from "@/lib/auth-context";
+import {
+  INACTIVE_RIGHTS_ROLES,
+  TERMINATION_ENTRY_ROLES,
+  hasRole,
+} from "@/lib/permissions";
 
 interface MinorSavingsAccount {
   minorAccountNo: string;
@@ -57,8 +65,6 @@ interface MemberDetails {
   status?: string;
 }
 
-const API_BASE_URL = "http://localhost:8080";
-
 const LOCKED_STATUSES = ["SUBMITTED_FOR_APPROVAL", "APPROVED", "REJECTED", "ADDED_TO_APPROVAL_LIST"];
 
 const TERMINATION_STATUS_LABELS: Record<string, string> = {
@@ -71,11 +77,35 @@ const TERMINATION_STATUS_LABELS: Record<string, string> = {
   INACTIVE: "Inactive",
 };
 
+/**
+ * The MMT04 status-change matrix (SRS 2.2.4), mirroring
+ * TerminationService.ALLOWED_STATUS_CHANGES. This copy only decides what the
+ * dropdown offers - the server enforces the same table and the Inactive rights
+ * independently, so a stale or edited client cannot widen it.
+ */
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  NEW: ["INACTIVE"],
+  INCOMPLETE: ["NEW", "INACTIVE"],
+  SUBMITTED_FOR_APPROVAL: ["NEW", "INACTIVE"],
+  REJECTED: ["NEW", "INACTIVE"],
+  INACTIVE: ["NEW"],
+};
+
+/**
+ * apiClient already unwraps the server's {"message": ...} body into
+ * Error.message, so these handlers show what the server actually objected to
+ * ("Cannot submit. Mandatory documents are missing.") instead of a generic
+ * failure the user cannot act on.
+ */
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
+
 const formatTerminationStatus = (status: string) =>
   TERMINATION_STATUS_LABELS[status] ?? status.replaceAll("_", " ");
 
 export default function TerminationRequestPage() {
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const formRef = useRef<TerminationFormRef>(null);
   const minorDisbursementRef = useRef<MinorDisbursementSectionRef>(null);
   const pageMode = searchParams.get("mode") || "";
@@ -99,7 +129,11 @@ export default function TerminationRequestPage() {
   const [terminationReasons, setTerminationReasons] = useState<TerminationReason[]>([]);
   const [reasonsError, setReasonsError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [statusTarget, setStatusTarget] = useState("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [statusChangeError, setStatusChangeError] = useState("");
 
+  const requestStatusValue = terminationRequest?.status || "NEW";
   const isRequestLocked = terminationRequest?.status
     ? LOCKED_STATUSES.includes(terminationRequest.status)
     : false;
@@ -110,9 +144,25 @@ export default function TerminationRequestPage() {
     !member.status ||
     member.status === "ACTIVE" ||
     member.status === "TERMINATION_REQUESTED";
-  const showEditButton = hasSavedRequest && !isRequestLocked && !isEditMode;
-  const showSaveButton = !hasSavedRequest || isEditMode;
-  const showWorkflowActions = hasSavedRequest && !isRequestLocked && !isEditMode;
+  // MMT04: what this user may change the status to from here. Transitions that
+  // set or clear Inactive are withheld from users without Inactive rights, so
+  // the dropdown never offers an action the server will refuse.
+  const canSetInactive = hasRole(user?.role, INACTIVE_RIGHTS_ROLES);
+  const availableStatusTargets = (STATUS_TRANSITIONS[requestStatusValue] ?? []).filter(
+    (target) =>
+      canSetInactive || (target !== "INACTIVE" && requestStatusValue !== "INACTIVE")
+  );
+  const showStatusChange =
+    hasSavedRequest && !isEditMode && availableStatusTargets.length > 0;
+
+  // MMT01-MMT04 name the District Office System User as the actor. Head Office
+  // can still open and read a request; it just cannot author one.
+  const canEnterRequests = hasRole(user?.role, TERMINATION_ENTRY_ROLES);
+  const showEditButton =
+    canEnterRequests && hasSavedRequest && !isRequestLocked && !isEditMode;
+  const showSaveButton = canEnterRequests && (!hasSavedRequest || isEditMode);
+  const showWorkflowActions =
+    canEnterRequests && hasSavedRequest && !isRequestLocked && !isEditMode;
   const isWorkflowBlockedByEdit = isEditMode;
   const isSubmitBlockedByLoans = validation ? !validation.canSubmit : true;
 
@@ -174,15 +224,9 @@ export default function TerminationRequestPage() {
   // copy, which would let a user pick a reason the server would then reject.
   const fetchTerminationReasons = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/masters/termination-reasons`);
-
-      if (!response.ok) {
-        setTerminationReasons([]);
-        setReasonsError("Failed to load termination reasons. Please try again.");
-        return;
-      }
-
-      const reasons = (await response.json()) as Array<{ id: string | number; name: string }>;
+      const { data: reasons } = await apiClient.get<Array<{ id: string | number; name: string }>>(
+        "/api/masters/termination-reasons"
+      );
 
       // Ids arrive from the master as numbers but a <select> value is always a
       // string, so they are normalised once here rather than at each comparison.
@@ -204,10 +248,9 @@ export default function TerminationRequestPage() {
 
   const fetchMember = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
-      if (!response.ok) throw new Error("Failed to fetch member");
-
-      const memberData = await response.json();
+      const { data: memberData } = await apiClient.get<MemberDetails>(
+        `/api/members/${encodeURIComponent(selectedMemberId)}`
+      );
       setMember({
         memberId: memberData.memberId,
         fullName: memberData.fullName,
@@ -222,22 +265,18 @@ export default function TerminationRequestPage() {
 
   const fetchTerminationValidation = async () => {
     try {
-      let response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/termination-validation`
-      );
-
-      if (!response.ok) {
-        response = await fetch(
-          `${API_BASE_URL}/api/members/${selectedMemberId}/retirement-validation`
-        );
+      // Older deployments only expose the retirement endpoint; fall back to it
+      // rather than leaving the loan warnings blank.
+      let validationData: TerminationValidation;
+      try {
+        ({ data: validationData } = await apiClient.get<TerminationValidation>(
+          `/api/members/${encodeURIComponent(selectedMemberId)}/termination-validation`
+        ));
+      } catch {
+        ({ data: validationData } = await apiClient.get<TerminationValidation>(
+          `/api/members/${encodeURIComponent(selectedMemberId)}/retirement-validation`
+        ));
       }
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText);
-      }
-
-      const validationData = await response.json();
       setValidation(validationData);
     } catch (error) {
       console.error("Termination validation error:", error);
@@ -246,16 +285,9 @@ export default function TerminationRequestPage() {
 
   const fetchMinorSavingsAccounts = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/minor-savings-accounts`
+      const { data: accounts } = await apiClient.get<MinorSavingsAccount[]>(
+        `/api/members/${encodeURIComponent(selectedMemberId)}/minor-savings-accounts`
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const accounts = await response.json();
       setMinorSavingsAccounts(accounts);
     } catch (error) {
       console.error("Fetch minor savings accounts error:", error);
@@ -264,22 +296,9 @@ export default function TerminationRequestPage() {
 
   const fetchTerminationRequests = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/termination-requests/member/${selectedMemberId}`
+      const { data: requests } = await apiClient.get<TerminationRequest[]>(
+        `/api/termination-requests/member/${encodeURIComponent(selectedMemberId)}`
       );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          setTerminationRequest(null);
-          return;
-        }
-
-        const errorData = await response.json().catch(() => null);
-        setSaveError(errorData?.message || "Failed to fetch termination request");
-        return;
-      }
-
-      const requests: TerminationRequest[] = await response.json();
 
       if (requests.length > 0) {
         const activeRequest =
@@ -308,28 +327,16 @@ export default function TerminationRequestPage() {
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/termination-requests/${terminationRequest.requestNo}/mark-incomplete`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: trimmedReason }),
-        }
+      const { data: updatedRequest } = await apiClient.put<TerminationRequest>(
+        `/api/termination-requests/${encodeURIComponent(terminationRequest.requestNo ?? "")}/mark-incomplete`,
+        { reason: trimmedReason }
       );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        setSaveError(errorData?.message || "Failed to mark incomplete.");
-        return;
-      }
-
-      const updatedRequest: TerminationRequest = await response.json();
       setTerminationRequest(updatedRequest);
       setOpenModal(false);
       setSaveError("");
     } catch (error) {
       console.error("Mark incomplete error:", error);
-      setSaveError("Failed to mark request as incomplete.");
+      setSaveError(errorMessage(error, "Failed to mark request as incomplete."));
     }
   };
 
@@ -359,38 +366,22 @@ export default function TerminationRequestPage() {
     try {
       const isUpdate = !!terminationRequest?.id && isEditMode;
 
-      const response = await fetch(
-        isUpdate
-          ? `${API_BASE_URL}/api/termination-requests/${terminationRequest.requestNo}`
-          : `${API_BASE_URL}/api/termination-requests/${selectedMemberId}`,
-        {
-          method: isUpdate ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        try {
-          const errorData = JSON.parse(errorText);
-          setSaveError(errorData.message || errorData.error || "Failed to save request");
-        } catch {
-          setSaveError(errorText || "Failed to save request");
-        }
-
-        return;
-      }
-
-      const savedRequest: TerminationRequest = await response.json();
+      const { data: savedRequest } = isUpdate
+        ? await apiClient.put<TerminationRequest>(
+            `/api/termination-requests/${encodeURIComponent(terminationRequest!.requestNo ?? "")}`,
+            payload
+          )
+        : await apiClient.post<TerminationRequest>(
+            `/api/termination-requests/${encodeURIComponent(selectedMemberId)}`,
+            payload
+          );
       setTerminationRequest(savedRequest);
       setIsEditing(false);
       setSaveError("");
       await fetchMember();
     } catch (error) {
       console.error("Save request error:", error);
-      setSaveError("Failed to save termination request.");
+      setSaveError(errorMessage(error, "Failed to save termination request."));
     }
   };
 
@@ -441,29 +432,45 @@ export default function TerminationRequestPage() {
       setIsSubmitting(true);
       setSaveError("");
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/termination-requests/${terminationRequest.requestNo}/submit`,
-        { method: "POST" }
+      const { data: submittedRequest } = await apiClient.post<TerminationRequest>(
+        `/api/termination-requests/${encodeURIComponent(terminationRequest.requestNo ?? "")}/submit`
       );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        setSaveError(errorData?.message || "Cannot submit request.");
-        setOpenSubmitConfirm(false);
-        return;
-      }
-
-      const submittedRequest: TerminationRequest = await response.json();
       setTerminationRequest(submittedRequest);
       setIsEditing(false);
       setOpenSubmitConfirm(false);
       setOpenSubmitSuccess(true);
     } catch (error) {
       console.error("Submit request error:", error);
-      setSaveError("Failed to submit termination request.");
+      setSaveError(errorMessage(error, "Failed to submit termination request."));
       setOpenSubmitConfirm(false);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleChangeStatus = async () => {
+    if (!statusTarget || !terminationRequest?.requestNo) return;
+
+    try {
+      setIsChangingStatus(true);
+      setStatusChangeError("");
+
+      const updated = await changeTerminationRequestStatus(
+        terminationRequest.requestNo,
+        statusTarget
+      );
+      setTerminationRequest(updated as TerminationRequest);
+      setStatusTarget("");
+
+      // The server moves the member too (Inactive -> Active, New ->
+      // Termination Requested). Re-read it rather than guessing, so the header
+      // and the Save gate reflect what was actually stored.
+      await fetchMember();
+    } catch (error) {
+      console.error("Failed to change termination request status:", error);
+      setStatusChangeError(errorMessage(error, "Failed to change the request status"));
+    } finally {
+      setIsChangingStatus(false);
     }
   };
 
@@ -524,9 +531,42 @@ export default function TerminationRequestPage() {
               {reasonsError && <p className="mt-2 text-sm text-red-500">{reasonsError}</p>}
 
               {saveError && <p className="mt-2 text-sm text-red-500">{saveError}</p>}
+
+              {statusChangeError && (
+                <p className="mt-2 text-sm text-red-500">{statusChangeError}</p>
+              )}
             </div>
 
             <div className="flex flex-wrap justify-end gap-2">
+              {/* MMT04: change the request status within the SRS matrix. */}
+              {showStatusChange && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={statusTarget}
+                    onChange={(event) => setStatusTarget(event.target.value)}
+                    disabled={isChangingStatus}
+                    aria-label="Change request status to"
+                    className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">Change status to...</option>
+                    {availableStatusTargets.map((target) => (
+                      <option key={target} value={target}>
+                        {formatTerminationStatus(target)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    variant="outline"
+                    onClick={handleChangeStatus}
+                    disabled={!statusTarget || isChangingStatus}
+                    className="border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isChangingStatus ? "Applying..." : "Apply"}
+                  </Button>
+                </div>
+              )}
+
               {showEditButton && (
                 <Button
                   variant="outline"

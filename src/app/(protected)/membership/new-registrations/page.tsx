@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { BOARD_GOVERNANCE_ROLES, hasRole } from "@/lib/permissions";
 import {
   Search,
   RotateCcw,
@@ -54,6 +53,7 @@ import {
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import { BOARD_MEETING_VIEW_ROLES, hasRole } from "@/lib/permissions";
 import { getEducationalDistricts } from "@/lib/api/education";
 import {
   createBoardApprovalList,
@@ -179,10 +179,10 @@ const statusFilterMap: Record<string, RegistrationStatus> = {
 export default function NewRegistrationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
 
   const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
-  const canLoadBoardMeetings = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
   const userDistrict = user?.assignedDistrict || "Colombo";
 
   const applicationIdParam = searchParams.get("applicationId");
@@ -266,13 +266,14 @@ export default function NewRegistrationsPage() {
     };
   }, [openMenuId]);
 
+  // Only the Create Board Approval List modal reads these, and that button is
+  // already hidden from District Office below. BoardMeetingController refuses the
+  // role outright, so fetching regardless just bought a 403 on every district page
+  // load. isAuthLoading guards the gap where AuthProvider has not yet hydrated
+  // `user` from localStorage — without it the role check runs against null and
+  // nobody gets the meetings.
   useEffect(() => {
-    // BoardMeetingController is restricted to HEAD_OFFICE/BOARD_SECRETARY/SUPER_ADMIN,
-    // so fetching this for anyone else guarantees a 403. The meetings are only used to
-    // populate boardMeetingOptions, which those other roles never see anyway.
-    if (!canLoadBoardMeetings) {
-      return;
-    }
+    if (isAuthLoading || !canViewBoardMeetings) return;
 
     let isCancelled = false;
 
@@ -292,7 +293,7 @@ export default function NewRegistrationsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [canLoadBoardMeetings]);
+  }, [isAuthLoading, canViewBoardMeetings]);
 
   const mapToRegistration = (
     item: MemberApplicationDTO,

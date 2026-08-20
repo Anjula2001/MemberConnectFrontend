@@ -1,7 +1,25 @@
 import { apiClient } from "@/lib/api/client";
 
-export type MemberStatus = 
-"ACTIVE" | "INACTIVE" | "RESIGNED" | "TERMINATED" | "DECEASED" | "MEMBER_DEATH_RECORDED";
+/**
+ * Mirrors the backend MemberStatus enum. The termination and retirement
+ * in-progress states were missing here, which made TypeScript narrow away
+ * comparisons against statuses the API genuinely returns.
+ */
+export type MemberStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "RESIGNED"
+  | "TERMINATION_REQUESTED"
+  | "TERMINATION_APPROVED"
+  | "TERMINATED"
+  | "RETIREMENT_REQUESTED"
+  | "RETIREMENT_APPROVED"
+  | "RETIRED"
+  | "MEMBER_DEATH_RECORDED"
+  | "DECEASED"
+  | "SELECTED_FOR_DORMANT"
+  | "SENT_FOR_DORMANT_APPROVAL"
+  | "INACTIVE_DORMANT";
 
 export type Gender = "MALE" | "FEMALE";
 

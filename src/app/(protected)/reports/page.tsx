@@ -26,9 +26,14 @@ import {
   BOARD_GOVERNANCE_ROLES,
   CARD_PRINTING_ROLES,
   DISPATCH_ROLES,
+  DORMANT_BOARD_ROLES,
   REGISTRATION_ROLES,
   hasRole,
 } from "@/lib/permissions";
+import {
+  getDormantApprovalLists,
+  type DormantApprovalList,
+} from "@/lib/api/dormant";
 
 const formatDate = (value?: string | null) =>
   value
@@ -117,12 +122,23 @@ const REPORTS: ReportDefinition[] = [
     roles: DISPATCH_ROLES,
     available: true,
   },
+  {
+    section: "5.6",
+    title: "Inactivation Approval List for Dormant Members",
+    category: "Dormant Membership",
+    description:
+      "The dormant members put before a Board Meeting for inactivation, with blank Approve and Reject columns for the board to mark.",
+    roles: DORMANT_BOARD_ROLES,
+    available: true,
+  },
 ];
 
 export default function ReportsPage() {
   const { user } = useAuth();
 
   const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
+  const [dormantLists, setDormantLists] = useState<DormantApprovalList[]>([]);
+  const [selectedDormantListId, setSelectedDormantListId] = useState("");
   const [selectedListId, setSelectedListId] = useState("");
   const [loadingLists, setLoadingLists] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -132,6 +148,7 @@ export default function ReportsPage() {
 
   const canSeeBoardApprovalReport = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
   const canSeeDispatchReport = hasRole(user?.role, DISPATCH_ROLES);
+  const canSeeDormantReport = hasRole(user?.role, DORMANT_BOARD_ROLES);
 
   // Only the Board Approval report needs data up front, and only for roles that can
   // actually run it.
@@ -159,6 +176,19 @@ export default function ReportsPage() {
       cancelled = true;
     };
   }, [canSeeBoardApprovalReport]);
+
+  useEffect(() => {
+    if (!canSeeDormantReport) return;
+    let cancelled = false;
+    getDormantApprovalLists()
+      .then((l) => !cancelled && setDormantLists(l))
+      .catch(() => {
+        /* selector simply stays empty */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canSeeDormantReport]);
 
   useEffect(() => {
     if (!canSeeDispatchReport) return;
@@ -214,6 +244,7 @@ export default function ReportsPage() {
             {visibleReports.map((report) => {
               const isBoardApproval = report.section === "5.1";
               const isDispatchReport = report.section === "5.5";
+              const isDormantReport = report.section === "5.6";
 
               return (
                 <Card key={report.section} className="rounded-xl py-0">
@@ -235,7 +266,54 @@ export default function ReportsPage() {
                       </p>
                     </div>
 
-                    {report.available && report.href ? (
+                    {report.available && isDormantReport ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-neutral-600">
+                          Approval List
+                        </label>
+                        <Select
+                          value={selectedDormantListId}
+                          onValueChange={setSelectedDormantListId}
+                          disabled={dormantLists.length === 0}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={
+                                dormantLists.length === 0
+                                  ? "No approval lists created yet"
+                                  : "Select an approval list"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dormantLists.map((l) => (
+                              <SelectItem key={l.listId} value={l.listId}>
+                                {l.listId} — {formatDate(l.boardMeetingDate ?? undefined)} (
+                                {l.memberIds.length} member
+                                {l.memberIds.length === 1 ? "" : "s"})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3 text-sm"
+                          disabled={!selectedDormantListId}
+                          onClick={() =>
+                            window.open(
+                              `/membership/dormant/approval-lists/print/${encodeURIComponent(
+                                selectedDormantListId
+                              )}`,
+                              "_blank"
+                            )
+                          }
+                        >
+                          <Printer className="size-4" />
+                          Open Report
+                        </Button>
+                      </div>
+                    ) : report.available && report.href ? (
                       <Button
                         type="button"
                         variant="outline"
