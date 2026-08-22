@@ -256,13 +256,11 @@ export type RetPermission =
   | "RET_REQUEST_APPROVE";
 
 /**
- * Segregation of duties: District Office raises retirement requests, Head Office
- * approves them.
- *
- * MMT16's actor table names "District Office System User" as the approver, but §3.1.1
- * says "the Authorized User from the District Office". Resolved in favour of Head
- * Office, the same way and for the same reason as the Grade 5 matrix above: the clerk
- * who raises a request must not be able to approve it.
+ * The District Office owns a retirement request end to end — it raises, submits and
+ * approves. Unlike the Grade 5 matrix above, retirement is not split across two
+ * offices: MMT16's actor table and §3.1.1 both place the approver at the District
+ * Office ("District Office System User" / "the Authorized User from the District
+ * Office"). HEAD_OFFICE keeps approval too, so requests can still be handled centrally.
  *
  * BOARD_SECRETARY gets the housekeeping rights it already holds elsewhere via
  * INACTIVE_RIGHTS_ROLES, but not approval — MMT16 runs no Board Meeting.
@@ -280,12 +278,18 @@ const RET_ROLE_PERMISSIONS: Record<UserRole, RetPermission[]> = {
     "RET_REQUEST_APPROVE",
   ],
 
+  // MMT16 names "District Office System User" as the approver, so the District Office
+  // owns a retirement request end to end — raise, submit, approve or reject, pull back
+  // to New, deactivate. Mirrors RolePermissions.java, which is the copy that counts.
   DISTRICT_OFFICE: [
     "RET_REQUEST_VIEW",
     "RET_REQUEST_CREATE",
     "RET_REQUEST_EDIT",
     "RET_REQUEST_SUBMIT",
     "RET_REQUEST_INCOMPLETE",
+    "RET_REQUEST_APPROVE",
+    "RET_REQUEST_RETURN_TO_NEW",
+    "RET_REQUEST_SET_INACTIVE",
   ],
 
   HEAD_OFFICE: [

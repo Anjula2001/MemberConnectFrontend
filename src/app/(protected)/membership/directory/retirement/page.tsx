@@ -23,6 +23,7 @@ import {
   markRetirementRequestIncomplete,
   rejectRetirementRequest,
   saveRetirementRequest,
+  sendRetirementToFinance,
   submitRetirementRequest,
   updateRetirementRequest,
   getRetirementRequiredDocuments,
@@ -63,6 +64,9 @@ interface RetirementRequest {
   comment?: string;
   status: string;
   incompleteReason?: string;
+  // The member's own status. The request stays APPROVED after the Finance Module
+  // handoff — it is this that becomes RETIRED.
+  memberStatus?: string;
 }
 
 interface MemberDetails {
@@ -120,6 +124,7 @@ export default function RetirementPage() {
   const [openSubmitSuccess, setOpenSubmitSuccess] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingToFinance, setIsSendingToFinance] = useState(false);
 
   // UX only — the backend enforces the same matrix in RolePermissions.java, and that
   // copy is the one that counts.
@@ -137,6 +142,14 @@ export default function RetirementPage() {
   const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
   const showApprovalActions =
     retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" &&
+    !isEditMode &&
+    canApproveRequest;
+
+  // MMT17 — an approved retirement waiting on the Finance Module. Once Finance is
+  // done the member is RETIRED and there is nothing left to send.
+  const showSendToFinance =
+    retirementRequest?.status === "APPROVED" &&
+    retirementRequest?.memberStatus === "RETIREMENT_APPROVED" &&
     !isEditMode &&
     canApproveRequest;
   // A user who cannot approve still must not see the create/edit buttons on a submitted
@@ -185,11 +198,26 @@ export default function RetirementPage() {
     return canEditRequest;
   });
 
+  // A closed request — approved, rejected or inactive — is finished with Save,
+  // Incomplete and Submit. An approved one is only waiting on the Finance Module; a
+  // rejected or inactive one is revived through Return to New / Reopen, not re-saved
+  // or resubmitted from here. Showing those buttons, even greyed out, implies a step
+  // that no longer exists.
+  const isClosedRequest =
+    retirementRequest?.status === "APPROVED" ||
+    retirementRequest?.status === "REJECTED" ||
+    retirementRequest?.status === "INACTIVE";
+
+  // The status dropdown normally belongs to view mode. A closed request is the
+  // exception: rejecting or deactivating a request puts the member back to ACTIVE, so
+  // the office opens the create page for them again and lands on that old request.
+  // Changing its status is the only thing to do there, so the dropdown has to follow
+  // the request rather than the page mode.
   const showViewModeStatusActions =
     !!retirementRequest?.id &&
     !isEditMode &&
     !isCurrentSessionSaved &&
-    isViewRequestMode &&
+    (isViewRequestMode || isClosedRequest) &&
     viewModeStatusActions.length > 0;
 
   const showDisabledRequestActions =
@@ -197,6 +225,7 @@ export default function RetirementPage() {
     !isEditMode &&
     !isCurrentSessionSaved &&
     isViewRequestMode &&
+    !isClosedRequest &&
     viewModeStatusActions.length === 0;
 
   const showRequestEditActions =
@@ -512,10 +541,44 @@ export default function RetirementPage() {
 
       setRetirementRequest(updatedRequest);
       setSaveError("");
+
+      // Returning a request to New exists to let the office fix it and send it back
+      // up, so the form opens ready to edit rather than making the user hunt for the
+      // Edit button. Any other status change leaves the mode alone.
+      if (newStatus === "NEW") {
+        setIsEditing(true);
+        setIsCurrentSessionSaved(false);
+      }
+
       await fetchMember();
     } catch (error) {
       console.error("Change status error:", error);
       setSaveError(errorMessage(error, "Failed to change retirement request status."));
+    }
+  };
+
+  // MMT17 — hand this approved retirement to the Finance Module. On success the
+  // member becomes RETIRED and the button drops away; the request stays APPROVED.
+  const handleSendToFinance = async () => {
+    if (!retirementRequest?.requestNo) return;
+
+    setSaveError("");
+    setIsSendingToFinance(true);
+
+    try {
+      const updatedRequest = (await sendRetirementToFinance(
+        retirementRequest.requestNo
+      )) as RetirementRequest;
+
+      setRetirementRequest(updatedRequest);
+      await fetchMember();
+    } catch (error) {
+      console.error("Send to Finance error:", error);
+      setSaveError(
+        errorMessage(error, "Failed to send the retirement to the Finance Module.")
+      );
+    } finally {
+      setIsSendingToFinance(false);
     }
   };
 
@@ -656,6 +719,18 @@ export default function RetirementPage() {
                 </>
               )}
 
+              {/* MMT17 — an approved retirement is released to the Finance Module from here. */}
+              {showSendToFinance && (
+                <Button
+                  onClick={handleSendToFinance}
+                  disabled={isSendingToFinance}
+                  title="Send this approved retirement to the Finance Module"
+                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  {isSendingToFinance ? "Sending..." : "Send to Finance"}
+                </Button>
+              )}
+
               {/*  */}
               {showViewModeStatusActions && (
                 <div className="flex items-center gap-2">
@@ -714,8 +789,15 @@ export default function RetirementPage() {
               {showRequestEditActions && (
                 <>
                   {/* Saving an existing record goes through the update endpoint, so it
-                      needs edit rights; a first save needs create rights. */}
-                  {(retirementRequest?.id ? canEditRequest : canCreateRequest) && (
+                      needs edit rights; a first save needs create rights.
+
+                      Hidden once saved, and on a request the Board has already decided.
+                      Deliberately NOT hidden in edit mode: returning a request to New
+                      opens the form for editing, and an edit that cannot be saved is
+                      not an edit. */}
+                  {!isCurrentSessionSaved &&
+                    !isClosedRequest &&
+                    (retirementRequest?.id ? canEditRequest : canCreateRequest) && (
                     <Button
                       onClick={handleSave}
                       className="bg-white text-black hover:bg-gray-100"
@@ -724,7 +806,7 @@ export default function RetirementPage() {
                     </Button>
                   )}
 
-                  {canMarkIncomplete && (
+                  {!isClosedRequest && canMarkIncomplete && (
                     <Button
                       onClick={() => setOpenModal(true)}
                       disabled={
@@ -738,7 +820,7 @@ export default function RetirementPage() {
                     </Button>
                   )}
 
-                  {canSubmitRequest && (
+                  {!isClosedRequest && canSubmitRequest && (
                     <Button
                       onClick={handleSubmitForm}
                       disabled={

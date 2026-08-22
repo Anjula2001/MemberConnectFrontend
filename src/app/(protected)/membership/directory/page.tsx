@@ -49,6 +49,7 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 	INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
 	RESIGNED: "bg-yellow-600 hover:bg-yellow-600 text-white",
 	TERMINATED: "bg-red-600 hover:bg-red-600 text-white",
+	RETIRED: "bg-red-600 hover:bg-red-600 text-white",
 	DECEASED: "bg-neutral-700 hover:bg-neutral-700 text-white",
 };
 

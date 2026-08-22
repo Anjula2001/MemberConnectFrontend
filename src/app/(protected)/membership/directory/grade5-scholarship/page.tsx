@@ -90,6 +90,8 @@ export default function Grade5ScholarshipPage() {
   const canEditRequest = hasG5Permission(user?.role, "G5_REQUEST_EDIT");
   const canSubmitRequest = hasG5Permission(user?.role, "G5_REQUEST_SUBMIT");
   const canMarkIncomplete = hasG5Permission(user?.role, "G5_REQUEST_INCOMPLETE");
+  // MMS20 — only the Finance Department may release an approved scholarship.
+  const canSendToFinance = hasG5Permission(user?.role, "G5_FINANCE_DISBURSE");
   const canModifyRequest = grade5Request?.id ? canEditRequest : canCreateRequest;
 
   const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
@@ -103,6 +105,7 @@ export default function Grade5ScholarshipPage() {
   const [memberAmount, setMemberAmount] = useState(0);
   const [minorAmount, setMinorAmount] = useState(0);
   const [fundError, setFundError] = useState("");
+  const [isSendingToFinance, setIsSendingToFinance] = useState(false);
   const [eligibleMonths, setEligibleMonths] = useState(0);
   const [isDoubleAmount, setIsDoubleAmount] = useState(false);
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
@@ -598,6 +601,36 @@ export default function Grade5ScholarshipPage() {
     });
   };
 
+  // MMS20 — hand this approved scholarship to the Finance Module. The backend closes
+  // the record on success, so the header status flips to Inactive.
+  const handleSendToFinance = async () => {
+    if (!grade5Request?.requestNo) return;
+
+    setIsSendingToFinance(true);
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/${encodeURIComponent(grade5Request.requestNo)}/send-to-finance`,
+        { method: "POST" }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFundError(err.message || "Failed to send the scholarship to the Finance Module.");
+        return;
+      }
+
+      const updated = await res.json();
+      setGrade5Request((prev) => (prev ? { ...prev, ...updated } : updated));
+      setFundError("");
+    } catch (error) {
+      console.error("Send to Finance error:", error);
+      setFundError("Failed to send the scholarship to the Finance Module.");
+    } finally {
+      setIsSendingToFinance(false);
+    }
+  };
+
   const confirmChangeStatus = async () => {
     const { newStatus } = statusConfirmModal;
     setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
@@ -848,6 +881,21 @@ export default function Grade5ScholarshipPage() {
                     className="bg-white text-black hover:bg-gray-100"
                   >
                     Edit
+                  </Button>
+                )}
+
+              {/* MMS20 — an approved scholarship is released to the Finance Module from here. */}
+              {isViewRequestMode &&
+                !isEditMode &&
+                grade5Request?.status === "APPROVED" &&
+                canSendToFinance && (
+                  <Button
+                    onClick={handleSendToFinance}
+                    disabled={isSendingToFinance}
+                    title="Send this approved scholarship to the Finance Module for disbursement"
+                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    {isSendingToFinance ? "Sending..." : "Send to Finance"}
                   </Button>
                 )}
 

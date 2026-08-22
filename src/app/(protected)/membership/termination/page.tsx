@@ -446,6 +446,7 @@ export default function TerminationPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
@@ -621,6 +622,14 @@ export default function TerminationPage() {
   const buildQueryParams = (statuses: StatusType[] = selectedStatuses) => {
     const params = new URLSearchParams();
 
+    selectedLocations.forEach((locId) => {
+      if (locId !== "all") {
+        const locObj = AVAILABLE_LOCATIONS.find((l) => l.id === locId);
+        const nameToSend = locObj ? locObj.name : locId;
+        params.append("locations", nameToSend);
+      }
+    });
+
     statuses.forEach((status) => params.append("statuses", normalizeStatusForApi(status)));
 
     if (searchQuery.trim()) {
@@ -690,6 +699,7 @@ export default function TerminationPage() {
   ) => {
     const params = buildQueryParams(statuses);
     const data = (await searchRetirementRequests({
+      locations: params.getAll("locations"),
       statuses: params.getAll("statuses"),
       fromDate: params.get("fromDate") ?? undefined,
       toDate: params.get("toDate") ?? undefined,
@@ -735,6 +745,12 @@ export default function TerminationPage() {
           setRequests([]);
           return;
         }
+
+        if (fromDate && toDate && toDate < fromDate) {
+          setError("To Date cannot be earlier than From Date.");
+          setRequests([]);
+          return;
+        }
       }
 
       let retrievedRequests: TerminationRequest[];
@@ -769,6 +785,7 @@ export default function TerminationPage() {
 
       setRequests(retrievedRequests);
       setSelectedRows([]);
+      setHasFetched(true);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
       setError(
@@ -777,6 +794,7 @@ export default function TerminationPage() {
           : "Failed to retrieve requests."
       );
       setRequests([]);
+      setHasFetched(true);
     } finally {
       setLoading(false);
     }
@@ -1044,8 +1062,15 @@ export default function TerminationPage() {
                 <Input
                   type="date"
                   value={fromDate}
-                  max={TODAY}
-                  onChange={(e) => setFromDate(e.target.value)}
+                  max={toDate && toDate <= TODAY ? toDate : TODAY}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFromDate(value);
+                    // Drop a To Date that is now before the new From Date.
+                    if (value && toDate && toDate < value) {
+                      setToDate("");
+                    }
+                  }}
                   className="w-full"
                 />
               </div>
@@ -1054,6 +1079,7 @@ export default function TerminationPage() {
                 <Input
                   type="date"
                   value={toDate}
+                  min={fromDate || undefined}
                   max={TODAY}
                   onChange={(e) => setToDate(e.target.value)}
                   className="w-full"
@@ -1235,7 +1261,13 @@ export default function TerminationPage() {
               ))
             ) : (
               <TableRow className="h-12">
-                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">
+                  {loading
+                    ? "Loading..."
+                    : hasFetched
+                    ? "No request found"
+                    : "To load data click retrive button"}
+                </TableCell>
               </TableRow>
             )}
           </TableBody>

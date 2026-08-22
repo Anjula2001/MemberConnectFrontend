@@ -64,8 +64,8 @@ const filterSchema = z
     ) {
       ctx.addIssue({
         code: "custom",
-        path: ["fromDate"],
-        message: "From Date must be less than or equal to To Date",
+        path: ["toDate"],
+        message: "To Date cannot be earlier than From Date",
       });
     }
   });
@@ -679,10 +679,16 @@ export default function Grade5ScholarshipRequestsListPage() {
                 <input
                   type="date"
                   value={fromDate}
-                  max={today}
+                  max={toDate && toDate <= today ? toDate : today}
                   onChange={(e) => {
-                    setFromDate(e.target.value);
+                    const value = e.target.value;
+                    setFromDate(value);
                     setFieldErrors((prev) => ({ ...prev, fromDate: "" }));
+                    // Drop a To Date that is now before the new From Date.
+                    if (value && toDate && toDate < value) {
+                      setToDate("");
+                      setFieldErrors((prev) => ({ ...prev, toDate: "" }));
+                    }
                   }}
                   className="border rounded-md px-3 py-2 w-full"
                 />
@@ -700,6 +706,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                 <input
                   type="date"
                   value={toDate}
+                  min={fromDate || undefined}
                   max={today}
                   onChange={(e) => {
                     setToDate(e.target.value);

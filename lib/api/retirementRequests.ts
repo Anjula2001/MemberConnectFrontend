@@ -17,6 +17,8 @@ export interface RetirementRequestResponse {
   rejectReason?: string;
   hasLoanBalance?: boolean;
   hasIndirectObligations?: boolean;
+  /** The member's own status - RETIREMENT_APPROVED until Finance completes, then RETIRED. */
+  memberStatus?: string;
 }
 
 /** Mirrors MemberRetirementRequestDTO — the save/update payload. */
@@ -44,6 +46,7 @@ export interface MemberSummary {
 }
 
 export interface SearchRetirementRequestsParams {
+  locations?: string[];
   statuses?: string[];
   fromDate?: string;
   toDate?: string;
@@ -57,9 +60,10 @@ const encode = (value: string) => encodeURIComponent(value);
 export async function searchRetirementRequests(
   params: SearchRetirementRequestsParams = {}
 ) {
-  // URLSearchParams rather than axios `params` so repeated `statuses` keys serialise the
+  // URLSearchParams rather than axios `params` so repeated `statuses`/`locations` keys serialise the
   // way the backend's List<String> @RequestParam expects them.
   const query = new URLSearchParams();
+  params.locations?.forEach((location) => query.append("locations", location));
   params.statuses?.forEach((status) => query.append("statuses", status));
   if (params.fromDate) query.append("fromDate", params.fromDate);
   if (params.toDate) query.append("toDate", params.toDate);
@@ -130,6 +134,17 @@ export async function markRetirementRequestIncomplete(
 export async function approveRetirementRequest(requestNo: string) {
   const { data } = await apiClient.put<RetirementRequestResponse>(
     `/api/retirement-requests/${encode(requestNo)}/approve`
+  );
+  return data;
+}
+
+/**
+ * MMT17 — hand an approved retirement to the Finance Module. On success the member
+ * becomes RETIRED; the request itself stays APPROVED.
+ */
+export async function sendRetirementToFinance(requestNo: string) {
+  const { data } = await apiClient.post<RetirementRequestResponse>(
+    `/api/retirement-requests/${encode(requestNo)}/send-to-finance`
   );
   return data;
 }
