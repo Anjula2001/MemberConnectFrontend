@@ -20,7 +20,6 @@ import { useAuth } from "@/lib/auth-context";
 import {
 	DEATH_DONATION_ENTRY_ROLES,
 	MEMBER_DEATH_ENTRY_ROLES,
-	MEMBER_TRANSFER_ROLES,
 	PROFILE_CHANGE_CREATE_ROLES,
 	TESTING_ACTIVATE_ROLES,
 	hasPermission,
@@ -111,7 +110,9 @@ export default function MemberProfilePage({
 	// Raising a request is the originating office's job. Head Office holds neither
 	// right, so it reviews these rather than creating them.
 	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
-	const canCreateMemberTransfer = hasRole(user?.role, MEMBER_TRANSFER_ROLES);
+	// Now a named permission rather than a role list, so this agrees with the
+	// MT_REQUEST_CREATE check the server applies to POST /api/member-transfers/submit.
+	const canCreateMemberTransfer = hasPermission(user?.role, "MT_REQUEST_CREATE");
 
 	// Real activation is supposed to come from the Finance Module once the member's
 	// accounts are created there (out of scope for this build). This button is a

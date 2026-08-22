@@ -4,11 +4,14 @@ import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trash2, UploadCloud, Check, AlertCircle } from "lucide-react";
+import { Trash2, UploadCloud, Check, AlertCircle, Info } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
 import { memberTransferSchema, type MemberTransferFormData, } from "@/lib/validators/membertransfer.schema";
+import { authFetch } from "@/lib/api/authFetch";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
 
 type DocumentFileItem = {
   file: File;
@@ -184,6 +187,13 @@ const toNullableNumber = (value: any) => {
 export default function ChangeMemberTransferForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+
+  // MMC30 seats the decision with Head Office, and MMC29's status change with
+  // whoever holds Inactive rights. The server enforces both independently; these
+  // only decide whether the buttons are offered.
+  const canApproveTransfer = hasPermission(user?.role, "MT_REQUEST_APPROVE");
+  const canSetInactive = hasPermission(user?.role, "MT_REQUEST_SET_INACTIVE");
 
   const requestKey = searchParams.get("requestId");
   const memberId = searchParams.get("memberId") || "";
@@ -296,7 +306,7 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/required-document-types/MEMBER_TRANSFER");
+        const res = await authFetch("http://localhost:8080/api/required-document-types/MEMBER_TRANSFER");
         if (!res.ok) throw new Error("Failed to load document types");
         const data = await res.json();
         setRequiredDocumentTypes(data);
@@ -328,7 +338,7 @@ export default function ChangeMemberTransferForm() {
     const targetId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
     if (!targetId) return;
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
         { method: "DELETE" }
       );
@@ -354,10 +364,10 @@ export default function ChangeMemberTransferForm() {
     const fetchMasters = async () => {
       try {
         const [typesRes, districtsRes, designationsRes, occupationsRes] = await Promise.all([
-          fetch("http://localhost:8080/api/masters/working-location-types"),
-          fetch("http://localhost:8080/api/masters/districts"),
-          fetch("http://localhost:8080/api/masters/designations"),
-          fetch("http://localhost:8080/api/masters/nature-of-occupations"),
+          authFetch("http://localhost:8080/api/masters/working-location-types"),
+          authFetch("http://localhost:8080/api/masters/districts"),
+          authFetch("http://localhost:8080/api/masters/designations"),
+          authFetch("http://localhost:8080/api/masters/nature-of-occupations"),
         ]);
 
         const [typesData, districtsData, designationsData, occupationsData] = await Promise.all([
@@ -396,7 +406,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchMember = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
+        const res = await authFetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
         if (!res.ok) throw new Error("Failed to load member");
 
         const data = await res.json();
@@ -507,7 +517,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/member-transfers");
+        const res = await authFetch("http://localhost:8080/api/member-transfers");
         if (!res.ok) throw new Error("Failed to load member transfer request");
 
         const data: MemberTransferRecord[] = await res.json();
@@ -537,7 +547,7 @@ export default function ChangeMemberTransferForm() {
 
     const checkInFlightRequest = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(targetMemberId)}`
         );
         if (!res.ok) return;
@@ -597,7 +607,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchUploadedDocuments = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(requestId))}`
         );
 
@@ -664,7 +674,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchZones = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/masters/educational-zones?district=${encodeURIComponent(String(selectedDistrict))}`
         );
 
@@ -711,7 +721,7 @@ export default function ChangeMemberTransferForm() {
           params.append("zone", String(selectedZone));
         }
 
-        const res = await fetch(`http://localhost:8080/api/masters/working-locations?${params.toString()}`);
+        const res = await authFetch(`http://localhost:8080/api/masters/working-locations?${params.toString()}`);
 
         if (!res.ok) {
           setWorkingLocations([]);
@@ -751,7 +761,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchLocationDetails = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/working-locations/${encodeURIComponent(String(selectedWorkingLocation))}`);
+        const res = await authFetch(`http://localhost:8080/api/working-locations/${encodeURIComponent(String(selectedWorkingLocation))}`);
         if (!res.ok) return;
 
         const data = await res.json();
@@ -819,7 +829,7 @@ export default function ChangeMemberTransferForm() {
       console.log("FORM DATA:", data);
       console.log("DTO PAYLOAD:", payload);
 
-      const res = await fetch("http://localhost:8080/api/member-transfers/submit", {
+      const res = await authFetch("http://localhost:8080/api/member-transfers/submit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -870,7 +880,7 @@ export default function ChangeMemberTransferForm() {
           const formData = new FormData();
           formData.append("file", docFile.file);
 
-          const uploadRes = await fetch(
+          const uploadRes = await authFetch(
             `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
               String(savedId)
             )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
@@ -898,7 +908,7 @@ export default function ChangeMemberTransferForm() {
 
         // Refresh the uploaded documents list from backend
         try {
-          const docsRes = await fetch(
+          const docsRes = await authFetch(
             `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(savedId))}`
           );
           if (docsRes.ok) {
@@ -958,7 +968,7 @@ export default function ChangeMemberTransferForm() {
     if (!requestId) return;
 
     try {
-      const res = await fetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
         method: "POST",
       });
 
@@ -991,7 +1001,7 @@ export default function ChangeMemberTransferForm() {
     if (!requestId || rejectReason.trim() === "") return;
 
     try {
-      const res = await fetch(`http://localhost:8080/api/member-transfers/reject/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/member-transfers/reject/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decisionReason: rejectReason.trim() }),
@@ -1021,9 +1031,26 @@ export default function ChangeMemberTransferForm() {
       : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
-  const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
+  const canReviewSubmission =
+    isViewMode && status === "SUBMITTEDFORAPPROVAL" && canApproveTransfer;
+
+  // MMC30: an approved transfer that moves the member to a different District has the
+  // Loan and Finance Modules told to re-file their records. Compared here the same way
+  // the server compares it - a transfer that keeps the District, including one where
+  // "Keep Current District" was ticked, moves nothing and shows nothing.
+  const newDistrictName = isKeepDistrict
+    ? loadedRecord?.newWorkingLocation?.educationalDistrict?.name
+    : loadedRecord?.newEducationalDistrict?.name;
+
+  const districtChanged = Boolean(
+    newDistrictName &&
+    newDistrictName.trim().toLowerCase() !==
+    (loadedRecord?.currentEducationalDistrict || "").trim().toLowerCase()
+  );
+
+  const showRelocationNotice = status === "APPROVED" && districtChanged;
   const showRequestStatus = Boolean(requestId || isExistingRequest);
-  const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
+  const canChangeStatus = isViewMode && availableStatusTargets.length > 0 && canSetInactive;
 
   const formatStatusLabel = (value: string) =>
     value === "SUBMITTEDFORAPPROVAL"
@@ -1042,7 +1069,7 @@ export default function ChangeMemberTransferForm() {
 
     setIsChangingStatus(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/member-transfers/${encodeURIComponent(String(actionId))}/status`,
         {
           method: "PUT",
@@ -1431,6 +1458,22 @@ export default function ChangeMemberTransferForm() {
                 })}
               </div>
             </section>
+          )}
+
+          {showRelocationNotice && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <Info size={16} className="mt-0.5 shrink-0 text-blue-600" />
+              <p className="text-sm text-blue-800">
+                The District changed to{" "}
+                <span className="font-semibold">{newDistrictName}</span>. A message has
+                been sent to the Loan Module and the Finance Module to move this
+                member&apos;s loans and savings accounts to the new District Office.
+                <span className="mt-1 block text-xs text-blue-700">
+                  Those modules are not integrated with this system yet, so the messages
+                  are recorded rather than delivered.
+                </span>
+              </p>
+            </div>
           )}
 
           {canReviewSubmission && (

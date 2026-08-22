@@ -480,7 +480,13 @@ export type Permission =
   // ---- University: masters + finance ----
   | "US_MASTER_VIEW"
   | "US_MASTER_MANAGE"
-  | "US_FINANCE_DISBURSE";
+  | "US_FINANCE_DISBURSE"
+  // Member Transfers (MMC27-MMC30). There is no MT_REQUEST_EDIT: a transfer is
+  // created already at "Submitted for Approval" and can never be edited.
+  | "MT_REQUEST_VIEW"
+  | "MT_REQUEST_CREATE"
+  | "MT_REQUEST_APPROVE"
+  | "MT_REQUEST_SET_INACTIVE";
 
 const GRADE5_DISTRICT: Permission[] = [
   "G5_REQUEST_VIEW",
@@ -548,6 +554,25 @@ const UNIVERSITY_BOARD: Permission[] = [
   "US_MASTER_VIEW",
 ];
 
+// --- Member Transfers (MMC27-MMC30) ---------------------------------------
+// Kept in step with RolePermissions.java on the server, which enforces the same
+// split independently; these arrays only decide what the UI offers.
+
+// The office that raises a transfer: it reads and creates, and decides nothing.
+const TRANSFER_DISTRICT: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_CREATE"];
+
+// MMC30 names the District Office as the approver, resolved in favour of Head
+// Office for the same reason as the scholarship modules: the office that raises a
+// request does not approve it.
+const TRANSFER_APPROVER: Permission[] = [
+  "MT_REQUEST_VIEW",
+  "MT_REQUEST_APPROVE",
+  "MT_REQUEST_SET_INACTIVE",
+];
+
+// Board Secretary reads and holds the Inactive right, but does not approve.
+const TRANSFER_SECRETARY: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_SET_INACTIVE"];
+
 const ALL_PERMISSIONS: Permission[] = [
   ...GRADE5_DISTRICT,
   ...GRADE5_BOARD,
@@ -558,6 +583,8 @@ const ALL_PERMISSIONS: Permission[] = [
   "US_COMMITTEE_APPROVE",
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
+  ...TRANSFER_APPROVER,
+  "MT_REQUEST_CREATE",
 ];
 
 /**
@@ -576,15 +603,20 @@ const ALL_PERMISSIONS: Permission[] = [
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
 
-  DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT],
+  DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT, ...TRANSFER_DISTRICT],
 
   // US_FINANCE_DISBURSE is listed here rather than in UNIVERSITY_BOARD because that
   // array is shared with BOARD_SECRETARY, which does not hold the finance hand-over.
-  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FINANCE_DISBURSE"],
+  HEAD_OFFICE: [
+    ...GRADE5_BOARD,
+    ...UNIVERSITY_BOARD,
+    "US_FINANCE_DISBURSE",
+    ...TRANSFER_APPROVER,
+  ],
 
   // The same approval track as Head Office, plus the Grade 5 / University delete
   // privileges that DELETE_RIGHTS_ROLES also grants.
-  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
+  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, ...TRANSFER_SECRETARY],
 
   // Seat of the University Scholarship Committee (MMS26), and owner of the exam /
   // university masters.
