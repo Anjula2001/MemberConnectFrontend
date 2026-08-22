@@ -52,16 +52,15 @@ const actionGroups = {
 };
 
 /**
- * Actions that an INACTIVE member may not start.
+ * Actions that only an ACTIVE member may start.
  *
  * Transferring a member who holds no active membership moves nothing, and a new
  * University Scholarship would be raised against a membership that cannot fund it.
  *
- * Scoped to INACTIVE specifically, per the requirement. Other non-active statuses
- * (INACTIVE_DORMANT, RETIRED, TERMINATED, DECEASED, RESIGNED) are deliberately NOT
- * covered here — widen this list if they should be.
+ * Any status other than ACTIVE blocks these — INACTIVE, INACTIVE_DORMANT, RETIRED,
+ * TERMINATED, DECEASED, RESIGNED, MEMBER_DEATH_RECORDED, TERMINATION_REQUESTED alike.
  */
-const BLOCKED_WHILE_INACTIVE = ["Member Transfer", "University Scholarship"];
+const ACTIVE_MEMBER_ONLY_ACTIONS = ["Member Transfer", "University Scholarship"];
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
 	return (
@@ -91,6 +90,9 @@ export default function MemberProfilePage({
 	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
 	const [isActivating, setIsActivating] = useState(false);
+	// Request id of the member's transfer request awaiting approval, if any. A
+	// second one would compete with it, so the action is offered but disabled.
+	const [inFlightTransferId, setInFlightTransferId] = useState<string | null>(null);
 	const { addToast } = useToast();
 	const { user } = useAuth();
 	// MMC01/05/14/18 name the District Office System User as the one who raises a
@@ -246,6 +248,16 @@ export default function MemberProfilePage({
 						})
 						.catch(e => console.error("Error loading scholarship request", e));
 
+					// Load any member transfer request awaiting approval
+					fetch(`http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(data.memberId)}`)
+						.then(res => (res.ok ? res.json() : null))
+						.then(transferVal => {
+							if (transferVal?.hasInFlight) {
+								setInFlightTransferId(transferVal.requestId || "");
+							}
+						})
+						.catch(e => console.error("Error loading member transfer status", e));
+
 					// Load Loans and Obligations
 					fetch(`http://localhost:8080/api/members/${data.memberId}/loans`)
 						.then(res => {
@@ -287,16 +299,22 @@ export default function MemberProfilePage({
 			}
 		}
 
-		// Two separate reasons an action can be unavailable: the member is inactive, or
-		// the signed-in role does not raise this kind of request. The buttons are
+		// Two separate reasons an action can be unavailable: the member is not active,
+		// or the signed-in role does not raise this kind of request. The buttons are
 		// disabled for both; this guard is what stops a stale page whose profile
 		// loaded while the member was still active.
-		if (BLOCKED_WHILE_INACTIVE.includes(action) && profile.status === "INACTIVE") {
+		if (ACTIVE_MEMBER_ONLY_ACTIONS.includes(action) && profile.status !== "ACTIVE") {
 			return;
 		}
 
-		if (action === "Member Transfer" && !canCreateMemberTransfer) {
-			return;
+		if (action === "Member Transfer") {
+			if (!canCreateMemberTransfer) {
+				return;
+			}
+			// Only one transfer request may be awaiting approval at a time
+			if (inFlightTransferId !== null) {
+				return;
+			}
 		}
 
 		if (
@@ -372,11 +390,28 @@ export default function MemberProfilePage({
 		if (item === "Member Transfer" && !canCreateMemberTransfer) {
 			return "Your role cannot raise a Member Transfer request";
 		}
+		if (item === "Member Transfer" && inFlightTransferId !== null) {
+			return inFlightTransferId
+				? `Transfer request ${inFlightTransferId} is already awaiting approval`
+				: "A transfer request is already awaiting approval";
+		}
 		if (item === "University Scholarship" && !canCreateUniversityScholarship) {
 			return "Your role cannot raise a University Scholarship request";
 		}
-		if (BLOCKED_WHILE_INACTIVE.includes(item) && profile.status === "INACTIVE") {
-			return "Not available for an inactive member";
+		if (ACTIVE_MEMBER_ONLY_ACTIONS.includes(item) && profile.status !== "ACTIVE") {
+			return "Available only while the member is active";
+		}
+		return null;
+	};
+
+	// A note printed under the entry name. Only the pending transfer request gets
+	// one: it is a temporary state the user can clear by deciding that request,
+	// unlike a role or member-status block, which the tooltip alone explains.
+	const actionNote = (item: string): string | null => {
+		if (item === "Member Transfer" && inFlightTransferId !== null) {
+			return inFlightTransferId
+				? `Already has a pending request (${inFlightTransferId})`
+				: "Already has a pending request";
 		}
 		return null;
 	};
@@ -428,6 +463,7 @@ export default function MemberProfilePage({
 {(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
     const disabledReason = actionDisabledReason(item);
     const isDisabled = disabledReason !== null;
+    const note = actionNote(item);
 
     return (
         <button
@@ -443,6 +479,11 @@ export default function MemberProfilePage({
             }
         >
             {item}
+            {note && (
+                <span className="mt-0.5 block text-xs font-normal whitespace-normal text-amber-600">
+                    {note}
+                </span>
+            )}
         </button>
     );
 })}

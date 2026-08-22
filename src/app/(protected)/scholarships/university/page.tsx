@@ -558,14 +558,8 @@ export default function Page() {
             </Button>
           )}
 
-          <Link href="/membership/directory">
-            <Button className="bg-[#7a2700] text-white hover:bg-[#953002]">
-              + New Application
-            </Button>
-          </Link>
-
           <Link href="/scholarships/university/approvals">
-            <Button variant="outline">Approval Lists</Button>
+            <Button className="bg-[#7a2700] text-white hover:bg-[#953002]">Approval Lists</Button>
           </Link>
         </div>
       </div>

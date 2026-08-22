@@ -225,7 +225,12 @@ export default function ChangeMemberTransferForm() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Request already awaiting approval for this member, if any. A second one would
+  // compete with it, so a new request is refused while it is outstanding.
+  const [inFlightRequestId, setInFlightRequestId] = useState<string | null>(null);
+
   const isExistingRequest = Boolean(requestKey);
+  const isBlockedByInFlightRequest = !isExistingRequest && inFlightRequestId !== null;
   const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
@@ -506,6 +511,44 @@ export default function ChangeMemberTransferForm() {
     fetchRequest();
   }, [requestKey]);
 
+  // Refuse a new request up front when one is already awaiting approval, rather
+  // than letting the form be filled in and refused on submit
+  useEffect(() => {
+    if (requestKey) {
+      setInFlightRequestId(null);
+      return;
+    }
+
+    const targetMemberId = memberId || member?.memberId;
+    if (!targetMemberId) return;
+
+    const checkInFlightRequest = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(targetMemberId)}`
+        );
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (!data?.hasInFlight) {
+          setInFlightRequestId(null);
+          return;
+        }
+
+        setInFlightRequestId(data.requestId || "");
+        setPopupMessage(
+          `Member ${targetMemberId} already has transfer request ${data.requestId} awaiting approval.` +
+          ` A new transfer request cannot be raised until that one is approved or rejected.`
+        );
+        setShowPopup(true);
+      } catch (error) {
+        console.error("Failed to check for an existing member transfer request:", error);
+      }
+    };
+
+    checkInFlightRequest();
+  }, [requestKey, memberId, member?.memberId]);
+
   // Populate form when loadedRecord changes 
   useEffect(() => {
     if (!loadedRecord) return;
@@ -715,6 +758,15 @@ export default function ChangeMemberTransferForm() {
 
   //Handle form submission for both new and existing requests
   const onSubmit = (data: MemberTransferFormData) => {
+    if (isBlockedByInFlightRequest) {
+      setPopupMessage(
+        `Member ${memberId || member?.memberId} already has transfer request ${inFlightRequestId}` +
+        ` awaiting approval. A new transfer request cannot be raised until that one is approved or rejected.`
+      );
+      setShowPopup(true);
+      return;
+    }
+
     setPendingFormData(data);
     setShowSubmitConfirmModal(true);
   };
@@ -764,7 +816,21 @@ export default function ChangeMemberTransferForm() {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Submit failed (${res.status}): ${text}`);
+        let message = `Submit failed (${res.status})`;
+
+        try {
+          const body = JSON.parse(text);
+          if (body?.message) message = body.message;
+        } catch {
+          if (text) message = text;
+        }
+
+        // 409 means another request for this member reached approval first
+        if (res.status === 409) {
+          setInFlightRequestId("");
+        }
+
+        throw new Error(message);
       }
 
       const saved = await res.json();
@@ -985,7 +1051,7 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded}
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded || isBlockedByInFlightRequest}
                 className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
@@ -1306,6 +1372,8 @@ export default function ChangeMemberTransferForm() {
           msgLower.includes("failed") ||
           msgLower.includes("error") ||
           msgLower.includes("duplicate") ||
+          msgLower.includes("already") ||
+          msgLower.includes("cannot") ||
           msgLower.includes("required") ||
           msgLower.includes("please");
 
