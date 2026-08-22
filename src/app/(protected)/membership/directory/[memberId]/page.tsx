@@ -17,7 +17,16 @@ import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
-import { TESTING_ACTIVATE_ROLES, hasRole, hasRetPermission, hasG5Permission } from "@/lib/permissions";
+import {
+	DEATH_DONATION_ENTRY_ROLES,
+	MEMBER_DEATH_ENTRY_ROLES,
+	MEMBER_TRANSFER_ROLES,
+	PROFILE_CHANGE_CREATE_ROLES,
+	TESTING_ACTIVATE_ROLES,
+	hasPermission,
+	hasRetPermission,
+	hasRole,
+} from "@/lib/permissions";
 
 const detailTabs = [
 	"Profile Details",
@@ -49,6 +58,18 @@ const actionGroups = {
 	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death", "Member Termination"],
 };
 
+/**
+ * Actions that an INACTIVE member may not start.
+ *
+ * Transferring a member who holds no active membership moves nothing, and a new
+ * University Scholarship would be raised against a membership that cannot fund it.
+ *
+ * Scoped to INACTIVE specifically, per the requirement. Other non-active statuses
+ * (INACTIVE_DORMANT, RETIRED, TERMINATED, DECEASED, RESIGNED) are deliberately NOT
+ * covered here — widen this list if they should be.
+ */
+const BLOCKED_WHILE_INACTIVE = ["Member Transfer", "University Scholarship"];
+
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
 	return (
 		<div className="space-y-1">
@@ -79,7 +100,23 @@ export default function MemberProfilePage({
 	const [isActivating, setIsActivating] = useState(false);
 	const { addToast } = useToast();
 	const { user } = useAuth();
+	// MMC01/05/14/18 name the District Office System User as the one who raises a
+	// profile change request. Board Secretary decides them but never opens one, so the
+	// Actions entries are hidden rather than shown and refused.
+	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
 	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
+	// MMT18 names the District Office System User as the sole actor who initiates a
+	// Member Death Record. The approval levels reach an existing record through the
+	// requests list, never by starting a new one from the profile.
+	const canRecordMemberDeath = hasRole(user?.role, MEMBER_DEATH_ENTRY_ROLES);
+	// MMD01 names the District Office System User as the sole actor who raises a
+	// death donation request. Everyone else was previously offered the option and
+	// only found out it was refused after filling the form in.
+	const canRaiseDeathDonation = hasRole(user?.role, DEATH_DONATION_ENTRY_ROLES);
+	// Raising a request is the originating office's job. Head Office holds neither
+	// right, so it reviews these rather than creating them.
+	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
+	const canCreateMemberTransfer = hasRole(user?.role, MEMBER_TRANSFER_ROLES);
 
 	// Real activation is supposed to come from the Finance Module once the member's
 	// accounts are created there (out of scope for this build). This button is a
@@ -131,54 +168,93 @@ export default function MemberProfilePage({
 	// Grade 5 is the one entry with a real permission behind it, so it answers to that
 	// rather than to the role name.
 	const canRaiseGrade5 =
-		canRaiseRequests && hasG5Permission(user?.role, "G5_REQUEST_CREATE");
+		canRaiseRequests && hasPermission(user?.role, "G5_REQUEST_CREATE");
 
 	const NON_REQUEST_ACTIONS = ["Add Documents"];
 
 	const isGrade5Action = (action: string) =>
 		action === "Grade 5 Scholarship" || action === "Grade 5 Scholarships";
 
-	const isActionDisabled = (action: string) => {
+	const isUniversityScholarshipAction = (action: string) =>
+		action === "University Scholarship" || action === "University Scholarships";
+
+	// The single answer to "may this Actions entry be used, and if not, why not".
+	// The menu reads it to disable and explain an entry, handleActionClick reads it to
+	// stop a stale page acting on one, so the two cannot drift apart. null means the
+	// action is allowed.
+	const actionDisabledReason = (action: string): string | null => {
 		if (isGrade5Action(action)) {
 			// saveRequest rejects a member who is not Active on the exam's last date, so
 			// an inactive member cannot hold a Grade 5 request at all — the entry is
 			// disabled rather than leading to a form that cannot be saved.
-			return !canRaiseGrade5 || profile?.status !== "ACTIVE";
+			if (!canRaiseGrade5) {
+				return canRaiseRequests
+					? "Your role cannot raise a Grade 5 Scholarship request"
+					: NO_RAISE_HINT;
+			}
+			return profile?.status !== "ACTIVE" ? INACTIVE_MEMBER_HINT : null;
 		}
 
 		if (!canRaiseRequests && !NON_REQUEST_ACTIONS.includes(action)) {
-			return true;
+			return NO_RAISE_HINT;
+		}
+
+		if (action === "Member Transfer" && !canCreateMemberTransfer) {
+			return "Your role cannot raise a Member Transfer request";
+		}
+
+		if (isUniversityScholarshipAction(action) && !canCreateUniversityScholarship) {
+			return "Your role cannot raise a University Scholarship request";
+		}
+
+		if (BLOCKED_WHILE_INACTIVE.includes(action) && profile?.status === "INACTIVE") {
+			return "Not available for an inactive member";
 		}
 
 		if (action === "Death Donation Request") {
-			return profile?.status !== "ACTIVE";
+			if (!canRaiseDeathDonation) {
+				return "Your role cannot raise a Death Donation request";
+			}
+			// MMD01: "The Member states need to be Active to have the Death Donation
+			// option available."
+			if (profile?.status !== "ACTIVE") {
+				return "Not available for an inactive member";
+			}
 		}
 
 		if (action === "Record Member Death") {
-			return (
+			// MMT18 puts raising the record at District Office; the approval levels reach
+			// an existing one through the requests list instead.
+			if (!canRecordMemberDeath) {
+				return "Your role cannot record a Member Death";
+			}
+			if (
 				profile?.status !== "ACTIVE" &&
 				profile?.status !== "MEMBER_DEATH_RECORDED"
-			);
+			) {
+				return "Not available for this member's status";
+			}
 		}
 
-		if (action === "Retirement") {
-			return !isRetirementAvailable;
+		// MMT01: "The Member states need to be 'Active' to have the Termination option
+		// available." An existing request leaves the member at TERMINATION_REQUESTED,
+		// which must stay reachable so the request can be reopened.
+		if (
+			action === "Member Termination" &&
+			profile?.status !== "ACTIVE" &&
+			profile?.status !== "TERMINATION_REQUESTED"
+		) {
+			return "Not available for this member's status";
 		}
 
-		return false;
+		if (action === "Retirement" && !isRetirementAvailable) {
+			return "Not available for this member's status or your role";
+		}
+
+		return null;
 	};
 
-	const actionDisabledReason = (action: string) => {
-		if (!isActionDisabled(action)) {
-			return undefined;
-		}
-
-		if (isGrade5Action(action) && canRaiseGrade5) {
-			return INACTIVE_MEMBER_HINT;
-		}
-
-		return canRaiseRequests ? undefined : NO_RAISE_HINT;
-	};
+	const isActionDisabled = (action: string) => actionDisabledReason(action) !== null;
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -308,7 +384,21 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
+		// Role rights and member-status rules both live in actionDisabledReason, which
+		// is what disabled the button in the first place. Re-asking it here is what stops
+		// a stale page whose profile loaded while the member was still active.
 		if (isActionDisabled(action)) return;
+
+		// Requirement 02 gates every profile change request on an active membership.
+		const activeOnlyActions = [
+			"Basic Profile Changes",
+			"Change Name",
+			"Change Remittance",
+			"Change Nominee",
+		];
+		if (activeOnlyActions.includes(action) && profile.status !== "ACTIVE") {
+			return;
+		}
 
 		const memberIdQuery = `?memberId=${profile.memberId}`;
 
@@ -391,8 +481,11 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{actionGroups.profileRequests.map((item) => {
-										const isDisabled = isActionDisabled(item);
+									{/* MMC01/05/14/18 put raising a profile change at District Office, so a
+									    role that cannot raise one is not offered the group at all. */}
+									{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
+										const disabledReason = actionDisabledReason(item);
+										const isDisabled = disabledReason !== null;
 
 										return (
 											<button
@@ -400,7 +493,7 @@ export default function MemberProfilePage({
 												type="button"
 												onClick={() => handleActionClick(item)}
 												disabled={isDisabled}
-												title={actionDisabledReason(item)}
+												title={disabledReason ?? undefined}
 												className={
 													isDisabled
 														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
@@ -421,7 +514,8 @@ export default function MemberProfilePage({
 										</summary>
 										<div className="mt-1 space-y-1 pl-3">
 											{actionGroups.scholarshipRequests.map((item) => {
-												const isDisabled = isActionDisabled(item);
+												const disabledReason = actionDisabledReason(item);
+												const isDisabled = disabledReason !== null;
 
 												return (
 													<button
@@ -429,7 +523,7 @@ export default function MemberProfilePage({
 														type="button"
 														onClick={() => handleActionClick(item)}
 														disabled={isDisabled}
-														title={actionDisabledReason(item)}
+														title={disabledReason ?? undefined}
 														className={
 															isDisabled
 																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
@@ -445,10 +539,18 @@ export default function MemberProfilePage({
 								</div>
 
 								<div className="px-5 py-2 space-y-1">
-									{actionGroups.secondary.map((item) => {
+									{actionGroups.secondary
+										// A role that cannot raise a Member Death Record is not shown
+										// the option at all (MMT18); the backend refuses it either way.
+										.filter((item) => item !== "Record Member Death" || canRecordMemberDeath)
+										// Same for Death Donation (MMD01): hidden outright rather than
+										// shown and then refused by the server.
+										.filter((item) => item !== "Death Donation Request" || canRaiseDeathDonation)
+										.map((item) => {
 										// Member status rules and the raise-a-request rule both live in
-										// isActionDisabled, so the two cannot drift apart.
-										const isDisabled = isActionDisabled(item);
+										// actionDisabledReason, so the two cannot drift apart.
+										const disabledReason = actionDisabledReason(item);
+										const isDisabled = disabledReason !== null;
 
 										return (
 											<button
@@ -456,7 +558,7 @@ export default function MemberProfilePage({
 												onClick={() => handleActionClick(item)}
 												type="button"
 												disabled={isDisabled}
-												title={actionDisabledReason(item)}
+												title={disabledReason ?? undefined}
 												className={
 													isDisabled
 														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"

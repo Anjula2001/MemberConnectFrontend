@@ -8,7 +8,7 @@ import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/Mark
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { canAccessGrade5, hasG5Permission } from "@/lib/permissions";
+import { canAccessGrade5, hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 
 type Grade5Request = Grade5InitialData & {
@@ -86,12 +86,12 @@ export default function Grade5ScholarshipPage() {
   // This screen sits inside the Member Directory, which Head Office can also reach —
   // so viewing a member is not on its own permission to raise or amend a scholarship
   // request. Editing needs create rights on a new request, edit rights on a saved one.
-  const canCreateRequest = hasG5Permission(user?.role, "G5_REQUEST_CREATE");
-  const canEditRequest = hasG5Permission(user?.role, "G5_REQUEST_EDIT");
-  const canSubmitRequest = hasG5Permission(user?.role, "G5_REQUEST_SUBMIT");
-  const canMarkIncomplete = hasG5Permission(user?.role, "G5_REQUEST_INCOMPLETE");
+  const canCreateRequest = hasPermission(user?.role, "G5_REQUEST_CREATE");
+  const canEditRequest = hasPermission(user?.role, "G5_REQUEST_EDIT");
+  const canSubmitRequest = hasPermission(user?.role, "G5_REQUEST_SUBMIT");
+  const canMarkIncomplete = hasPermission(user?.role, "G5_REQUEST_INCOMPLETE");
   // MMS20 — only the Finance Department may release an approved scholarship.
-  const canSendToFinance = hasG5Permission(user?.role, "G5_FINANCE_DISBURSE");
+  const canSendToFinance = hasPermission(user?.role, "G5_FINANCE_DISBURSE");
   const canModifyRequest = grade5Request?.id ? canEditRequest : canCreateRequest;
 
   const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
@@ -157,10 +157,10 @@ export default function Grade5ScholarshipPage() {
       return false;
     }
     if (action.status === "INACTIVE") {
-      return hasG5Permission(user?.role, "G5_REQUEST_SET_INACTIVE");
+      return hasPermission(user?.role, "G5_REQUEST_SET_INACTIVE");
     }
     if (action.status === "NEW" && grade5Request?.status === "REJECTED") {
-      return hasG5Permission(user?.role, "G5_REQUEST_REOPEN");
+      return hasPermission(user?.role, "G5_REQUEST_REOPEN");
     }
     return canEditRequest;
   });

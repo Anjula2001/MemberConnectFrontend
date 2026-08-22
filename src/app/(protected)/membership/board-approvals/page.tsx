@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { BOARD_GOVERNANCE_ROLES, DELETE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
+import {
+  BOARD_GOVERNANCE_ROLES,
+  BOARD_MEETING_VIEW_ROLES,
+  DELETE_RIGHTS_ROLES,
+  PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES,
+  hasRole,
+} from "@/lib/permissions";
 import {
   AlertCircle,
   ArrowRight,
@@ -34,6 +40,8 @@ import {
   getBoardApprovalListByListId,
   deleteBoardApprovalList,
   getBoardApprovalListApplications,
+  getNameChangeRequestsByListId,
+  getNomineeChangeRequestsByListId,
   processBoardApprovalList,
   type ProcessBoardApprovalListPayload,
   type BoardApprovalListDTO,
@@ -59,14 +67,33 @@ type ApplicationDecision = "Approve" | "Reject";
 
 type ApprovalListKind = "membership" | "termination";
 
+/**
+ * What the list actually holds. Separate from `kind`, which drives behaviour (which
+ * endpoint to retrieve from) and must stay "membership" for every BAL - a name change
+ * list is still a membership-side board approval list.
+ */
+type ApprovalListContent = "applications" | "name-change" | "nominee-change" | "termination";
+
 type ApprovalListRow = {
   kind: ApprovalListKind;
+  /** Drives the badge and the count's noun; derived from the list's contents. */
+  content: ApprovalListContent;
   listId: string;
   status?: string;
   boardMeetingId?: number;
   boardMeetingDate?: string;
   createdAt?: string;
   itemCount: number;
+};
+
+const CONTENT_BADGES: Record<
+  ApprovalListContent,
+  { label: string; className: string; noun: string }
+> = {
+  applications: { label: "Membership", className: "bg-blue-50 text-blue-700", noun: "applications" },
+  "name-change": { label: "Name Change", className: "bg-violet-50 text-violet-700", noun: "requests" },
+  "nominee-change": { label: "Nominee Change", className: "bg-emerald-50 text-emerald-700", noun: "requests" },
+  termination: { label: "Termination", className: "bg-[#f7ede8] text-[#953002]", noun: "requests" },
 };
 
 type ApprovalApplication = {
@@ -102,8 +129,23 @@ function formatDisplayDate(value: string) {
 
 export default function BoardApprovalsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const canDelete = hasRole(user?.role, DELETE_RIGHTS_ROLES);
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
+
+  // MMC12 / MMC25: recording what the board decided is the Board Secretary's. Head
+  // Office builds the list, prints it and reads it back afterwards — it keeps all of
+  // that — but Proceed and Process are hidden for it rather than shown and refused.
+  const canProcess = hasRole(user?.role, PROFILE_CHANGE_APPROVAL_LIST_PROCESS_ROLES);
+
+  // MMC11 and MMC24 are separate reports from the Application List, because a name or
+  // nominee change is judged as a comparison and needs its current value printed too.
+  const printPathFor = (listId: string) => {
+    const base = "/membership/board-approvals/print";
+    if (selectedListNameChangeRequests.length > 0) return base + "/name/" + encodeURIComponent(listId);
+    if (selectedListNomineeChangeRequests.length > 0) return base + "/nominee/" + encodeURIComponent(listId);
+    return base + "/" + encodeURIComponent(listId);
+  };
   const [activeTab, setActiveTab] = useState<BoardTab>("approval-lists");
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
@@ -121,6 +163,10 @@ export default function BoardApprovalsPage() {
   const [selectedListKind, setSelectedListKind] = useState<ApprovalListKind>("membership");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
   const [selectedListApplications, setSelectedListApplications] = useState<ApprovalApplication[]>([]);
+  const [selectedListNameChangeRequests, setSelectedListNameChangeRequests] = useState<any[]>([]);
+  const [selectedListNomineeChangeRequests, setSelectedListNomineeChangeRequests] = useState<any[]>([]);
+  const [selectedListNameChangeDecisions, setSelectedListNameChangeDecisions] = useState<Record<string, { decision: ApplicationDecision; rejectReason: string }>>({});
+  const [selectedListNomineeChangeDecisions, setSelectedListNomineeChangeDecisions] = useState<Record<string, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [applicationDecisions, setApplicationDecisions] = useState<Record<number, { decision: ApplicationDecision; rejectReason: string }>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteMeetingModal, setShowDeleteMeetingModal] = useState(false);
@@ -156,8 +202,19 @@ export default function BoardApprovalsPage() {
     boardDecisionReason: application.boardDecisionReason ?? "",
   });
 
-  // Fetch board meetings from database
+  // Fetch board meetings from database.
+  // The BOARD_GOVERNANCE_ROLES guard further down is a render-time early return,
+  // which does not stop this effect from committing — so a District Office user
+  // landing here used to get both the Access Restricted screen and a "Failed to
+  // load board meetings" toast off the resulting 403. isAuthLoading covers the
+  // first render, where AuthProvider has not yet hydrated `user` from localStorage.
   useEffect(() => {
+    if (isAuthLoading) return;
+    if (!canViewBoardMeetings) {
+      setIsFetching(false);
+      return;
+    }
+
     const fetchMeetings = async () => {
       try {
         setIsFetching(true);
@@ -177,7 +234,26 @@ export default function BoardApprovalsPage() {
     };
 
     fetchMeetings();
-  }, []);
+    // If a listId query param is present, auto-open it after lists are loaded
+    const params = new URLSearchParams(window.location.search);
+    const listIdParam = params.get('listId');
+    if (listIdParam) {
+      (async () => {
+        try {
+          const lists = await getBoardApprovalLists();
+          setApprovalLists(lists);
+          if (lists && lists.length > 0) {
+            const found = lists.find(l => l.listId === listIdParam);
+            if (found) {
+              setSelectedApprovalListId(found.listId ?? '');
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    }
+  }, [isAuthLoading, canViewBoardMeetings]);
 
   // Toast timeout effect
   useEffect(() => {
@@ -351,20 +427,35 @@ export default function BoardApprovalsPage() {
   const combinedApprovalLists = useMemo<ApprovalListRow[]>(() => {
     const membershipRows: ApprovalListRow[] = approvalLists
       .filter((item) => Boolean(item.listId))
-      .map((item) => ({
-        kind: "membership" as const,
-        listId: item.listId as string,
-        status: item.status,
-        boardMeetingId: item.boardMeetingId,
-        boardMeetingDate: item.boardMeetingDate,
-        createdAt: item.createdAt,
-        itemCount: item.applicationIds?.length ?? 0,
-      }));
+      .map((item) => {
+        // A list holds one kind of record - MMC08 and MMC21 only allow a homogeneous
+        // selection - so the first non-empty collection identifies it. Counting the
+        // matching collection also fixes name and nominee lists showing no count at
+        // all, because only applicationIds was ever counted.
+        const names = item.nameChangeRequestIds?.length ?? 0;
+        const nominees = item.nomineeChangeRequestIds?.length ?? 0;
+        const applications = item.applicationIds?.length ?? 0;
+
+        const content: ApprovalListContent =
+          names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
+
+        return {
+          kind: "membership" as const,
+          content,
+          listId: item.listId as string,
+          status: item.status,
+          boardMeetingId: item.boardMeetingId,
+          boardMeetingDate: item.boardMeetingDate,
+          createdAt: item.createdAt,
+          itemCount: names > 0 ? names : nominees > 0 ? nominees : applications,
+        };
+      });
 
     const terminationRows: ApprovalListRow[] = terminationApprovalLists
       .filter((item) => Boolean(item.listId))
       .map((item) => ({
         kind: "termination" as const,
+        content: "termination" as const,
         listId: item.listId as string,
         status: item.status,
         boardMeetingId: item.boardMeetingId,
@@ -465,6 +556,11 @@ export default function BoardApprovalsPage() {
       setSelectedListKind("membership");
       setApplicationsRetrieved(false);
       setSelectedListApplications([]);
+      setSelectedListNameChangeRequests([]);
+      setSelectedListNomineeChangeRequests([]);
+      setSelectedListNameChangeDecisions({});
+      setSelectedListNomineeChangeDecisions({});
+      setApplicationDecisions({});
     } finally {
       setIsRetrievingLists(false);
     }
@@ -477,6 +573,46 @@ export default function BoardApprovalsPage() {
       setIsRetrievingApplications(true);
       const applications = await getBoardApprovalListApplications(selectedApprovalListId);
       setSelectedListApplications(applications.map(mapApplicationToRow));
+
+      // Fetch name change requests for this list (if any)
+      try {
+        const ncrs = await getNameChangeRequestsByListId(selectedApprovalListId);
+        setSelectedListNameChangeRequests(ncrs || []);
+        setSelectedListNameChangeDecisions(
+          (ncrs || []).reduce((acc, ncr) => {
+            const key = String(ncr.nameChangeRequestID ?? "");
+            if (!key) return acc;
+            acc[key] = {
+              decision: String(ncr.newStatus || ncr.status || "").trim().toUpperCase() === "REJECTED" ? "Reject" : "Approve",
+              rejectReason: String(ncr.boardDecisionReason || ""),
+            };
+            return acc;
+          }, {} as Record<string, { decision: ApplicationDecision; rejectReason: string }>)
+        );
+      } catch (err) {
+        setSelectedListNameChangeRequests([]);
+        setSelectedListNameChangeDecisions({});
+      }
+
+      // Fetch nominee change requests for this list (if any)
+      try {
+        const nmrs = await getNomineeChangeRequestsByListId(selectedApprovalListId);
+        setSelectedListNomineeChangeRequests(nmrs || []);
+        setSelectedListNomineeChangeDecisions(
+          (nmrs || []).reduce((acc, nmr) => {
+            const key = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+            if (!key) return acc;
+            acc[key] = {
+              decision: String(nmr.newStatus || nmr.status || "").trim().toUpperCase() === "REJECTED" ? "Reject" : "Approve",
+              rejectReason: String(nmr.boardDecisionReason || ""),
+            };
+            return acc;
+          }, {} as Record<string, { decision: ApplicationDecision; rejectReason: string }>)
+        );
+      } catch (err) {
+        setSelectedListNomineeChangeRequests([]);
+        setSelectedListNomineeChangeDecisions({});
+      }
       
       const initialDecisions: Record<number, { decision: ApplicationDecision; rejectReason: string }> = {};
       applications.forEach(app => {
@@ -591,8 +727,54 @@ export default function BoardApprovalsPage() {
     try {
       const now = new Date();
       const formatted = `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+      // The list-wide decision applies to membership applications only. Deriving it
+      // from an empty set made a change-request-only list resolve to "Reject" with no
+      // reason, which the backend refused — such a list could never be processed.
       const decisionsArray = Object.values(applicationDecisions).map(d => d.decision);
-      const listDecision: ApplicationDecision = decisionsArray.includes("Approve") ? "Approve" : "Reject";
+      const listDecision: ApplicationDecision | undefined =
+        decisionsArray.length === 0
+          ? undefined
+          : decisionsArray.includes("Approve")
+            ? "Approve"
+            : "Reject";
+
+      // MMC12 / MMC25: each change request carries its own decision and reason.
+      const nameChangeDecisions = selectedListNameChangeRequests
+        .map((ncr) => {
+          const key = String(ncr.nameChangeRequestID ?? "");
+          const state = selectedListNameChangeDecisions[key];
+          return key
+            ? {
+                requestId: Number(key),
+                decision: state?.decision ?? "Approve",
+                rejectReason: state?.rejectReason ?? "",
+              }
+            : null;
+        })
+        .filter((d): d is { requestId: number; decision: ApplicationDecision; rejectReason: string } => d !== null);
+
+      const nomineeChangeDecisions = selectedListNomineeChangeRequests
+        .map((nmr) => {
+          const key = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+          const state = selectedListNomineeChangeDecisions[key];
+          return key
+            ? {
+                requestId: Number(key),
+                decision: state?.decision ?? "Approve",
+                rejectReason: state?.rejectReason ?? "",
+              }
+            : null;
+        })
+        .filter((d): d is { requestId: number; decision: ApplicationDecision; rejectReason: string } => d !== null);
+
+      // The reason is mandatory on any rejected row, so catch it before the round trip.
+      const missingReason = [...nameChangeDecisions, ...nomineeChangeDecisions]
+        .find((d) => d.decision === "Reject" && !d.rejectReason.trim());
+      if (missingReason) {
+        setToastMessage("Enter a reject reason for every rejected request before proceeding.");
+        setShowProcessToast(true);
+        return;
+      }
 
       // Upload the scanned, signed approval sheet first (if attached) so the stored
       // key can be saved alongside the decision. A failed upload must not lose the
@@ -617,10 +799,12 @@ export default function BoardApprovalsPage() {
 
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
-        decision: listDecision,
+        ...(listDecision ? { decision: listDecision } : {}),
         boardRemarks,
         processedBy: "Super Admin User",
         ...(approvedListDocument ? { approvedListDocument } : {}),
+        ...(nameChangeDecisions.length > 0 ? { nameChangeDecisions } : {}),
+        ...(nomineeChangeDecisions.length > 0 ? { nomineeChangeDecisions } : {}),
       };
 
       const processedList = await processBoardApprovalList(selectedApprovalListId, payload);
@@ -709,7 +893,7 @@ export default function BoardApprovalsPage() {
           processedBy: processedList.processedBy ?? "Head Office User",
           processedAt: formatted,
           actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
-          decision: listDecision,
+          decision: listDecision ?? "Approve",
           rejectReason: "",
           boardRemarks: processedList.boardRemarks ?? boardRemarks,
         },
@@ -963,22 +1147,16 @@ export default function BoardApprovalsPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-medium text-gray-800">{item.listId}</p>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                item.kind === "termination"
-                                  ? "bg-[#f7ede8] text-[#953002]"
-                                  : "bg-blue-50 text-blue-700"
-                              }`}
+                              className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + CONTENT_BADGES[item.content].className}
                             >
-                              {item.kind === "termination" ? "Termination" : "Membership"}
+                              {CONTENT_BADGES[item.content].label}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {item.boardMeetingDate ?? "-"}
                             {item.boardMeetingId ? ` (${item.boardMeetingId})` : ""}
                             {item.itemCount
-                              ? ` · ${item.itemCount} ${
-                                  item.kind === "termination" ? "requests" : "applications"
-                                }`
+                              ? " · " + item.itemCount + " " + CONTENT_BADGES[item.content].noun
                               : ""}
                           </p>
                         </div>
@@ -1072,12 +1250,7 @@ export default function BoardApprovalsPage() {
                           variant="outline"
                           className="h-8 px-3"
                           onClick={() =>
-                            window.open(
-                              `/membership/board-approvals/print/${encodeURIComponent(
-                                selectedApprovalListId
-                              )}`,
-                              "_blank"
-                            )
+                            window.open(printPathFor(selectedApprovalListId), "_blank")
                           }
                           disabled={!selectedApprovalListId}
                         >
@@ -1099,6 +1272,132 @@ export default function BoardApprovalsPage() {
                     )}
 
                     <div className="overflow-x-auto">
+                        {selectedListNameChangeRequests.length > 0 && (
+                          <div className="mb-4">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Name Change Requests in this list</h3>
+                            <div className="space-y-2">
+                              {selectedListNameChangeRequests.map((ncr) => {
+                                const requestId = String(ncr.nameChangeRequestID ?? "");
+                                const decisionState = selectedListNameChangeDecisions[requestId] || { decision: "Approve", rejectReason: "" };
+                                return (
+                                  <div key={requestId} className="rounded border p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                          if (requestId) router.push(`/membership/name-changes/${requestId}`);
+                                        }}>{ncr.newFullName || `NCR-${requestId}`}</div>
+                                        <div className="text-xs text-muted-foreground">{ncr.newNameAsInPayroll || ncr.newNameWithInitials || ''}</div>
+                                      </div>
+                                      <div className="text-xs text-gray-500">ID: {requestId}</div>
+                                    </div>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+                                      <div>
+                                        <Select
+                                          value={decisionState.decision}
+                                          onValueChange={(value) =>
+                                            setSelectedListNameChangeDecisions((prev) => ({
+                                              ...prev,
+                                              [requestId]: {
+                                                ...(prev[requestId] || { rejectReason: "" }),
+                                                decision: value as ApplicationDecision,
+                                              },
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-10 w-full">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Approve">Approve</SelectItem>
+                                            <SelectItem value="Reject">Reject</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <Input
+                                        value={decisionState.rejectReason}
+                                        onChange={(e) =>
+                                          setSelectedListNameChangeDecisions((prev) => ({
+                                            ...prev,
+                                            [requestId]: {
+                                              ...(prev[requestId] || { decision: "Approve" }),
+                                              rejectReason: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="Reject reason"
+                                        disabled={decisionState.decision !== "Reject"}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {selectedListNomineeChangeRequests.length > 0 && (
+                          <div className="mb-4">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Nominee Change Requests in this list</h3>
+                            <div className="space-y-2">
+                              {selectedListNomineeChangeRequests.map((nmr) => {
+                                const requestId = String(nmr.id ?? nmr.nomineeChangeID ?? nmr.nommineChangeId ?? "");
+                                const decisionState = selectedListNomineeChangeDecisions[requestId] || { decision: "Approve", rejectReason: "" };
+                                return (
+                                  <div key={requestId} className="rounded border p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-800 hover:underline cursor-pointer" onClick={() => {
+                                          if (requestId) router.push(`/membership/nommine-changes/${requestId}`);
+                                        }}>
+                                          {nmr.newnommineName || `NMR-${requestId}`}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">{nmr.newRelationship || nmr.relationship || ''}</div>
+                                      </div>
+                                      <div className="text-xs text-gray-500">ID: {requestId}</div>
+                                    </div>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+                                      <div>
+                                        <Select
+                                          value={decisionState.decision}
+                                          onValueChange={(value) =>
+                                            setSelectedListNomineeChangeDecisions((prev) => ({
+                                              ...prev,
+                                              [requestId]: {
+                                                ...(prev[requestId] || { rejectReason: "" }),
+                                                decision: value as ApplicationDecision,
+                                              },
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-10 w-full">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Approve">Approve</SelectItem>
+                                            <SelectItem value="Reject">Reject</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <Input
+                                        value={decisionState.rejectReason}
+                                        onChange={(e) =>
+                                          setSelectedListNomineeChangeDecisions((prev) => ({
+                                            ...prev,
+                                            [requestId]: {
+                                              ...(prev[requestId] || { decision: "Approve" }),
+                                              rejectReason: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="Reject reason"
+                                        disabled={decisionState.decision !== "Reject"}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       <table className="w-full min-w-[560px] text-sm">
                         <thead>
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
@@ -1233,6 +1532,7 @@ export default function BoardApprovalsPage() {
                             )
                           }
                           onClick={handleOpenConfirmModal}
+                          hidden={!canProcess}
                         >
                           {isEditingProcessedList ? "Update" : "Proceed"}
                           <ArrowRight size={14} />
@@ -1531,6 +1831,7 @@ export default function BoardApprovalsPage() {
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700"
                   onClick={handleProcessBoardDecision}
+                  hidden={!canProcess}
                 >
                   <CheckSquare size={14} />
                   {isEditingProcessedList ? "Update" : "Process"}

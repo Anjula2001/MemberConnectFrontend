@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/src/components/ui/button";
 import {
@@ -28,6 +29,17 @@ import {
   SelectValue,
 } from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
+import { ShieldAlert } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  DELETE_RIGHTS_ROLES,
+  DORMANT_BOARD_ROLES,
+  DORMANT_CONFIG_ROLES,
+  DORMANT_IDENTIFICATION_ROLES,
+  DORMANT_VIEW_ROLES,
+  hasRole,
+  isDormantReadOnly,
+} from "@/lib/permissions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,6 +130,7 @@ function MultiSelect({
   onChange,
   allLabel = "All",
   width = "w-64",
+  disabled = false,
 }: {
   label: string;
   options: { value: string; label: string }[];
@@ -125,6 +138,8 @@ function MultiSelect({
   onChange: (values: string[]) => void;
   allLabel?: string;
   width?: string;
+  /** SRS 4.2.3: the Location filter is un-editable for a district-scoped user. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -163,15 +178,16 @@ function MultiSelect({
       <div className="relative" ref={ref}>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="truncate text-left">{summary}</span>
           <svg className="ml-2 h-4 w-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        {open && (
+        {open && !disabled && (
           <div className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-white p-1 shadow-md">
             <button
               type="button"
@@ -214,6 +230,18 @@ function MultiSelect({
 // ---------------------------------------------------------------------------
 
 export default function DormantMembersPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  // Server-side @PreAuthorize is the real gate; these keep a role that cannot
+  // use a control from being shown it and handed a 403.
+  const canSeeDormant = hasRole(user?.role, DORMANT_VIEW_ROLES);
+  const canManageLists = hasRole(user?.role, DORMANT_BOARD_ROLES);
+  const canRunIdentification = hasRole(user?.role, DORMANT_IDENTIFICATION_ROLES);
+  const canEditConfig = hasRole(user?.role, DORMANT_CONFIG_ROLES);
+  const canDeleteList = hasRole(user?.role, DELETE_RIGHTS_ROLES);
+  const readOnly = isDormantReadOnly(user?.role);
+
   const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Config
@@ -284,27 +312,50 @@ export default function DormantMembersPage() {
 
   const loadMetadata = useCallback(async () => {
     try {
-      const [locations, types, meetings] = await Promise.all([
+      const [locations, types] = await Promise.all([
         apiClient.get<string[]>(`${BASE}/locations`),
         apiClient.get<string[]>(`${BASE}/member-types`),
-        apiClient.get<BoardMeeting[]>(`/api/board-meetings/getAllBoardMeetings`),
       ]);
       setLocationOptions(locations.data);
       setMemberTypeOptions(types.data);
+    } catch (error) {
+      showBanner("error", getErrorMessage(error));
+    }
+
+    // Board meetings are a separate call, not part of the batch above.
+    // BoardMeetingController excludes the District Office outright, so batching
+    // the three meant one 403 rejected all of them and left a district user
+    // staring at two empty filter dropdowns and a generic error.
+    if (!canManageLists) {
+      setBoardMeetings([]);
+      return;
+    }
+
+    try {
+      const meetings = await apiClient.get<BoardMeeting[]>(
+        `/api/board-meetings/getAllBoardMeetings`
+      );
       setBoardMeetings(meetings.data ?? []);
     } catch (error) {
       showBanner("error", getErrorMessage(error));
     }
-  }, [showBanner]);
+  }, [showBanner, canManageLists]);
 
   const loadApprovalLists = useCallback(async () => {
+    // Approval lists are the board half (MMD14). A district user has no business
+    // here and would only be handed a 403 banner on page load.
+    if (!canManageLists) {
+      setApprovalLists([]);
+      return;
+    }
+
     try {
       const { data } = await apiClient.get<DormantApprovalList[]>(`${BASE}/approval-lists`);
       setApprovalLists(data);
     } catch (error) {
       showBanner("error", getErrorMessage(error));
     }
-  }, [showBanner]);
+  }, [showBanner, canManageLists]);
 
   useEffect(() => {
     loadConfig();
@@ -572,18 +623,46 @@ export default function DormantMembersPage() {
 
   const locationSelectOptions = locationOptions.map((l) => ({ value: l, label: l }));
 
+  // Server-side @PreAuthorize is the real gate; this keeps a role that cannot
+  // use the screen from being shown a page of failing requests.
+  if (user && !canSeeDormant) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
+        <ShieldAlert className="h-8 w-8 text-[#8B4513]" />
+        <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          Dormant Membership Profiles are restricted to Head Office and Board
+          Secretariat personnel, and to District Office users for their own
+          district.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#8B4513]">Dormant Members</h1>
-        <Button
-          onClick={handleRunIdentification}
-          disabled={running}
-          className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
-        >
-          {running ? "Identifying Members..." : "Run Identification Process"}
-        </Button>
+        {/* MMD11 names an "Authorized Head Office System User" — narrower than
+            the board list, so this is not gated on canManageLists. */}
+        {canRunIdentification && (
+          <Button
+            onClick={handleRunIdentification}
+            disabled={running}
+            className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
+          >
+            {running ? "Identifying Members..." : "Run Identification Process"}
+          </Button>
+        )}
       </div>
+
+      {readOnly && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          You have read-only access to the dormant members administered by your
+          district. Creating and approving Inactivation Approval Lists is done at
+          Head Office.
+        </div>
+      )}
 
       {banner && (
         <div
@@ -603,6 +682,12 @@ export default function DormantMembersPage() {
           <CardTitle className="text-lg text-[#8B4513]">Dormant Configuration</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
+          {!canEditConfig && (
+            <p className="mb-3 text-sm text-muted-foreground">
+              The dormancy period decides who is put forward for inactivation, so
+              it is maintained by the Super Admin. Shown here for reference.
+            </p>
+          )}
           {config ? (
             <div className="flex flex-wrap items-end gap-4">
               <div className="w-40">
@@ -613,6 +698,7 @@ export default function DormantMembersPage() {
                   type="number"
                   min={1}
                   value={config.dormantPeriodMonths}
+                  disabled={!canEditConfig}
                   onChange={(e) => setConfig({ ...config, dormantPeriodMonths: Number(e.target.value) })}
                 />
               </div>
@@ -625,6 +711,7 @@ export default function DormantMembersPage() {
                   min={1}
                   max={28}
                   value={config.scheduleDayOfMonth}
+                  disabled={!canEditConfig}
                   onChange={(e) => setConfig({ ...config, scheduleDayOfMonth: Number(e.target.value) })}
                 />
               </div>
@@ -635,6 +722,7 @@ export default function DormantMembersPage() {
                   min={0}
                   max={23}
                   value={config.scheduleHour}
+                  disabled={!canEditConfig}
                   onChange={(e) => setConfig({ ...config, scheduleHour: Number(e.target.value) })}
                 />
               </div>
@@ -645,20 +733,22 @@ export default function DormantMembersPage() {
                   min={0}
                   max={59}
                   value={config.scheduleMinute}
+                  disabled={!canEditConfig}
                   onChange={(e) => setConfig({ ...config, scheduleMinute: Number(e.target.value) })}
                 />
               </div>
               <label className="flex items-center gap-2 pb-2 text-sm font-medium">
                 <Checkbox
                   checked={config.enabled}
+                  disabled={!canEditConfig}
                   onCheckedChange={(v) => setConfig({ ...config, enabled: Boolean(v) })}
                 />
                 Scheduled run enabled
               </label>
               <Button
                 onClick={handleSaveConfig}
-                disabled={savingConfig}
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                disabled={!canEditConfig || savingConfig}
+                className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
               >
                 {savingConfig ? "Saving..." : "Save Configuration"}
               </Button>
@@ -676,12 +766,16 @@ export default function DormantMembersPage() {
         </CardHeader>
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
+            {/* SRS 4.2.3: un-editable when the user only has access to their
+                own district. The server pins it regardless — this just stops the
+                filter implying a choice that does not exist. */}
             <MultiSelect
               label="Location"
               options={locationSelectOptions}
               selected={selectedLocations}
               onChange={setSelectedLocations}
-              allLabel="All"
+              allLabel={readOnly ? user?.assignedDistrict ?? "Your district" : "All"}
+              disabled={readOnly}
             />
 
             <div className="w-48">
@@ -796,17 +890,14 @@ export default function DormantMembersPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-lg text-[#8B4513]">Dormant Members</CardTitle>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowApprovalLists(true);
-                  void loadApprovalLists();
-                }}
-              >
-                View Approval List
-              </Button>
-              {selectedMemberIds.length > 0 && (
+              {canManageLists && (
+                <Link href="/membership/dormant/approval-lists">
+                  <Button variant="outline" size="sm">
+                    View Approval Lists
+                  </Button>
+                </Link>
+              )}
+              {canManageLists && selectedMemberIds.length > 0 && (
                 <Button
                   onClick={handleOpenCreate}
                   className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
@@ -822,16 +913,19 @@ export default function DormantMembersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/20">
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={
-                      selectedMemberIds.length === selectableMembers.length &&
-                      selectableMembers.length > 0
-                    }
-                    onCheckedChange={toggleSelectAll}
-                    disabled={selectableMembers.length === 0}
-                  />
-                </TableHead>
+                {/* MMD13 is the board's to start; a district user reads only. */}
+                {canManageLists && (
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={
+                        selectedMemberIds.length === selectableMembers.length &&
+                        selectableMembers.length > 0
+                      }
+                      onCheckedChange={toggleSelectAll}
+                      disabled={selectableMembers.length === 0}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="font-semibold">Member ID</TableHead>
                 <TableHead className="font-semibold">Name</TableHead>
                 <TableHead className="font-semibold">NIC</TableHead>
@@ -846,7 +940,7 @@ export default function DormantMembersPage() {
             <TableBody>
               {loadingResults ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={canManageLists ? 10 : 9} className="text-center py-10 text-muted-foreground">
                     Retrieving dormant members...
                   </TableCell>
                 </TableRow>
@@ -856,13 +950,15 @@ export default function DormantMembersPage() {
                     m.status === "SELECTED_FOR_DORMANT" && !m.hasIndirectObligations;
                   return (
                     <TableRow key={m.memberId}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedMemberIds.includes(m.memberId)}
-                          onCheckedChange={() => toggleMember(m.memberId)}
-                          disabled={!selectable}
-                        />
-                      </TableCell>
+                      {canManageLists && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedMemberIds.includes(m.memberId)}
+                            onCheckedChange={() => toggleMember(m.memberId)}
+                            disabled={!selectable}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Link
                           href={`/membership/directory/${m.id}`}
@@ -908,7 +1004,7 @@ export default function DormantMembersPage() {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={canManageLists ? 10 : 9} className="text-center py-10 text-muted-foreground">
                     {hasSearched
                       ? "No dormant members match the selected filters."
                       : "Set your filters and click 'Retrieve' to view dormant members."}
@@ -919,321 +1015,6 @@ export default function DormantMembersPage() {
           </Table>
         </CardContent>
       </Card>
-
-      {/* Approval Lists modal */}
-      {showApprovalLists && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-lg">
-            <div className="flex items-start justify-between border-b px-6 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-[#8B4513]">
-                  Inactivation Approval Lists for Dormant Members
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Retrieve created lists and open one to approve/reject or inactivate.
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setShowApprovalLists(false)}>
-                Close
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap items-end gap-3 border-b px-6 py-4">
-              <div className="w-56">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  Board Meeting Date
-                </label>
-                <Select value={listDateFilter} onValueChange={setListDateFilter}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="thisMonth">This Month</SelectItem>
-                    <SelectItem value="lastMonth">Last Month</SelectItem>
-                    <SelectItem value="datePeriod">Date Period</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {listDateFilter === "datePeriod" && (
-                <>
-                  <div className="w-40">
-                    <label className="text-sm font-medium text-muted-foreground mb-2 block">From</label>
-                    <Input type="date" value={listFromDate} onChange={(e) => setListFromDate(e.target.value)} />
-                  </div>
-                  <div className="w-40">
-                    <label className="text-sm font-medium text-muted-foreground mb-2 block">To</label>
-                    <Input type="date" value={listToDate} onChange={(e) => setListToDate(e.target.value)} />
-                  </div>
-                </>
-              )}
-              <Button
-                onClick={handleRetrieveLists}
-                disabled={loadingLists}
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
-              >
-                {loadingLists ? "Retrieving..." : "Retrieve"}
-              </Button>
-            </div>
-
-            <div className="flex-1 overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/20">
-                    <TableHead className="font-semibold">List ID</TableHead>
-                    <TableHead className="font-semibold">Members</TableHead>
-                    <TableHead className="font-semibold">Board Meeting</TableHead>
-                    <TableHead className="font-semibold">Status</TableHead>
-                    <TableHead className="font-semibold">Decision</TableHead>
-                    <TableHead className="font-semibold text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredApprovalLists.length > 0 ? (
-                    filteredApprovalLists.map((list) => (
-                      <TableRow key={list.listId}>
-                        <TableCell className="font-medium">{list.listId}</TableCell>
-                        <TableCell>{list.memberIds.length}</TableCell>
-                        <TableCell>{formatDate(list.boardMeetingDate)}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{list.status}</Badge>
-                        </TableCell>
-                        <TableCell>{list.decision ?? "-"}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            <Button
-                              size="sm"
-                              className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
-                              onClick={() => setViewList(list)}
-                            >
-                              View
-                            </Button>
-                            {list.status !== "INACTIVATED" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-600"
-                                onClick={() => handleDeleteList(list)}
-                              >
-                                Delete List
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        No inactivation approval lists found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex justify-end border-t px-6 py-4">
-              <Button variant="outline" onClick={() => setShowApprovalLists(false)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Approval List modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-[#8B4513]">Create Inactivation Approval List</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {selectedMemberIds.length} Dormant Member(s) will be attached to the board meeting and
-              set to &quot;Sent for Dormant Approval&quot;.
-            </p>
-            <div className="mt-4">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Board Meeting</label>
-              <Select value={createBoardMeetingId} onValueChange={setCreateBoardMeetingId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select board meeting" />
-                </SelectTrigger>
-                <SelectContent>
-                  {boardMeetings.map((bm) => (
-                    <SelectItem key={bm.id} value={String(bm.id)}>
-                      {(bm.boardMeetingId ?? `Meeting ${bm.id}`) + " - " + formatDate(bm.scheduledDate)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowCreateModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateList}
-                disabled={creatingList || !createBoardMeetingId}
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
-              >
-                {creatingList ? "Creating..." : "Create"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View approval list modal */}
-      {viewList && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-lg">
-            <div className="flex items-start justify-between border-b px-6 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-[#8B4513]">
-                  Approval List - {viewList.listId}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {viewList.members.length} member(s)
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setViewList(null)}>
-                Close
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b px-6 py-4 text-sm md:grid-cols-3">
-              <div>
-                <span className="text-muted-foreground">Status</span>
-                <p className="font-medium">{viewList.status}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Board Meeting Date</span>
-                <p className="font-medium">{formatDate(viewList.boardMeetingDate)}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Decision</span>
-                <p className="font-medium">{viewList.decision ?? "-"}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Actual Meeting Date</span>
-                <p className="font-medium">{formatDate(viewList.actualMeetingDate)}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Processed By</span>
-                <p className="font-medium">{viewList.processedBy ?? "-"}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Created</span>
-                <p className="font-medium">{formatDate(viewList.createdAt)}</p>
-              </div>
-              {viewList.rejectReason && (
-                <div className="col-span-2 md:col-span-3">
-                  <span className="text-muted-foreground">Reject Reason</span>
-                  <p className="font-medium">{viewList.rejectReason}</p>
-                </div>
-              )}
-              {viewList.boardRemarks && (
-                <div className="col-span-2 md:col-span-3">
-                  <span className="text-muted-foreground">Board Remarks</span>
-                  <p className="font-medium">{viewList.boardRemarks}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-auto px-2 py-2">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/20">
-                    <TableHead className="font-semibold">Member ID</TableHead>
-                    <TableHead className="font-semibold">Name</TableHead>
-                    <TableHead className="font-semibold">NIC</TableHead>
-                    <TableHead className="font-semibold">Location</TableHead>
-                    <TableHead className="font-semibold">Last Activity</TableHead>
-                    <TableHead className="font-semibold">Selected Date</TableHead>
-                    <TableHead className="font-semibold">Status</TableHead>
-                    <TableHead className="font-semibold text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {viewList.members.length > 0 ? (
-                    viewList.members.map((m) => (
-                      <TableRow key={m.memberId}>
-                        <TableCell>
-                          <Link
-                            href={`/membership/directory/${m.id}`}
-                            className="font-medium text-[#8B4513] underline-offset-2 hover:underline"
-                          >
-                            {m.memberId}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{m.fullName}</TableCell>
-                        <TableCell>{m.nic}</TableCell>
-                        <TableCell>{m.location}</TableCell>
-                        <TableCell>{formatDate(m.lastActivityDate)}</TableCell>
-                        <TableCell>{formatDate(m.dormantSelectionDate)}</TableCell>
-                        <TableCell>{statusBadge(m.status)}</TableCell>
-                        <TableCell>
-                          {m.status === "SENT_FOR_DORMANT_APPROVAL" ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                size="sm"
-                                className="bg-green-700 hover:bg-green-800 text-white"
-                                onClick={() => handleMemberDecision(viewList, m, "Approve")}
-                              >
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-red-600"
-                                onClick={() => handleMemberDecision(viewList, m, "Reject")}
-                              >
-                                Reject
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="block text-right text-xs text-muted-foreground">
-                              {m.status === "INACTIVE_DORMANT" ? "Inactivated" : "-"}
-                            </span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
-                        No members in this list.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-6 py-4">
-              <Button
-                variant="outline"
-                onClick={() => printMembers(`Inactivation Approval List ${viewList.listId}`, viewList.members)}
-              >
-                Print
-              </Button>
-              <div className="flex flex-wrap items-center gap-2">
-                {viewList.status !== "INACTIVATED" && (
-                  <Button
-                    variant="outline"
-                    className="text-red-600"
-                    onClick={() => handleDeleteList(viewList)}
-                  >
-                    Delete List
-                  </Button>
-                )}
-                <Button variant="outline" onClick={() => setViewList(null)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Post-create confirmation (MMD13) */}
       {createdListInfo && (
@@ -1251,8 +1032,9 @@ export default function DormantMembersPage() {
               <Button
                 className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
                 onClick={() => {
-                  setViewList(createdListInfo.list);
+                  const listId = createdListInfo.list.listId;
                   setCreatedListInfo(null);
+                  router.push(`/membership/dormant/approval-lists?listId=${listId}`);
                 }}
               >
                 Yes

@@ -5,7 +5,7 @@ const BASE_PATH = "/api/audit";
 /** One entry in the Progress/history trail. */
 export interface AuditDTO {
   id?: number;
-  moduleName?: "MEMBER_APPLICATION" | "MEMBER";
+  moduleName?: string;
   referenceId?: number;
   actionName?: string;
   oldValue?: string | null;
@@ -14,6 +14,17 @@ export interface AuditDTO {
   /** Display name of whoever triggered the action. */
   actionBy?: string;
   actionAt?: string;
+}
+
+/**
+ * Newest audit entries across every module, for the dashboard's Recent Activity card.
+ * The backend clamps `limit` to 1..50.
+ */
+export async function getRecentActivity(limit = 5) {
+  const { data } = await apiClient.get<AuditDTO[]>(`${BASE_PATH}/recent`, {
+    params: { limit },
+  });
+  return data;
 }
 
 export async function getApplicationHistory(applicationId: number) {

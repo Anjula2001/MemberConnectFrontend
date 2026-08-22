@@ -8,20 +8,27 @@ import { Input } from "@/src/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/src/components/ui/table";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, X, } from "lucide-react";
+import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, ShieldAlert, X, } from "lucide-react";
+import { apiClient } from "@/lib/api/client";
+import { getEducationalDistricts } from "@/lib/api/education";
+import { useAuth } from "@/lib/auth-context";
+import {
+  BOARD_MEETING_VIEW_ROLES,
+  MEMBER_DEATH_ENTRY_ROLES,
+  MEMBER_DEATH_ONLY_ROLES,
+  MEMBER_DEATH_VIEW_ROLES,
+  TERMINATION_BOARD_ROLES,
+  TERMINATION_VIEW_ROLES,
+  hasRetPermission,
+  hasRole,
+  isLocationRestricted,
+} from "@/lib/permissions";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
   createTerminationApprovalList,
   type TerminationApprovalListDTO,
 } from "@/lib/api/terminationApprovalLists";
 import { searchRetirementRequests } from "@/lib/api/retirementRequests";
-import { useAuth } from "@/lib/auth-context";
-import {
-  BOARD_GOVERNANCE_ROLES,
-  hasRetPermission,
-  hasRole,
-  isLocationRestricted,
-} from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 interface TerminationRequest {
@@ -98,7 +105,6 @@ type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_
 type SortBy = "requestedDate" | "status" | "memberId";
 type SortOrder = "asc" | "desc";
 
-const API_BASE_URL = "http://localhost:8080";
 const TODAY = new Date().toISOString().split("T")[0];
 const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval",];
 const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
@@ -106,10 +112,14 @@ const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
   "rejected",
   "added_to_approval_list",
 ];
+// MMT19: "By default, New, Submitted for Approval, District Committee and P&D
+// Committee statuses will be selected." Those are the four that still need
+// somebody to act on them.
 const DEFAULT_MEMBER_DEATH_STATUSES: StatusType[] = [
   "new",
   "submitted_for_approval",
-  "incomplete",
+  "district-committee",
+  "pnd-committee",
 ];
 const TERMINATION_STATUS_LABELS: Record<string, string> = {
   NEW: "New",
@@ -249,17 +259,19 @@ function StatusMultiSelect({
 function LocationMultiSelect({
   selectedLocations,
   onLocationChange,
+  availableLocations,
   disabled = false,
 }: {
   selectedLocations: string[];
   onLocationChange: (locations: string[]) => void;
+  availableLocations: { id: string; name: string }[];
   /** SRS 3.2.2: a user with access to only their own district gets this un-editable. */
   disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const locationOptions = AVAILABLE_LOCATIONS.filter(
-    (location) => location.id !== "all"
+  const locationOptions = availableLocations.filter(
+    (location) => location.id !== ALL_LOCATIONS_OPTION.id
   );
 
   useEffect(() => {
@@ -337,58 +349,37 @@ function LocationMultiSelect({
   );
 }
 
+// Locations come from the Educational Districts master (/api/education/districts),
+// the same source the Member Directory filter uses, so the two screens can never
+// drift apart. "All Locations" is prepended locally as a UI convenience.
+const ALL_LOCATIONS_OPTION = { id: "all", name: "All Locations" };
+
 /**
- * Resolves the district stored on the user account onto an AVAILABLE_LOCATIONS id.
+ * Resolves the district stored on the user account onto one of the loaded options.
  *
- * `assignedDistrict` is a display name ("Nuwara Eliya"); the options below are keyed by
- * slug ("nuwara_eliya"). Matching on the name first and the slugified name second means
- * either shape on the account resolves, and an unrecognised district returns null so the
- * filter stays empty rather than silently pinning to the wrong place.
+ * `assignedDistrict` is a display name ("Nuwara Eliya") while the master's ids are
+ * whatever it returns, so the match is made case-insensitively against both id and
+ * name with spaces and underscores treated alike — either shape on the account
+ * resolves. An unrecognised district returns null so the filter stays empty rather
+ * than silently pinning to the wrong place.
  */
-const resolveLocationId = (district: string | null | undefined): string | null => {
+const resolveLocationId = (
+  district: string | null | undefined,
+  options: { id: string; name: string }[]
+): string | null => {
   if (!district?.trim()) return null;
 
-  const target = district.trim().toLowerCase();
-  const slug = target.replace(/\s+/g, "_");
+  const key = (value: string) => value.trim().toLowerCase().replace(/[\s_]+/g, " ");
+  const target = key(district);
 
-  const match = AVAILABLE_LOCATIONS.find(
+  const match = options.find(
     (location) =>
-      location.id !== "all" &&
-      (location.name.toLowerCase() === target || location.id === slug)
+      location.id !== ALL_LOCATIONS_OPTION.id &&
+      (key(location.id) === target || key(location.name) === target)
   );
 
   return match?.id ?? null;
 };
-
-// Location configuration
-const AVAILABLE_LOCATIONS = [
-  { id: "all", name: "All Locations" },
-  { id: "colombo", name: "Colombo" },
-  { id: "gampaha", name: "Gampaha" },
-  { id: "kalutara", name: "Kalutara" },
-  { id: "kandy", name: "Kandy" },
-  { id: "matale", name: "Matale" },
-  { id: "nuwara_eliya", name: "Nuwara Eliya" },
-  { id: "galle", name: "Galle" },
-  { id: "matara", name: "Matara" },
-  { id: "hambantota", name: "Hambantota" },
-  { id: "jaffna", name: "Jaffna" },
-  { id: "kilinochchi", name: "Kilinochchi" },
-  { id: "mannar", name: "Mannar" },
-  { id: "vavuniya", name: "Vavuniya" },
-  { id: "mullaitivu", name: "Mullaitivu" },
-  { id: "batticaloa", name: "Batticaloa" },
-  { id: "ampara", name: "Ampara" },
-  { id: "trincomalee", name: "Trincomalee" },
-  { id: "kurunegala", name: "Kurunegala" },
-  { id: "puttalam", name: "Puttalam" },
-  { id: "anuradhapura", name: "Anuradhapura" },
-  { id: "polonnaruwa", name: "Polonnaruwa" },
-  { id: "badulla", name: "Badulla" },
-  { id: "monaragala", name: "Monaragala" },
-  { id: "ratnapura", name: "Ratnapura" },
-  { id: "kegalle", name: "Kegalle" }
-];
 
 // Helper function to get current month date range
 const getCurrentMonthRange = () => {
@@ -413,8 +404,8 @@ const getThisAndLastMonthRange = () => {
 };
 
 export default function TerminationPage() {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
-  const { user } = useAuth();
 
   // This screen lists three request types; only Retirement is access-controlled so far,
   // so the checks below are scoped to retirement rows and the retirement fetch. The
@@ -426,19 +417,52 @@ export default function TerminationPage() {
   // territory — BoardMeetingController carries the matching @PreAuthorize. District
   // Office can now reach this screen for the retirement list, so everything hanging off
   // the board-meeting flow has to be gated or it 403s on mount.
-  const canManageApprovalLists = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
 
   // SRS 3.2.2: "If the logged in user has only access to the current district location,
   // this field will be un-editable and the current location will be auto selected."
   // District Office is the only role that lands here.
   const locationRestricted = isLocationRestricted(user?.role);
-  const pinnedLocationId = resolveLocationId(user?.assignedDistrict);
+
+  // MMT23 / MMT24 send the District and P&D Committees to this same screen, but
+  // Member Deaths are the only thing they are actors for. Pinning the type filter
+  // keeps "All" from firing termination and retirement calls their role is
+  // rightly refused.
+  const isMemberDeathOnlyUser = hasRole(user?.role, MEMBER_DEATH_ONLY_ROLES);
+  const canViewTerminationsAndRetirements = hasRole(user?.role, TERMINATION_VIEW_ROLES);
+  const canViewMemberDeaths = hasRole(user?.role, MEMBER_DEATH_VIEW_ROLES);
+  const canEditMemberDeaths = hasRole(user?.role, MEMBER_DEATH_ENTRY_ROLES);
 
   //Fiter state value
-  const [requestType, setRequestType] = useState<RequestType>("all");
-  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(DEFAULT_RETIREMENT_STATUSES);
+  const [requestType, setRequestType] = useState<RequestType>(
+    isMemberDeathOnlyUser ? "member_deaths" : "all"
+  );
+  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(
+    isMemberDeathOnlyUser ? DEFAULT_MEMBER_DEATH_STATUSES : DEFAULT_RETIREMENT_STATUSES
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [availableLocations, setAvailableLocations] = useState([ALL_LOCATIONS_OPTION]);
+  // SRS 3.2.2 again: the option a location-restricted user is pinned to. Resolved
+  // against the loaded master, so it settles once the districts arrive.
+  const pinnedLocationId = resolveLocationId(user?.assignedDistrict, availableLocations);
+
+  useEffect(() => {
+    let cancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (cancelled) return;
+        setAvailableLocations([
+          ALL_LOCATIONS_OPTION,
+          ...districts.map((district) => ({ id: district, name: district })),
+        ]);
+      })
+      .catch(() => {
+        /* leave the master unloaded - the filter simply offers no districts */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -459,8 +483,12 @@ export default function TerminationPage() {
   const [approvalListError, setApprovalListError] = useState("");
   const showRequestTypeColumn = requestType === "all";
   const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
+  // Creating and viewing Termination Approval Lists is the board half of the
+  // flow (MMT05/MMT06) - a District Office user raises requests but never
+  // assembles them for a Board Meeting.
   const showApprovalListActions =
-    requestType === "termination" && canManageApprovalLists;
+    requestType === "termination" && hasRole(user?.role, TERMINATION_BOARD_ROLES);
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
 
   const selectableRowIds = requests
     .filter(
@@ -499,10 +527,15 @@ export default function TerminationPage() {
     }
   }, [locationRestricted, pinnedLocationId]);
 
+  // Board meetings feed the approval-list modal only, and that modal is board
+  // roles' business (showApprovalListActions above). Fetching them unconditionally
+  // earned every District Office user a 403 on page load, since
+  // BoardMeetingController refuses the role outright. Waiting on isAuthLoading
+  // matters: AuthProvider hydrates `user` from localStorage in its own effect, so
+  // a bare role check here would run against a null user and skip the fetch for
+  // everyone.
   useEffect(() => {
-    if (!canManageApprovalLists) {
-      return;
-    }
+    if (isAuthLoading || !canViewBoardMeetings) return;
 
     const loadBoardMeetings = async () => {
       try {
@@ -514,7 +547,7 @@ export default function TerminationPage() {
     };
 
     loadBoardMeetings();
-  }, [canManageApprovalLists]);
+  }, [isAuthLoading, canViewBoardMeetings]);
 
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
@@ -624,7 +657,7 @@ export default function TerminationPage() {
 
     selectedLocations.forEach((locId) => {
       if (locId !== "all") {
-        const locObj = AVAILABLE_LOCATIONS.find((l) => l.id === locId);
+        const locObj = availableLocations.find((l) => l.id === locId);
         const nameToSend = locObj ? locObj.name : locId;
         params.append("locations", nameToSend);
       }
@@ -652,22 +685,22 @@ export default function TerminationPage() {
     params.append("sortBy", sortBy);
     params.append("sortOrder", sortOrder);
 
+    // "All Locations" means no restriction, so it is not sent. The server
+    // overrides this entirely for District Office users - see
+    // TerminationService.resolveVisibleLocations.
+    selectedLocations
+      .filter((location) => location !== ALL_LOCATIONS_OPTION.id)
+      .forEach((location) => params.append("locations", location));
+
     return params;
   };
 
   const fetchMemberDeathRequestsFromApi = async (
     statuses: StatusType[] = selectedStatuses
   ) => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/member-death-records?${buildQueryParams(statuses).toString()}`
+    const { data } = await apiClient.get<TerminationRequestApiRow[]>(
+      `/api/member-death-records?${buildQueryParams(statuses).toString()}`
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || "Failed to retrieve member death records.");
-    }
-
-    const data = (await response.json()) as TerminationRequestApiRow[];
     return normalizeMemberDeathRows(data);
   };
 
@@ -676,16 +709,9 @@ export default function TerminationPage() {
     sourceType: "termination" | "retirement",
     statuses: StatusType[] = selectedStatuses
   ) => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/${apiPath}?${buildQueryParams(statuses).toString()}`
+    const { data } = await apiClient.get<TerminationRequestApiResponse>(
+      `/api/${apiPath}?${buildQueryParams(statuses).toString()}`
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || "Failed to retrieve requests.");
-    }
-
-    const data = (await response.json()) as TerminationRequestApiResponse;
     return normalizeApiRows(data, sourceType);
   };
 
@@ -847,26 +873,12 @@ export default function TerminationPage() {
   };
 
   const handleEditRequest = (request: TerminationRequest) => {
-    if (request.sourceType === "member_death") {
-      router.push(
-        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
-      );
-      return;
-    }
-
     router.push(
       `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=edit`
     );
   };
 
   const handleOpenRequest = (request: TerminationRequest) => {
-    if (request.sourceType === "member_death") {
-      router.push(
-        `${getRequestBasePath(request.sourceType)}?memberId=${encodeURIComponent(request.memberNumber)}`
-      );
-      return;
-    }
-
     router.push(
       `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
     );
@@ -982,6 +994,26 @@ export default function TerminationPage() {
     fetchRequests();
   };
 
+  // Server-side @PreAuthorize is the real gate; this keeps a role that cannot
+  // use the screen from being shown a page of failing requests.
+  //
+  // The District and P&D Committees reach this screen for Member Deaths only
+  // (MMT23 / MMT24) - they are not termination or retirement actors, so they are
+  // admitted here and then pinned to the Member Deaths type below.
+  if (user && !canViewTerminationsAndRetirements && !canViewMemberDeaths) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600 shadow-sm">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
+        <p className="mt-2 max-w-md text-sm text-neutral-500">
+          Termination, Retirement and Member Death requests are restricted to District Office and Head Office personnel.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
@@ -1018,6 +1050,7 @@ export default function TerminationPage() {
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
             <LocationMultiSelect
               selectedLocations={selectedLocations}
+              availableLocations={availableLocations}
               onLocationChange={setSelectedLocations}
               disabled={locationRestricted}
             />
@@ -1030,12 +1063,18 @@ export default function TerminationPage() {
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="termination">Termination</SelectItem>
-                {canViewRetirement && (
-                  <SelectItem value="retirement">Retirement</SelectItem>
+                {canViewTerminationsAndRetirements && (
+                  <>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="termination">Termination</SelectItem>
+                    {canViewRetirement && (
+                      <SelectItem value="retirement">Retirement</SelectItem>
+                    )}
+                  </>
                 )}
-                <SelectItem value="member_deaths">Member Deaths</SelectItem>
+                {canViewMemberDeaths && (
+                  <SelectItem value="member_deaths">Member Deaths</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -1247,8 +1286,14 @@ export default function TerminationPage() {
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
+                      {/* MMT19: the Edit icon appears only when the record is not
+                          submitted AND the user has edit rights for that kind of
+                          record. For Member Death rows that means the District
+                          Office, the sole MMT21 actor — a committee reads a record,
+                          it never edits one. */}
                       {!NON_EDITABLE_STATUSES.includes(request.status) &&
-                        (request.sourceType !== "retirement" || canEditRetirement) && (
+                        (request.sourceType !== "retirement" || canEditRetirement) &&
+                        (request.sourceType !== "member_death" || canEditMemberDeaths) && (
                           <Button variant="ghost" size="sm"
                             onClick={() => handleEditRequest(request)}
                             className="h-8 w-8 p-0">

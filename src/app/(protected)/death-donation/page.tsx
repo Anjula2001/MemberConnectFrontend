@@ -35,6 +35,9 @@ import {
   searchDeathDonationRequests,
   type DeathDonationRequest,
 } from "@/lib/api/deathDonation";
+import { getEducationalDistricts } from "@/lib/api/education";
+import { useAuth } from "@/lib/auth-context";
+import { DEATH_DONATION_VIEW_ROLES, hasRole } from "@/lib/permissions";
 
 const TODAY = new Date().toISOString().split("T")[0];
 
@@ -104,34 +107,13 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   INACTIVE: "bg-gray-100 text-gray-700 hover:bg-gray-100",
 };
 
-const AVAILABLE_LOCATIONS = [
-  { id: "all", name: "All Locations" },
-  { id: "colombo", name: "Colombo" },
-  { id: "gampaha", name: "Gampaha" },
-  { id: "kalutara", name: "Kalutara" },
-  { id: "kandy", name: "Kandy" },
-  { id: "matale", name: "Matale" },
-  { id: "nuwara_eliya", name: "Nuwara Eliya" },
-  { id: "galle", name: "Galle" },
-  { id: "matara", name: "Matara" },
-  { id: "hambantota", name: "Hambantota" },
-  { id: "jaffna", name: "Jaffna" },
-  { id: "kilinochchi", name: "Kilinochchi" },
-  { id: "mannar", name: "Mannar" },
-  { id: "vavuniya", name: "Vavuniya" },
-  { id: "mullaitivu", name: "Mullaitivu" },
-  { id: "batticaloa", name: "Batticaloa" },
-  { id: "ampara", name: "Ampara" },
-  { id: "trincomalee", name: "Trincomalee" },
-  { id: "kurunegala", name: "Kurunegala" },
-  { id: "puttalam", name: "Puttalam" },
-  { id: "anuradhapura", name: "Anuradhapura" },
-  { id: "polonnaruwa", name: "Polonnaruwa" },
-  { id: "badulla", name: "Badulla" },
-  { id: "monaragala", name: "Monaragala" },
-  { id: "ratnapura", name: "Ratnapura" },
-  { id: "kegalle", name: "Kegalle" },
-];
+// Locations come from the Educational Districts master (/api/education/districts),
+// the same source the Member Directory and Termination filters use, so the three
+// screens cannot drift apart. This list used to be 25 district names hardcoded
+// here as lowercase slugs, which the server can no longer match: MMD02 scoping
+// now compares the request's submission_location by equality, so the filter has
+// to send real district names.
+const ALL_LOCATIONS_OPTION = { id: "all", name: "All Locations" };
 
 function getCurrentMonthRange() {
   const now = new Date();
@@ -156,13 +138,20 @@ function getThisAndLastMonthRange() {
 function LocationMultiSelect({
   selectedLocations,
   onLocationChange,
+  availableLocations,
+  disabled = false,
 }: {
   selectedLocations: string[];
   onLocationChange: (locations: string[]) => void;
+  availableLocations: { id: string; name: string }[];
+  /** A District Office user is pinned to their own district and cannot widen it. */
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const locationOptions = AVAILABLE_LOCATIONS.filter((location) => location.id !== "all");
+  const locationOptions = availableLocations.filter(
+    (location) => location.id !== ALL_LOCATIONS_OPTION.id
+  );
   const isAllSelected =
     selectedLocations.length === 0 || selectedLocations.includes("all");
 
@@ -202,14 +191,15 @@ function LocationMultiSelect({
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-50 mt-1 w-full rounded-md border border-gray-300 bg-white shadow-lg">
           <div className="max-h-64 overflow-y-auto p-2">
             <label className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 hover:bg-gray-100">
@@ -328,6 +318,43 @@ export default function DeathDonationPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [availableLocations, setAvailableLocations] = useState([ALL_LOCATIONS_OPTION]);
+
+  const { user } = useAuth();
+  const canViewDonations = hasRole(user?.role, DEATH_DONATION_VIEW_ROLES);
+
+  // A District Office user only ever sees their own district (MMD02). The server
+  // pins this regardless, ignoring whatever the client asks for; showing the
+  // filter as fixed keeps the screen honest about what it will return rather
+  // than offering a choice that is silently overridden.
+  const pinnedDistrict =
+    user?.role === "DISTRICT_OFFICE" ? user?.assignedDistrict ?? null : null;
+
+  useEffect(() => {
+    if (!canViewDonations) return;
+
+    let cancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (cancelled) return;
+        setAvailableLocations([
+          ALL_LOCATIONS_OPTION,
+          ...districts.map((district) => ({ id: district, name: district })),
+        ]);
+      })
+      .catch(() => {
+        /* leave the master unloaded - the filter simply offers no districts */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewDonations]);
+
+  useEffect(() => {
+    if (pinnedDistrict) {
+      setSelectedLocations([pinnedDistrict]);
+    }
+  }, [pinnedDistrict]);
 
   const buildSearchParams = () => {
     const params: {
@@ -421,29 +448,23 @@ export default function DeathDonationPage() {
   const getStatusIndicators = (status?: string) => {
     if (status === "SUBMITTED_FOR_APPROVAL") {
       return (
-        <Send
-          className="h-4 w-4 text-green-700"
-          aria-label="Submitted for approval"
-          title="Submitted for approval"
-        />
+        <span title="Submitted for approval">
+          <Send className="h-4 w-4 text-green-700" aria-label="Submitted for approval" />
+        </span>
       );
     }
     if (status === "DISTRICT_COMMITTEE") {
       return (
-        <Building2
-          className="h-4 w-4 text-yellow-700"
-          aria-label="District Committee"
-          title="District Committee"
-        />
+        <span title="District Committee">
+          <Building2 className="h-4 w-4 text-yellow-700" aria-label="District Committee" />
+        </span>
       );
     }
     if (status === "PD_COMMITTEE" || status === "P_AND_D_COMMITTEE") {
       return (
-        <Landmark
-          className="h-4 w-4 text-blue-700"
-          aria-label="P&D Committee"
-          title="P&D Committee"
-        />
+        <span title="P&D Committee">
+          <Landmark className="h-4 w-4 text-blue-700" aria-label="P&D Committee" />
+        </span>
       );
     }
     return <span className="text-muted-foreground">-</span>;
@@ -476,6 +497,25 @@ export default function DeathDonationPage() {
   const canEdit = (status?: string) =>
     !!status && !NON_EDITABLE_STATUSES.includes(status as DeathDonationStatus);
 
+  // SRS Requirement 05 names only the District Office and Head Office System
+  // Users as actors. Everyone else is turned away here as well as by the server,
+  // so a role that reaches the URL directly gets an explanation rather than a
+  // screen full of 403s.
+  if (user && !canViewDonations) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-6 text-center">
+        <h1 className="text-xl font-bold text-gray-800">Access Restricted</h1>
+        <p className="max-w-md text-sm text-gray-500">
+          Death Donation requests are restricted to District Office, District and P&amp;D
+          Committee, and Head Office personnel.
+        </p>
+        <Button variant="outline" onClick={() => router.back()}>
+          Go Back
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div>
@@ -495,6 +535,8 @@ export default function DeathDonationPage() {
               <LocationMultiSelect
                 selectedLocations={selectedLocations}
                 onLocationChange={setSelectedLocations}
+                availableLocations={availableLocations}
+                disabled={!!pinnedDistrict}
               />
             </div>
 

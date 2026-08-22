@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ChevronDown, Eye, Pencil, RotateCcw, Search } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { canAccessFundRequests, canSelectAllLocations } from "@/lib/permissions";
+import AccessRestricted from "@/src/components/AccessRestricted";
 
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -15,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/src/components/ui/select";
+import { authFetch } from "@/lib/api/authFetch";
 
 type ScholarshipFundRequest = {
   id?: number | string;
@@ -37,6 +41,7 @@ type ScholarshipRow = {
   universityName?: string;
   nic?: string;
   address?: string;
+  submissionLocation?: string;
   fundRequests?: ScholarshipFundRequest[];
 };
 
@@ -185,9 +190,13 @@ function MultiSelect({
   const label =
     selected.length === 0
       ? placeholder
-      : selected.length === options.length
-        ? "All Selected"
-        : `${selected.length} Selected`;
+      : selected.length === 1
+        ? (options.find(
+          (o) => o.value.toLowerCase() === selected[0].toLowerCase()
+        )?.label ?? selected[0])
+        : selected.length === options.length
+          ? "All Selected"
+          : `${selected.length} Selected`;
 
   return (
     <div ref={ref} className="relative">
@@ -227,6 +236,9 @@ function MultiSelect({
 }
 
 export default function UniversityScholarshipFundRequestsPage() {
+  const { user } = useAuth();
+  const canViewFundRequests = canAccessFundRequests(user?.role);
+
   const [requests, setRequests] = useState<FundRequestRow[]>([]);
   const [displayed, setDisplayed] = useState<FundRequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -241,8 +253,8 @@ export default function UniversityScholarshipFundRequestsPage() {
   const [sortBy, setSortBy] = useState("requested-date");
   const [sortAsc, setSortAsc] = useState(true);
 
-  const hasMultipleLocationAccess = true;
-  const currentLocation = "colombo";
+  const hasMultipleLocationAccess = canSelectAllLocations(user?.role);
+  const currentLocation = user?.assignedDistrict ?? "";
   const isLocationFilterDisabled = !hasMultipleLocationAccess;
   const hasEditRights = true;
 
@@ -257,8 +269,13 @@ export default function UniversityScholarshipFundRequestsPage() {
 
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((request) => {
-        const location = (request.location || "").toLowerCase().trim();
-        return selectedLocations.some((selected) => location.includes(selected.toLowerCase().trim()));
+        const requestLocation = (request.location || "").toLowerCase().trim();
+        if (!requestLocation) {
+          return false;
+        }
+        return selectedLocations.some(
+          (selected) => requestLocation === selected.toLowerCase().trim()
+        );
       });
     }
 
@@ -364,7 +381,7 @@ export default function UniversityScholarshipFundRequestsPage() {
     try {
       setIsLoading(true);
 
-      const response = await fetch("http://localhost:8080/api/university-scholarships");
+      const response = await authFetch("http://localhost:8080/api/university-scholarships");
       if (!response.ok) {
         throw new Error("Failed to retrieve university scholarship fund requests");
       }
@@ -382,7 +399,7 @@ export default function UniversityScholarshipFundRequestsPage() {
           memberId: scholarship.memberId,
           universityName: scholarship.universityName,
           nic: scholarship.nic,
-          location: scholarship.address,
+          location: scholarship.submissionLocation,
         }));
       });
 
@@ -397,6 +414,16 @@ export default function UniversityScholarshipFundRequestsPage() {
       setIsLoading(false);
     }
   };
+
+  if (user && !canViewFundRequests) {
+    return (
+      <AccessRestricted
+        message="University Scholarship Fund Requests are restricted to Head Office, Board Secretariat, Scholarship and Accounts personnel."
+        fallbackHref="/scholarships/university"
+        fallbackLabel="Back to University Scholarships"
+      />
+    );
+  }
 
   return (
     <div className="p-6">

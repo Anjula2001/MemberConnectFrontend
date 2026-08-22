@@ -16,6 +16,18 @@ apiClient.interceptors.request.use((config) => {
       config.headers["Authorization"] = `Bearer ${token}`;
     }
   }
+
+  // File uploads must carry their own multipart boundary, and the browser only
+  // generates one when the Content-Type header is absent. The instance-wide
+  // application/json default above would otherwise survive onto a FormData body
+  // and the server would reject the request as "Current request is not a
+  // multipart request". Clearing it here lets axios set the correct type per
+  // request, and keeps every upload in the app on one rule rather than each
+  // caller remembering to override the header itself.
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    config.headers.delete("Content-Type");
+  }
+
   return config;
 });
 

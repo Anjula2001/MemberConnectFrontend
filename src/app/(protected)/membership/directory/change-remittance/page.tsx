@@ -1,7 +1,5 @@
 "use client";
 
-"use client";
-
 import { useSearchParams } from "next/navigation";
 import RemittanceChangePage from "@/src/components/RemitanceAmountChange/page";
 

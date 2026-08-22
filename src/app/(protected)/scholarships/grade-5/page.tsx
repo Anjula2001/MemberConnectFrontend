@@ -8,8 +8,8 @@ import AccessRestricted from "@/src/components/AccessRestricted";
 import { getEducationalDistricts } from "@/lib/api/education";
 import {
   canAccessGrade5,
-  canSelectAllG5Locations,
-  hasG5Permission,
+  canSelectAllLocations,
+  hasPermission,
 } from "@/lib/permissions";
 
 const API_BASE_URL = "http://localhost:8080";
@@ -252,10 +252,11 @@ export default function Grade5ScholarshipRequestsListPage() {
   // guard only asks "may you see Grade 5 at all", and each control is gated
   // separately below.
   const canViewPage = canAccessGrade5(user?.role);
-  const loggedUserCanEdit = hasG5Permission(user?.role, "G5_REQUEST_EDIT");
-  const canCreateApprovalLists = hasG5Permission(user?.role, "G5_LIST_CREATE");
-  const canViewApprovalLists = hasG5Permission(user?.role, "G5_LIST_VIEW");
-  const userHasMultipleLocations = canSelectAllG5Locations(user?.role);
+  const loggedUserCanEdit = hasPermission(user?.role, "G5_REQUEST_EDIT");
+  const canCreateApprovalLists = hasPermission(user?.role, "G5_LIST_CREATE");
+  const canViewApprovalLists = hasPermission(user?.role, "G5_LIST_VIEW");
+  const canManageExamMaster = hasPermission(user?.role, "G5_EXAM_MASTER_MANAGE");
+  const userHasMultipleLocations = canSelectAllLocations(user?.role);
 
   const [locations, setLocations] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);

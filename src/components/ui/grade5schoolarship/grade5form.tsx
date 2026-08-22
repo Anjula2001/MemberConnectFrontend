@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
+import { authFetch } from "@/lib/api/authFetch";
 
 interface Grade5FormProps {
   memberId: string;
@@ -184,7 +185,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
     useEffect(() => {
       const fetchExamYears = async () => {
         try {
-          const res = await fetch("http://localhost:8080/api/grade5/exam-years");
+          const res = await authFetch("http://localhost:8080/api/grade5/exam-years");
 
           if (!res.ok) {
             throw new Error("Failed to load exam years");
@@ -235,7 +236,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       const timeout = setTimeout(() => {
         const fetchCutoff = async () => {
           try {
-            const res = await fetch(
+            const res = await authFetch(
               `http://localhost:8080/api/cutoff?district=${encodeURIComponent(
                 selectedDistrict
               )}&year=${selectedYear}`
@@ -293,7 +294,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       try {
         setCheckingExamNo(true);
 
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/grade5/exists?examNo=${encodeURIComponent(
             examNo
           )}`
@@ -424,7 +425,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       const isUpdate = !!requestNo;
 
       try {
-        const res = await fetch(
+        const res = await authFetch(
           isUpdate
             ? `http://localhost:8080/api/grade5/${requestNo}/update`
             : `http://localhost:8080/api/grade5/save?memberId=${encodeURIComponent(memberIdRef.current)}`,
