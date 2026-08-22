@@ -198,7 +198,11 @@ export default function ChangeMemberTransferForm() {
 
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
-  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
+  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED" | "INACTIVE">("NEW");
+
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [statusChangeTarget, setStatusChangeTarget] = useState<"INACTIVE" | "">("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
@@ -231,6 +235,15 @@ export default function ChangeMemberTransferForm() {
 
   const isExistingRequest = Boolean(requestKey);
   const isBlockedByInFlightRequest = !isExistingRequest && inFlightRequestId !== null;
+
+  // A request awaiting approval, or one that was rejected, may be made Inactive.
+  // Nothing else moves: an approved transfer is already written onto the member's
+  // profile, and an inactive request is closed.
+  const STATUS_CHANGE_TARGETS: Record<string, ("INACTIVE")[]> = {
+    SUBMITTEDFORAPPROVAL: ["INACTIVE"],
+    REJECTED: ["INACTIVE"],
+  };
+  const availableStatusTargets = STATUS_CHANGE_TARGETS[status] || [];
   const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
@@ -1010,6 +1023,61 @@ export default function ChangeMemberTransferForm() {
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
   const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
   const showRequestStatus = Boolean(requestId || isExistingRequest);
+  const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
+
+  const formatStatusLabel = (value: string) =>
+    value === "SUBMITTEDFORAPPROVAL"
+      ? "Submitted for Approval"
+      : value.charAt(0) + value.slice(1).toLowerCase();
+
+  const executeStatusChange = async () => {
+    if (!statusChangeTarget || isChangingStatus) return;
+
+    const actionId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
+    if (!actionId) {
+      setPopupMessage("The request must be saved before its status can be changed");
+      setShowPopup(true);
+      return;
+    }
+
+    setIsChangingStatus(true);
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/member-transfers/${encodeURIComponent(String(actionId))}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: statusChangeTarget }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        let message = "Failed to change status";
+        try {
+          message = JSON.parse(text).message || message;
+        } catch { }
+        setPopupMessage(message);
+        setShowPopup(true);
+        return;
+      }
+
+      const updated = await res.json();
+      const nextStatus = updated.status || statusChangeTarget;
+      setStatus(nextStatus);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setShowStatusChangeModal(false);
+      setStatusChangeTarget("");
+      setPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Status change failed:", error);
+      setPopupMessage("Failed to change status");
+      setShowPopup(true);
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
 
   if (loading) return <div className="p-6">Loading...</div>;
 
@@ -1042,6 +1110,19 @@ export default function ChangeMemberTransferForm() {
           </div>
 
           <div className="flex gap-2">
+            {canChangeStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStatusChangeTarget(availableStatusTargets[0]);
+                  setShowStatusChangeModal(true);
+                }}
+              >
+                Change Status
+              </Button>
+            )}
+
             {isViewMode && isEditableStatus && (
               <Button type="button" variant="outline" onClick={handleEnterEditMode}>
                 Edit
@@ -1427,6 +1508,65 @@ export default function ChangeMemberTransferForm() {
           </div>
         );
       })()}
+
+      {showStatusChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <h3 className="mb-2 text-xl font-bold text-[#953002] text-center">
+              Change Status
+            </h3>
+
+            <p className="mb-4 text-sm text-gray-600 text-center">
+              Current status:{" "}
+              <span className="font-semibold text-gray-800">{formatStatusLabel(status)}</span>
+            </p>
+
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Change to</label>
+              {availableStatusTargets.map((target) => (
+                <label
+                  key={target}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="memberTransferStatusChangeTarget"
+                    value={target}
+                    checked={statusChangeTarget === target}
+                    onChange={() => setStatusChangeTarget(target)}
+                  />
+                  <span className="font-medium text-gray-800">{formatStatusLabel(target)}</span>
+                  {target === "INACTIVE" && (
+                    <span className="ml-auto text-xs text-gray-500">Requires Inactive rights</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-center gap-3 border-t border-gray-100 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowStatusChangeModal(false);
+                  setStatusChangeTarget("");
+                }}
+                className="w-28 rounded-lg text-sm font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeStatusChange}
+                disabled={!statusChangeTarget || isChangingStatus}
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+              >
+                {isChangingStatus ? "Saving..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSubmitConfirmModal && (() => {
         const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
