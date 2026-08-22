@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
@@ -85,6 +85,48 @@ type FundRequestRow = {
   disbursementDate?: string;
   status?: string;
 };
+
+// Fields compared against the saved record to decide whether the form has
+// unsaved changes. "duration" is left out: it is read-only and re-fetched from
+// the API whenever university/program changes, which are tracked already.
+const CHANGE_TRACKED_FIELDS = [
+  "requestDate",
+  "studentName",
+  "nic",
+  "bcNo",
+  "address",
+  "mobile",
+  "isSchoolApplicant",
+  "examYear",
+  "examNo",
+  "zscore",
+  "university",
+  "program",
+  "academicYearStart",
+  "accountNo",
+  "bank",
+  "branch",
+  "hasMinorAccount",
+  "minorAccountMonths",
+  "specialDegree",
+] as const;
+
+// Subset editable while an approved request is in "Edit Details" mode
+const APPROVED_DETAIL_FIELDS = [
+  "academicYearStart",
+  "hasMinorAccount",
+  "minorAccountMonths",
+  "specialDegree",
+  "bank",
+  "branch",
+  "accountNo",
+] as const;
+
+const BOOLEAN_FIELDS: (keyof FormData)[] = ["isSchoolApplicant", "specialDegree"];
+
+// Dropdowns are filled in by effects once their option lists arrive, so an
+// empty value against a non-empty baseline means "not populated yet"
+const LOOKUP_FIELDS: (keyof FormData)[] = ["university", "program", "bank", "branch"];
 
 export default function StudentExamSection() {
   const router = useRouter();
@@ -177,6 +219,10 @@ export default function StudentExamSection() {
   const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
   const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
+  // Incomplete / Save / Submit belong to the create and edit flows only —
+  // hidden in view mode and while editing an approved request's details
+  const showEditActions = !isViewMode && !isApprovedDetailsEditMode;
+
   const {
     register,
     handleSubmit,
@@ -184,7 +230,7 @@ export default function StudentExamSection() {
     getValues,
     setValue,
     reset,
-    formState: { errors, isValid, isDirty },
+    formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
@@ -200,6 +246,70 @@ export default function StudentExamSection() {
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
   const selectedExamNo = watch("examNo");
+
+  // Values currently persisted for this request. The Save / Update buttons stay
+  // disabled until a tracked field differs from this baseline.
+  const [savedSnapshot, setSavedSnapshot] = useState<FormData | null>(null);
+
+  const recordBaseline = useMemo(() => {
+    const matchByName = (list: any[], key: string, name?: string | null) =>
+      list.find(
+        (item) =>
+          item[key]?.toString().trim().toLowerCase() ===
+          name?.toString().trim().toLowerCase()
+      );
+
+    const university = matchByName(universities, "name", loadedRecord?.universityName);
+    const program = matchByName(programs, "programName", loadedRecord?.programName);
+    const bank = matchByName(banks, "name", loadedRecord?.bankName);
+    const branch = matchByName(branches, "name", loadedRecord?.branchName);
+
+    return {
+      requestDate: loadedRecord?.requestDate || "",
+      studentName: loadedRecord?.studentName || "",
+      nic: loadedRecord?.nic || "",
+      bcNo: loadedRecord?.birthCertificateNumber || "",
+      address: loadedRecord?.address || "",
+      mobile: loadedRecord?.mobile || "",
+      isSchoolApplicant: loadedRecord?.applicantType === "SCHOOL_APPICANT",
+      examYear: loadedRecord?.examYear || "",
+      examNo: loadedRecord?.examNumber || "",
+      zscore: loadedRecord?.zscore || "",
+      university: university ? String(university.id) : "",
+      program: program ? String(program.programId) : "",
+      academicYearStart: loadedRecord?.academicYearStartDate || "",
+      accountNo: loadedRecord?.accountNumber || "",
+      bank: bank ? String(bank.id) : "",
+      branch: branch ? String(branch.id) : "",
+      hasMinorAccount: loadedRecord?.hasMinorAccount || "",
+      minorAccountMonths: loadedRecord?.minorAccountMonths || "",
+      specialDegree: Boolean(loadedRecord?.specialDegree),
+    } as Partial<FormData>;
+  }, [loadedRecord, universities, programs, banks, branches]);
+
+  const baselineValues: Partial<FormData> = savedSnapshot ?? recordBaseline;
+  const currentValues = watch();
+
+  const isFieldChanged = (field: keyof FormData) => {
+    const baseline = baselineValues[field];
+    const current = currentValues[field];
+
+    if (BOOLEAN_FIELDS.includes(field)) {
+      return Boolean(current) !== Boolean(baseline);
+    }
+
+    const baselineText = baseline == null ? "" : String(baseline);
+    const currentText = current == null ? "" : String(current);
+
+    if (!currentText && baselineText && LOOKUP_FIELDS.includes(field)) {
+      return false;
+    }
+
+    return currentText !== baselineText;
+  };
+
+  const hasFormChanges = CHANGE_TRACKED_FIELDS.some(isFieldChanged);
+  const hasApprovedDetailChanges = APPROVED_DETAIL_FIELDS.some(isFieldChanged);
 
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
 
@@ -330,6 +440,7 @@ export default function StudentExamSection() {
     setScholarshipRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
     setIsSaved(true);
+    setSavedSnapshot(null);
   }, [loadedRecord, reset]);
 
   // Load uploaded documents when request is loaded
@@ -669,8 +780,9 @@ export default function StudentExamSection() {
         setShowExamNoPopup(true);
       }
 
-      // Reset form default values to clear isDirty state
+      // Saved values become the new baseline for change tracking
       reset(currentData);
+      setSavedSnapshot(currentData);
 
       if (!requestKey && savedRequest.universityScholarshipRequestID) {
         const params = new URLSearchParams(searchParams.toString());
@@ -1210,7 +1322,7 @@ export default function StudentExamSection() {
   };
 
   const handleUpdateApprovedDetails = async () => {
-    if (!requestId || !isApprovedDetailsEditMode) return;
+    if (!requestId || !isApprovedDetailsEditMode || !hasApprovedDetailChanges) return;
 
     const currentData = getValues();
     const updateData = {
@@ -1502,38 +1614,43 @@ export default function StudentExamSection() {
             {isApprovedDetailsEditMode && (
               <Button
                 type="button"
-                className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleUpdateApprovedDetails}
+                disabled={!hasApprovedDetailChanges}
               >
                 Update
               </Button>
             )}
 
-            <Button
-              type="button"
-              className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
-              onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode || incomplete || isApprovedDetailsEditMode}
-            >
-              Incomplete
-            </Button>
+            {showEditActions && (
+              <>
+                <Button
+                  type="button"
+                  className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
+                  onClick={() => setShowIncompleteModal(true)}
+                  disabled={!requestId || !isSaved || isSubmitted || incomplete}
+                >
+                  Incomplete
+                </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSave}
-              disabled={isInputsDisabled || (!isSaved && !isValid) || (!isDirty && documentFiles.length === 0 && isSaved) || isApprovedDetailsEditMode}
-            >
-              Save
-            </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSave}
+                  disabled={isInputsDisabled || (!isSaved && !isValid) || (isSaved && !hasFormChanges && documentFiles.length === 0)}
+                >
+                  Save
+                </Button>
 
-            <Button
-              type="submit"
-              disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
-              className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
-            >
-              {isSubmitting ? "Submitting..." : "Submit"}
-            </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
+                  className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                >
+                  {isSubmitting ? "Submitting..." : "Submit"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
         <div>
