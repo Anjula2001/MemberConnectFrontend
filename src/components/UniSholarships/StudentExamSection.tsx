@@ -143,6 +143,11 @@ export default function StudentExamSection() {
   const [branches, setBranches] = useState<any[]>([]);
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
+  // Whether the popup is reporting a failure. Set explicitly by whoever raises it,
+  // because the message alone cannot be read reliably - a validation error such as
+  // "Another University Scholarship was approved for the Member within a year" reads
+  // as a success to any keyword match. null falls back to the keyword guess.
+  const [popupIsError, setPopupIsError] = useState<boolean | null>(null);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
   const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
@@ -553,6 +558,7 @@ export default function StudentExamSection() {
         setBanks(bankData);
       } catch (error: any) {
         console.error("Failed to load universities or banks:", error.message);
+        setPopupIsError(true);
         setExamNoPopupMessage(error.message);
         setShowExamNoPopup(true);
       }
@@ -641,6 +647,7 @@ export default function StudentExamSection() {
   // Validate exam number when it changes
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Examination Number first");
       setShowExamNoPopup(true);
       return;
@@ -663,17 +670,20 @@ export default function StudentExamSection() {
 
       if (result.duplicate) {
         setIsExamNoDuplicate(true);
+        setPopupIsError(true);
         setExamNoPopupMessage(
           "Entered Examination Number is duplicating with another Scholarship Request"
         );
         setShowExamNoPopup(true);
       } else {
         setIsExamNoDuplicate(false);
+        setPopupIsError(false);
         setExamNoPopupMessage("Examination Number is valid");
         setShowExamNoPopup(true);
       }
     } catch (error) {
       console.error(error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to validate Examination Number");
       setShowExamNoPopup(true);
     } finally {
@@ -725,6 +735,7 @@ export default function StudentExamSection() {
           const text = await res.text();
           console.error("Update failed:", res.status, text);
           if (showPopup) {
+            setPopupIsError(true);
             setExamNoPopupMessage("Failed to update request");
             setShowExamNoPopup(true);
           }
@@ -754,6 +765,7 @@ export default function StudentExamSection() {
           } catch { }
 
           if (showPopup) {
+            setPopupIsError(true);
             setExamNoPopupMessage(message);
             setShowExamNoPopup(true);
           }
@@ -776,6 +788,7 @@ export default function StudentExamSection() {
 
       setIsExamNoDuplicate(false);
       if (showPopup) {
+        setPopupIsError(false);
         setExamNoPopupMessage("Request is saved successfully");
         setShowExamNoPopup(true);
       }
@@ -795,6 +808,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Save failed:", error);
       if (showPopup) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to save request");
         setShowExamNoPopup(true);
       }
@@ -814,6 +828,7 @@ export default function StudentExamSection() {
       if (!isInputsDisabled) {
         const saved = await performSave(false);
         if (!saved) {
+          setPopupIsError(true);
           setExamNoPopupMessage("Failed to save request before submitting");
           setShowExamNoPopup(true);
           return;
@@ -822,6 +837,7 @@ export default function StudentExamSection() {
       }
 
       if (!actionId) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Please save the request before submitting");
         setShowExamNoPopup(true);
         return;
@@ -846,6 +862,7 @@ export default function StudentExamSection() {
     }
 
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
       isSubmittingRef.current = false;
@@ -864,6 +881,7 @@ export default function StudentExamSection() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Submit failed:", response.status, errorText);
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to submit request");
         setShowExamNoPopup(true);
         return;
@@ -873,10 +891,12 @@ export default function StudentExamSection() {
 
       setStatus(submittedRequest.status);
       setLoadedRecord((prev) => (prev ? { ...prev, status: submittedRequest.status } : prev));
+      setPopupIsError(false);
       setExamNoPopupMessage("Request submitted for committee approval");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Submit failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to submit request");
       setShowExamNoPopup(true);
     } finally {
@@ -891,6 +911,7 @@ export default function StudentExamSection() {
 
     const actionId = requestId || loadedRecord?.requestId;
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Request must be saved before its status can be changed");
       setShowExamNoPopup(true);
       return;
@@ -913,6 +934,7 @@ export default function StudentExamSection() {
         try {
           message = JSON.parse(errorText).message || message;
         } catch { }
+        setPopupIsError(true);
         setExamNoPopupMessage(message);
         setShowExamNoPopup(true);
         return;
@@ -924,10 +946,12 @@ export default function StudentExamSection() {
       setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
       setShowStatusChangeModal(false);
       setStatusChangeTarget("");
+      setPopupIsError(false);
       setExamNoPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Status change failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to change status");
       setShowExamNoPopup(true);
     } finally {
@@ -939,6 +963,7 @@ export default function StudentExamSection() {
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
       setIsExamNoDuplicate(false);
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Examination Number first");
       setShowExamNoPopup(true);
       return false;
@@ -954,6 +979,7 @@ export default function StudentExamSection() {
       if (!response.ok) {
         console.error("Validate API failed:", response.status, await response.text());
         setIsExamNoDuplicate(false);
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to validate Examination Number");
         setShowExamNoPopup(true);
         return false;
@@ -963,6 +989,7 @@ export default function StudentExamSection() {
 
       if (result.duplicate) {
         setIsExamNoDuplicate(true);
+        setPopupIsError(true);
         setExamNoPopupMessage(
           "Entered Examination Number is duplicating with another Scholarship Request"
         );
@@ -975,6 +1002,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Validate request failed:", error);
       setIsExamNoDuplicate(false);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to validate Examination Number");
       setShowExamNoPopup(true);
       return false;
@@ -986,6 +1014,7 @@ export default function StudentExamSection() {
     const bcNo = getValues("bcNo");
 
     if (!bcNo) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Birth Certificate Number first");
       setShowExamNoPopup(true);
       return;
@@ -1068,6 +1097,7 @@ export default function StudentExamSection() {
 
       if (!res.ok) {
         updateScholarshipStatus(nextStatus);
+        setPopupIsError(true);
         setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
         setShowExamNoPopup(true);
         console.error("Approve (save) API failed:", res.status, await res.text());
@@ -1077,6 +1107,7 @@ export default function StudentExamSection() {
       const updated = await res.json();
       const serverStatus = (updated && updated.status) || nextStatus;
       updateScholarshipStatus(serverStatus as any);
+      setPopupIsError(false);
       setExamNoPopupMessage(
         deviationFlag
           ? "Submitted for Deviation Board Approval"
@@ -1086,6 +1117,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Approve failed:", error);
       updateScholarshipStatus(nextStatus);
+      setPopupIsError(true);
       setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
       setShowExamNoPopup(true);
     }
@@ -1112,6 +1144,7 @@ export default function StudentExamSection() {
         if (!res.ok) {
           updateScholarshipStatus("REJECTED", rejectReason.trim());
           setShowRejectModal(false);
+          setPopupIsError(true);
           setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
           setShowExamNoPopup(true);
           console.error("Reject (save) API failed:", res.status, await res.text());
@@ -1122,12 +1155,14 @@ export default function StudentExamSection() {
         const serverStatus = (updated && updated.status) || "REJECTED";
         updateScholarshipStatus(serverStatus as any, rejectReason.trim());
         setShowRejectModal(false);
+        setPopupIsError(false);
         setExamNoPopupMessage("Scholarship Request Rejected Successfully");
         setShowExamNoPopup(true);
       } catch (error) {
         console.error("Reject failed:", error);
         updateScholarshipStatus("REJECTED", rejectReason.trim());
         setShowRejectModal(false);
+        setPopupIsError(true);
         setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
         setShowExamNoPopup(true);
       }
@@ -1223,6 +1258,7 @@ export default function StudentExamSection() {
     if (!isInputsDisabled) {
       const saved = await performSave(false);
       if (!saved) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to save request before marking incomplete");
         setShowExamNoPopup(true);
         return;
@@ -1231,6 +1267,7 @@ export default function StudentExamSection() {
     }
 
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please save request first");
       setShowExamNoPopup(true);
       return;
@@ -1258,10 +1295,12 @@ export default function StudentExamSection() {
       setLoadedRecord((prev) => (prev ? { ...prev, status: updated.status, incompleteReason: reason } : prev));
       setShowIncompleteModal(false);
 
+      setPopupIsError(false);
       setExamNoPopupMessage("Request marked as INCOMPLETE");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error(error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to mark incomplete");
       setShowExamNoPopup(true);
     }
@@ -1287,16 +1326,19 @@ export default function StudentExamSection() {
       );
 
       if (!res.ok) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to delete uploaded document");
         setShowExamNoPopup(true);
         return;
       }
 
       setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setPopupIsError(false);
       setExamNoPopupMessage("Document deleted successfully");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Delete uploaded document failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to delete uploaded document");
       setShowExamNoPopup(true);
     }
@@ -1354,6 +1396,7 @@ export default function StudentExamSection() {
           message = errorJson.message || message;
         } catch { }
 
+        setPopupIsError(true);
         setExamNoPopupMessage(message);
         setShowExamNoPopup(true);
         return;
@@ -1361,6 +1404,7 @@ export default function StudentExamSection() {
 
       const updatedRecord: ScholarshipRecord = await res.json();
       setLoadedRecord(updatedRecord);
+      setPopupIsError(false);
       setExamNoPopupMessage("Scholarship details updated successfully");
       setShowExamNoPopup(true);
 
@@ -1370,6 +1414,7 @@ export default function StudentExamSection() {
       router.replace(`?${params.toString()}`);
     } catch (error) {
       console.error("Approved details update failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to update scholarship details");
       setShowExamNoPopup(true);
     }
@@ -1486,6 +1531,7 @@ export default function StudentExamSection() {
     );
 
     if (!hasAcademicStartDate || !hasBankDetails) {
+      setPopupIsError(true);
       setExamNoPopupMessage(
         "Academic Start Date or the Student Bank Details are not updated. This information are required to be entered before creating a Fund Requests"
       );
@@ -1530,6 +1576,7 @@ export default function StudentExamSection() {
       setShowScholarshipHistory(true);
     } catch (error) {
       console.error("Failed to load member scholarship history:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to load member scholarship history");
       setShowExamNoPopup(true);
     }
@@ -2267,21 +2314,25 @@ export default function StudentExamSection() {
 
       {showExamNoPopup && (() => {
         const msgLower = examNoPopupMessage.toLowerCase();
-        const isError =
-          msgLower.includes("failed") ||
-          msgLower.includes("error") ||
-          msgLower.includes("duplicat") ||
-          msgLower.includes("please") ||
-          isExamNoDuplicate;
+        const isError = popupIsError !== null
+          ? popupIsError
+          : (msgLower.includes("failed")
+            || msgLower.includes("error")
+            || msgLower.includes("cannot")
+            || msgLower.includes("duplicat")
+            || msgLower.includes("please")
+            || isExamNoDuplicate);
 
-        let popupTitle = "Notification";
-        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
-        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
-        else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
-        else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
-        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
-        else if (msgLower.includes("duplicat") || isExamNoDuplicate) popupTitle = "Notification";
-        else if (isError) popupTitle = "Notice";
+        // The success titles are only reachable once the message is known not to be a
+        // failure, so a rejection that happens to mention "approved" cannot borrow one
+        let popupTitle = isError ? "Notice" : "Notification";
+        if (!isError) {
+          if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+          else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+          else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
+          else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
+          else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        }
 
         const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
 
