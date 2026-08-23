@@ -7,7 +7,16 @@ export interface TerminationApprovalListDTO {
   boardMeetingId?: number;
   boardMeetingDate?: string;
   actualMeetingDate?: string;
+  /**
+   * Populated when a single list is opened. The list endpoint leaves this empty and
+   * sends requestCount instead.
+   */
   requestNos: string[];
+  /**
+   * How many termination requests the list holds. Prefer this over requestNos.length:
+   * the list endpoint no longer JOIN FETCHes the requests just to count them.
+   */
+  requestCount?: number;
   status?: string;
   createdAt?: string;
   processedAt?: string;
@@ -54,8 +63,19 @@ export async function createTerminationApprovalList(payload: TerminationApproval
   return data;
 }
 
-export async function getTerminationApprovalLists() {
-  const { data } = await apiClient.get<TerminationApprovalListDTO[]>(BASE_PATH);
+/**
+ * Passing no range means "All"; the period is applied by the server against
+ * boardMeetingDate.
+ */
+export async function getTerminationApprovalLists(
+  range: { from?: string; to?: string } = {}
+) {
+  const { data } = await apiClient.get<TerminationApprovalListDTO[]>(BASE_PATH, {
+    params: {
+      ...(range.from ? { from: range.from } : {}),
+      ...(range.to ? { to: range.to } : {}),
+    },
+  });
   return data;
 }
 

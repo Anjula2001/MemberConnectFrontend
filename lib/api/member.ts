@@ -124,6 +124,23 @@ export interface MemberSearchParams {
   /** Membership Start Date period, ISO dates. */
   membershipStartFrom?: string;
   membershipStartTo?: string;
+  /**
+   * "Members without <document>" (MR15/16/17) - keeps only members whose copy of this
+   * document has not been printed. Applied by the server; filtering it in the browser
+   * meant fetching every active member and discarding the printed ones.
+   */
+  withoutDocument?: "MEMBERSHIP_CARD" | "SIGNATURE_CARD" | "PASSBOOK";
+  /**
+   * Board Meeting Date period (MR15/16/17) - keeps only members approved by a board
+   * meeting inside it. Omitting both is the spec's "Any". Resolved server-side through
+   * the application the member was created from, since a member has no meeting date.
+   */
+  boardMeetingFrom?: string;
+  boardMeetingTo?: string;
+  /** memberID | status | working-location-type | district | zone; default membership date. */
+  sortBy?: string;
+  /** "asc" (default) or "desc". */
+  sortDirection?: "asc" | "desc";
 }
 
 export async function searchMembers(params: MemberSearchParams) {
@@ -136,6 +153,11 @@ export async function searchMembers(params: MemberSearchParams) {
   if (params.educationalDistrict) searchParams.educationalDistrict = params.educationalDistrict;
   if (params.membershipStartFrom) searchParams.membershipStartFrom = params.membershipStartFrom;
   if (params.membershipStartTo) searchParams.membershipStartTo = params.membershipStartTo;
+  if (params.withoutDocument) searchParams.withoutDocument = params.withoutDocument;
+  if (params.boardMeetingFrom) searchParams.boardMeetingFrom = params.boardMeetingFrom;
+  if (params.boardMeetingTo) searchParams.boardMeetingTo = params.boardMeetingTo;
+  if (params.sortBy) searchParams.sortBy = params.sortBy;
+  if (params.sortDirection) searchParams.sortDirection = params.sortDirection;
 
   const { data } = await apiClient.get<MemberDTO[]>(`${BASE_PATH}/search`, {
     params: searchParams,

@@ -7,7 +7,19 @@ export interface BoardApprovalListDTO {
   boardMeetingId?: number;
   boardMeetingDate?: string;
   actualMeetingDate?: string;
+  /**
+   * Populated when a single list is opened. The list endpoint leaves this empty and
+   * sends applicationCount instead - see the note there.
+   */
   applicationIds?: string[];
+  /**
+   * How many applications the list holds.
+   *
+   * Prefer this over applicationIds.length: the list endpoint no longer ships the ids,
+   * because rendering a row count never needed them and producing them meant loading a
+   * lazy collection per row.
+   */
+  applicationCount?: number;
   nameChangeRequestIds?: number[];
   nomineeChangeRequestIds?: number[];
   status?: string;
@@ -18,6 +30,13 @@ export interface BoardApprovalListDTO {
   rejectReason?: string;
   boardRemarks?: string;
 }
+
+/** A Board Meeting date period. Both bounds are optional and independent. */
+export interface MeetingDateRange {
+  from?: string
+  to?: string
+}
+
 
 export interface BoardApprovalListCreatePayload {
   boardMeetingId: number;
@@ -62,9 +81,19 @@ export async function createBoardApprovalList(payload: BoardApprovalListCreatePa
   return data;
 }
 
-export async function getBoardApprovalLists() {
+/**
+ * MR07 retrieval. Passing no range means "All"; the period is applied by the server
+ * against boardMeetingDate rather than being filtered out in the browser afterwards.
+ */
+export async function getBoardApprovalLists(range: MeetingDateRange = {}) {
   const { data } = await apiClient.get<BoardApprovalListDTO[]>(
-    `${BASE_PATH}/getAllBoardApprovalLists`
+    `${BASE_PATH}/getAllBoardApprovalLists`,
+    {
+      params: {
+        ...(range.from ? { from: range.from } : {}),
+        ...(range.to ? { to: range.to } : {}),
+      },
+    }
   );
   return data;
 }

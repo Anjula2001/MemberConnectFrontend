@@ -444,7 +444,9 @@ export default function BoardApprovalsPage() {
         // all, because only applicationIds was ever counted.
         const names = item.nameChangeRequestIds?.length ?? 0;
         const nominees = item.nomineeChangeRequestIds?.length ?? 0;
-        const applications = item.applicationIds?.length ?? 0;
+        // applicationCount comes from the server; applicationIds is only populated
+        // when a single list is opened, so counting it here would read 0 for every row.
+        const applications = item.applicationCount ?? item.applicationIds?.length ?? 0;
 
         const content: ApprovalListContent =
           names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
@@ -471,7 +473,7 @@ export default function BoardApprovalsPage() {
         boardMeetingId: item.boardMeetingId,
         boardMeetingDate: item.boardMeetingDate,
         createdAt: item.createdAt,
-        itemCount: item.requestNos?.length ?? 0,
+        itemCount: item.requestCount ?? item.requestNos?.length ?? 0,
       }));
 
     return [...membershipRows, ...terminationRows].sort((left, right) => {
@@ -481,45 +483,51 @@ export default function BoardApprovalsPage() {
     });
   }, [approvalLists, terminationApprovalLists]);
 
-  const filteredApprovalLists = useMemo(() => {
-    if (dateFilter === "all") return combinedApprovalLists;
+  /**
+   * The Board Meeting date period the dropdown currently describes, in the form the
+   * server expects. "All" sends neither bound.
+   *
+   * Formatted from the local calendar fields rather than toISOString(): this runs in
+   * UTC+5:30, where local midnight on the 1st is the previous month in UTC, so
+   * toISOString() would silently send the wrong month boundary.
+   *
+   * Every option now measures the same thing - boardMeetingDate. This Month and Last
+   * Month previously measured createdAt while Date Period measured the meeting date,
+   * so one dropdown answered two different questions depending on which row you picked.
+   */
+  const meetingDateRange = useMemo((): { from?: string; to?: string } => {
+    const iso = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+        date.getDate()
+      ).padStart(2, "0")}`;
 
     const now = new Date();
-    return combinedApprovalLists.filter((item) => {
-      const itemDate = new Date(item.createdAt ?? item.boardMeetingDate ?? "");
-      if (dateFilter === "thisMonth") {
-        return (
-          itemDate.getFullYear() === now.getFullYear() &&
-          itemDate.getMonth() === now.getMonth()
-        );
-      }
 
-      if (dateFilter === "lastMonth") {
-        const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        return (
-          itemDate.getFullYear() === lastMonthDate.getFullYear() &&
-          itemDate.getMonth() === lastMonthDate.getMonth()
-        );
-      }
+    if (dateFilter === "thisMonth") {
+      return {
+        from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      };
+    }
 
-      if (dateFilter === "datePeriod") {
-        // Filter on the board meeting date - that is the date shown against each
-        // row, and the one an operator has in mind when they type a period.
-        // createdAt is when the list was drawn up, usually weeks before the meeting
-        // it is for, so keying off it silently hides meetings that sit inside the
-        // chosen window. createdAt is only a fallback for a list with no meeting
-        // date yet. Both are cut back to YYYY-MM-DD so each bound stays inclusive
-        // and no timezone shift can move a record into the neighbouring day.
-        const meetingDay = (item.boardMeetingDate ?? item.createdAt ?? "").slice(0, 10);
-        if (!meetingDay) return false;
-        if (listFromDate && meetingDay < listFromDate) return false;
-        if (listToDate && meetingDay > listToDate) return false;
-        return true;
-      }
+    if (dateFilter === "lastMonth") {
+      return {
+        from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+      };
+    }
 
-      return true;
-    });
-  }, [combinedApprovalLists, dateFilter, listFromDate, listToDate]);
+    if (dateFilter === "datePeriod") {
+      return { from: listFromDate || undefined, to: listToDate || undefined };
+    }
+
+    return {};
+  }, [dateFilter, listFromDate, listToDate]);
+
+  // The rows are already narrowed by the query that fetched them, so there is nothing
+  // left to filter here. Retrieve now genuinely retrieves a period rather than
+  // reloading the whole table and discarding most of it in the browser.
+  const filteredApprovalLists = combinedApprovalLists;
 
   const [listPage, setListPage] = useState(1);
 
@@ -530,7 +538,7 @@ export default function BoardApprovalsPage() {
   // result the user just asked for.
   useEffect(() => {
     setListPage(1);
-  }, [combinedApprovalLists, dateFilter, listFromDate, listToDate]);
+  }, [combinedApprovalLists]);
 
   const safeListPage = clampPage(listPage, filteredApprovalLists.length);
   const pagedApprovalLists = useMemo(
@@ -562,8 +570,8 @@ export default function BoardApprovalsPage() {
     try {
       setIsRetrievingLists(true);
       const [membershipResult, terminationResult] = await Promise.allSettled([
-        getBoardApprovalLists(),
-        getTerminationApprovalLists(),
+        getBoardApprovalLists(meetingDateRange),
+        getTerminationApprovalLists(meetingDateRange),
       ]);
 
       if (membershipResult.status === "fulfilled") {

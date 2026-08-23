@@ -68,7 +68,9 @@ const BOARD_LIST_CONTENT: Record<BoardListContent, { label: string; noun: string
 const describeBoardList = (list: BoardApprovalListDTO) => {
   const names = list.nameChangeRequestIds?.length ?? 0;
   const nominees = list.nomineeChangeRequestIds?.length ?? 0;
-  const applications = list.applicationIds?.length ?? 0;
+  // applicationCount comes from the server. The list endpoint no longer ships
+  // applicationIds - counting those here would read 0 for every membership list.
+  const applications = list.applicationCount ?? list.applicationIds?.length ?? 0;
 
   const content: BoardListContent =
     names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
@@ -532,7 +534,8 @@ export default function ReportsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {sortedTerminationLists.map((list) => {
-                              const count = list.requestNos?.length ?? 0;
+                              const count =
+                                list.requestCount ?? list.requestNos?.length ?? 0;
                               return (
                                 <SelectItem key={list.listId} value={list.listId ?? ""}>
                                   {list.listId} — {formatDate(list.boardMeetingDate)} ({count}{" "}

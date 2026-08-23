@@ -29,7 +29,11 @@ export function MultiSelect({
   width = "w-64",
   disabled = false,
 }: {
-  label: string;
+  /**
+   * Optional. Omit it when the caller already renders a label of its own, so the
+   * control does not stack two labels on top of each other.
+   */
+  label?: string;
   options: MultiSelectOption[];
   selected: string[];
   onChange: (values: string[]) => void;
@@ -69,7 +73,9 @@ export function MultiSelect({
 
   return (
     <div className={width}>
-      <label className="text-sm font-medium text-muted-foreground mb-2 block">{label}</label>
+      {label && (
+        <label className="text-sm font-medium text-muted-foreground mb-2 block">{label}</label>
+      )}
       <div className="relative" ref={ref}>
         <button
           type="button"
