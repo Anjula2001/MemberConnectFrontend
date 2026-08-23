@@ -4,9 +4,9 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/src/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
-import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X } from "lucide-react";
+import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X, ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { hasPermission } from "@/lib/permissions";
+import { canDeleteGrade5List, hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 
 const API_BASE_URL = "http://localhost:8080";
@@ -51,13 +51,12 @@ export default function Grade5ApprovalListsPage() {
   const initialListId = searchParams.get("listId") || "";
   const { user } = useAuth();
 
-  // MMS08/MMS15 view the list; MMS10/MMS17 print it; MMS11/MMS18 process it;
-  // MMS09/MMS16 delete it. Delete is deliberately the narrowest of the four —
-  // the SRS calls it out as a separate "delete privilege".
   const canViewLists = hasPermission(user?.role, "G5_LIST_VIEW");
   const canPrintList = hasPermission(user?.role, "G5_LIST_PRINT");
   const canProcessList = hasPermission(user?.role, "G5_LIST_PROCESS");
-  const canDeleteList = hasPermission(user?.role, "G5_LIST_DELETE");
+  // At Head Office the delete privilege belongs to the authorised officer, not to the
+  // office as a whole - see canDeleteGrade5List.
+  const canDeleteList = canDeleteGrade5List(user);
 
   // Active list type tab (NORMAL vs DEVIATION)
   const [activeTypeTab, setActiveTypeTab] = useState<"NORMAL" | "DEVIATION">("NORMAL");
@@ -66,9 +65,17 @@ export default function Grade5ApprovalListsPage() {
   const [filterType, setFilterType] = useState<"ALL" | "PERIOD">("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const today = new Date().toISOString().split("T")[0];
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate()
+    ).padStart(2, "0")}`;
+  })();
 
   const [lists, setLists] = useState<ApprovalList[]>([]);
+  // Arriving with ?listId= is the one case that must load straight away - the deep link
+  // names a list to open, and waiting for a click would break it.
+  const [hasRetrieved, setHasRetrieved] = useState<boolean>(!!initialListId);
   const [selectedListId, setSelectedListId] = useState<string>(initialListId);
   const [selectedList, setSelectedList] = useState<ApprovalList | null>(null);
 
@@ -133,10 +140,20 @@ export default function Grade5ApprovalListsPage() {
     setSelectedListId("");
     setSelectedList(null);
     setRequests([]);
+
+    // Switching board type starts a fresh search. Carrying the previous tab's date
+    // range over would leave the filter showing dates the panel below it was never
+    // retrieved against, so the filter resets to All Dates and the panel goes back to
+    // asking for a Retrieve.
+    setFilterType("ALL");
+    setFromDate("");
+    setToDate("");
+    setLists([]);
+    setHasRetrieved(false);
   };
 
   // Fetch approval lists
-  const fetchApprovalLists = async () => {
+  const fetchApprovalLists = async (autoSelect = false): Promise<ApprovalList[]> => {
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE_URL}/api/grade5/approval-lists/all`);
@@ -162,8 +179,8 @@ export default function Grade5ApprovalListsPage() {
 
         setLists(data);
 
-        // Auto-select list from URL query parameter
-        if (initialListId) {
+        // Auto-select list from URL query parameter - first load only.
+        if (autoSelect && initialListId) {
           const found = data.find((l) => l.listId === initialListId);
           if (found) {
             setSelectedList(found);
@@ -171,9 +188,14 @@ export default function Grade5ApprovalListsPage() {
             fetchRequestsForList(initialListId);
           }
         }
+
+        return data;
       }
+
+      return [];
     } catch (error) {
       console.error(error);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -214,13 +236,48 @@ export default function Grade5ApprovalListsPage() {
 
   useEffect(() => {
     fetchBoardMeetings();
-    fetchApprovalLists();
+    // Only auto-load for a deep link; otherwise the panel stays empty until Retrieve.
+    if (initialListId) {
+      fetchApprovalLists(true);
+    }
   }, []);
 
   const handleSelectRow = (list: ApprovalList) => {
     setSelectedListId(list.listId);
     setSelectedList(list);
     setRequests([]);
+  };
+
+  
+  const handleRetrieveLists = async () => {
+    if (filterType === "PERIOD") {
+      if (!fromDate || !toDate) {
+        showPopup(
+          "warning",
+          "Date Range Required",
+          "Select both a From and a To date, or switch the filter back to All Dates."
+        );
+        return;
+      }
+      if (new Date(fromDate) > new Date(toDate)) {
+        showPopup(
+          "warning",
+          "Invalid Date Range",
+          "The From date cannot be later than the To date."
+        );
+        return;
+      }
+    }
+
+    const matching = await fetchApprovalLists();
+    setHasRetrieved(true);
+
+    // If selected list is not in the matching list, clear it
+    if (selectedListId && !matching.some((l) => l.listId === selectedListId)) {
+      setSelectedListId("");
+      setSelectedList(null);
+      setRequests([]);
+    }
   };
 
   const handleRetrieveRequests = () => {
@@ -273,8 +330,20 @@ export default function Grade5ApprovalListsPage() {
     }
   };
 
-  // Open processing dialog
+  // Check if board meeting is in future
+  const isMeetingInFuture =
+    !!selectedList?.boardMeetingDate && selectedList.boardMeetingDate > today;
+
   const handleOpenProcessModal = () => {
+    if (isMeetingInFuture) {
+      showPopup(
+        "warning",
+        "Board Meeting Not Held",
+        `This list is for the board meeting on ${selectedList?.boardMeetingDate}, which has not taken place yet. It cannot be processed before then.`
+      );
+      return;
+    }
+
     // Validate that all rejected requests have a reason entered
     const invalid = Object.entries(decisions).some(
       ([_, dec]) => dec.status === "REJECTED" && !dec.rejectReason.trim()
@@ -341,9 +410,15 @@ export default function Grade5ApprovalListsPage() {
       if (res.ok) {
         setIsProcessModalOpen(false);
         setScannedFile(null);
-        showPopup("success", "Success", "Approval list processed successfully and scanned report uploaded to AWS S3.");
-        fetchApprovalLists();
-        fetchRequestsForList(selectedListId);
+
+        const refreshed = await fetchApprovalLists();
+        const updated = refreshed.find((l) => l.listId === selectedListId);
+        if (updated) {
+          setSelectedList(updated);
+        }
+        await fetchRequestsForList(selectedListId);
+
+        showPopup("success", "Success", "Approval list processed successfully.");
       } else {
         showPopup("error", "Error", "Failed to process approval list");
       }
@@ -353,9 +428,12 @@ export default function Grade5ApprovalListsPage() {
     }
   };
 
-  // Print function
+  // Print list
   const handlePrint = () => {
-    window.print();
+    if (!selectedListId) return;
+    router.push(
+      `/scholarships/grade-5/approval-lists/print/${encodeURIComponent(selectedListId)}`
+    );
   };
 
   // Calculate summary counts
@@ -365,6 +443,20 @@ export default function Grade5ApprovalListsPage() {
 
   // Filter lists by activeTypeTab (NORMAL vs DEVIATION)
   const filteredLists = lists.filter((list) => list.type === activeTypeTab);
+
+  // Get actual meeting options 
+  const actualMeetingOptions = (() => {
+    const scheduled = selectedList?.boardMeetingDate;
+    return boardMeetings
+      .filter((bm) => {
+        if (!bm.scheduledDate) return false;
+        // Not before the date the list was scheduled for
+        if (scheduled && bm.scheduledDate < scheduled) return false;
+        // actual date cannot be a future date
+        return bm.scheduledDate <= today;
+      })
+      .sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
+  })();
 
   if (user && !canViewLists) {
     return (
@@ -439,7 +531,7 @@ export default function Grade5ApprovalListsPage() {
               <Button
                 type="button"
                 className="bg-[#953002] text-white hover:bg-[#7a2700] h-9"
-                onClick={fetchApprovalLists}
+                onClick={handleRetrieveLists}
               >
                 <Search size={14} className="mr-1" />
                 Retrieve
@@ -454,13 +546,17 @@ export default function Grade5ApprovalListsPage() {
                 <input
                   type="date"
                   value={fromDate}
-                  max={today}
+                  // from date cannot be greater than today or to date
+                  max={toDate && toDate < today ? toDate : today}
                   onChange={(e) => {
-                    const val = e.target.value;
+                    let val = e.target.value;
                     if (val && val > today) {
-                      setFromDate(today);
-                    } else {
-                      setFromDate(val);
+                      val = today;
+                    }
+                    setFromDate(val);
+                    // todate cannot be less than fromdate
+                    if (val && toDate && val > toDate) {
+                      setToDate(val);
                     }
                   }}
                   className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
@@ -471,14 +567,20 @@ export default function Grade5ApprovalListsPage() {
                 <input
                   type="date"
                   value={toDate}
+                  // to date cannot be less than from date
+                  min={fromDate || undefined}
+                  // to date cannot be greater than today
                   max={today}
                   onChange={(e) => {
-                    const val = e.target.value;
+                    let val = e.target.value;
                     if (val && val > today) {
-                      setToDate(today);
-                    } else {
-                      setToDate(val);
+                      val = today;
                     }
+                    // todate cannot be less than fromdate
+                    if (val && fromDate && val < fromDate) {
+                      val = fromDate;
+                    }
+                    setToDate(val);
                   }}
                   className="border rounded-md px-3 py-1.5 w-full text-sm h-9"
                 />
@@ -508,9 +610,13 @@ export default function Grade5ApprovalListsPage() {
                 <div className="px-5 py-8 text-center text-sm text-muted-foreground">
                   Loading lists...
                 </div>
+              ) : !hasRetrieved ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  Choose a date filter and click Retrieve to load approval lists.
+                </div>
               ) : filteredLists.length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-                  No approval lists found.
+                  No approval lists found for the selected dates.
                 </div>
               ) : (
                 filteredLists.map((item) => (
@@ -592,7 +698,13 @@ export default function Grade5ApprovalListsPage() {
                       {canProcessList && (
                         <Button
                           onClick={handleOpenProcessModal}
-                          className="bg-[#953002] text-white hover:bg-[#7a2700] h-8 px-3 text-xs"
+                          disabled={isMeetingInFuture}
+                          title={
+                            isMeetingInFuture
+                              ? `The board meeting on ${selectedList?.boardMeetingDate} has not taken place yet`
+                              : undefined
+                          }
+                          className="bg-[#953002] text-white hover:bg-[#7a2700] h-8 px-3 text-xs disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                         >
                           Proceed
                         </Button>
@@ -618,7 +730,7 @@ export default function Grade5ApprovalListsPage() {
                   <div className="text-xs text-gray-600 bg-green-50 border border-green-100 rounded-lg p-3 grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-gray-400 font-medium">Processed By</p>
-                      <p className="font-semibold text-gray-700">{selectedList?.processedBy || "Head Office User"}</p>
+                      <p className="font-semibold text-gray-700">{selectedList?.processedBy || "—"}</p>
                     </div>
                     <div>
                       <p className="text-gray-400 font-medium">Processed At</p>
@@ -637,23 +749,20 @@ export default function Grade5ApprovalListsPage() {
                         <th className="px-4 py-3 text-left">Member ID</th>
                         <th className="px-4 py-3 text-left">Marks Obtained</th>
                         <th className="px-4 py-3 text-left">Disbursement</th>
-                        <th className="px-4 py-3 text-left w-32">Decision</th>
-                        <th className="px-4 py-3 text-left">Rejection Reason</th>
+                        <th className="px-4 py-3 text-left min-w-[210px]">Approve / Reject</th>
                       </tr>
                     </thead>
                     <tbody>
                       {requestsLoading ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                             Retrieving requests...
                           </td>
                         </tr>
                       ) : (
                         requests.map((r) => {
                           const rowDecision = decisions[r.requestNo] || { status: "APPROVED", rejectReason: "" };
-                          // Locked once the list is processed, and also for anyone
-                          // without approve/reject rights — a read-only viewer should
-                          // not be able to stage decisions they cannot submit.
+                          // lock decision if list is processed or user does not have permission to process list
                           const isProcessed =
                             selectedList?.status === "PROCESSED" || !canProcessList;
 
@@ -681,30 +790,60 @@ export default function Grade5ApprovalListsPage() {
                                 </span>
                               </td>
                               <td className="px-4 py-2.5">
-                                <select
-                                  disabled={isProcessed}
-                                  value={rowDecision.status}
-                                  onChange={(e) =>
-                                    handleDecisionChange(r.requestNo, e.target.value as "APPROVED" | "REJECTED")
-                                  }
-                                  className="border rounded px-2 py-1 w-full text-xs bg-white disabled:bg-gray-100 disabled:text-gray-700 font-medium"
-                                >
-                                  <option value="APPROVED">Approve</option>
-                                  <option value="REJECTED">Reject</option>
-                                </select>
-                              </td>
-                              <td className="px-4 py-2.5">
-                                {rowDecision.status === "REJECTED" ? (
-                                  <input
-                                    type="text"
-                                    disabled={isProcessed}
-                                    placeholder="Enter reason..."
-                                    value={rowDecision.rejectReason}
-                                    onChange={(e) => handleRejectReasonChange(r.requestNo, e.target.value)}
-                                    className="border rounded px-2 py-1 w-full text-xs bg-white disabled:bg-gray-100 disabled:text-gray-700 border-red-300"
-                                  />
+                                {isProcessed ? (
+                                  // show decision badge
+                                  <div className="flex flex-col gap-1">
+                                    <span
+                                      className={`w-fit rounded border px-2 py-0.5 text-[11px] font-semibold ${
+                                        rowDecision.status === "APPROVED"
+                                          ? "border-green-200 bg-green-50 text-green-700"
+                                          : "border-red-200 bg-red-50 text-red-700"
+                                      }`}
+                                    >
+                                      {rowDecision.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
+                                    </span>
+                                    {rowDecision.status === "REJECTED" && rowDecision.rejectReason && (
+                                      <p className="mt-0.5 text-[10px] font-medium text-gray-500 italic">
+                                        Reason: {rowDecision.rejectReason}
+                                      </p>
+                                    )}
+                                  </div>
                                 ) : (
-                                  <span className="text-gray-400 text-xs">-</span>
+                                  <div className="flex min-w-[190px] flex-col gap-1.5">
+                                    <div className="relative">
+                                      <select
+                                        value={rowDecision.status}
+                                        onChange={(e) =>
+                                          handleDecisionChange(
+                                            r.requestNo,
+                                            e.target.value as "APPROVED" | "REJECTED"
+                                          )
+                                        }
+                                        className={`w-full appearance-none rounded-md border px-2 py-1.5 pr-7 text-xs font-semibold shadow-sm transition-colors focus:ring-2 focus:ring-[#953002]/30 focus:outline-none ${
+                                          rowDecision.status === "APPROVED"
+                                            ? "border-green-300 bg-green-50 text-green-700"
+                                            : "border-red-300 bg-red-50 text-red-700"
+                                        }`}
+                                      >
+                                        <option value="APPROVED">{"✓ Approve"}</option>
+                                        <option value="REJECTED">{"✗ Reject"}</option>
+                                      </select>
+                                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                                    </div>
+
+                                    {/* rejection reason  */}
+                                    {rowDecision.status === "REJECTED" && (
+                                      <textarea
+                                        rows={2}
+                                        placeholder="Enter rejection reason (mandatory)…"
+                                        value={rowDecision.rejectReason}
+                                        onChange={(e) =>
+                                          handleRejectReasonChange(r.requestNo, e.target.value)
+                                        }
+                                        className="w-full resize-none rounded-md border border-red-200 bg-white px-2 py-1.5 text-xs text-gray-700 shadow-sm placeholder:text-gray-400 focus:ring-2 focus:ring-red-400/40 focus:outline-none"
+                                      />
+                                    )}
+                                  </div>
                                 )}
                               </td>
                             </tr>
@@ -743,11 +882,23 @@ export default function Grade5ApprovalListsPage() {
                   onChange={(e) => setActualMeetingDate(e.target.value)}
                   className="rounded-md border border-gray-300 px-3 py-1.5 text-sm w-full bg-white font-semibold"
                 >
-                  {boardMeetings.map((bm) => (
+                  {actualMeetingOptions.map((bm) => (
                     <option key={bm.id} value={bm.scheduledDate}>
                       {bm.scheduledDate}
                     </option>
                   ))}
+                  {/* The scheduled date itself may have no board_meeting row behind it -
+                      the list stores the date, not a reference - so it is offered
+                      explicitly rather than leaving the dropdown empty. */}
+                  {selectedList?.boardMeetingDate &&
+                    selectedList.boardMeetingDate <= today &&
+                    !actualMeetingOptions.some(
+                      (bm) => bm.scheduledDate === selectedList.boardMeetingDate
+                    ) && (
+                      <option value={selectedList.boardMeetingDate}>
+                        {selectedList.boardMeetingDate}
+                      </option>
+                    )}
                 </select>
               </div>
             </div>

@@ -11,7 +11,7 @@ import AddBankDetails, { AddBankDetailsRef } from "@/src/components/ui/retiremen
 import { SubmitSuccessModal } from "@/src/components/ui/termination/SubmitConfirmationModal";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { useAuth } from "@/lib/auth-context";
-import { canAccessRetirement, hasRetPermission } from "@/lib/permissions";
+import { canAccessRetirement, canChangeRequestStatus, hasRetPermission } from "@/lib/permissions";
 import {
   approveRetirementRequest,
   changeRetirementRequestStatus,
@@ -64,6 +64,7 @@ interface RetirementRequest {
   comment?: string;
   status: string;
   incompleteReason?: string;
+  rejectReason?: string;
   // The member's own status. The request stays APPROVED after the Finance Module
   // handoff — it is this that becomes RETIRED.
   memberStatus?: string;
@@ -134,16 +135,28 @@ export default function RetirementPage() {
   const canMarkIncomplete = hasRetPermission(user?.role, "RET_REQUEST_INCOMPLETE");
   const canApproveRequest = hasRetPermission(user?.role, "RET_REQUEST_APPROVE");
 
+  // MMT16 / §3.1.1 name "the Authorized User from the District Office" as the actor for
+  // a status change, not the District Office generally. The role matrix cannot express
+  // that, so it is carried per account by the authority flag: an unauthorised District
+  // Office user still raises, edits and submits, but never moves the status.
+  const canMoveStatus = canChangeRequestStatus(user);
+
   const isRequestLocked = retirementRequest?.status
     ? LOCKED_STATUSES.includes(retirementRequest.status)
     : false;
 
   const isEditMode = isEditing && !isRequestLocked;
   const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
+  // Approve and Reject move the request's status, so they answer to the same authority
+  // check as the Change status dropdown: an unauthorised District Office account holds
+  // RET_REQUEST_APPROVE by role, but MMT16 seats the decision with "the Authorized User
+  // from the District Office". Without canMoveStatus here, hiding the dropdown alone
+  // would leave the bigger decision on screen.
   const showApprovalActions =
     retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" &&
     !isEditMode &&
-    canApproveRequest;
+    canApproveRequest &&
+    canMoveStatus;
 
   // MMT17 — an approved retirement waiting on the Finance Module. Once Finance is
   // done the member is RETIRED and there is nothing left to send.
@@ -214,6 +227,7 @@ export default function RetirementPage() {
   // Changing its status is the only thing to do there, so the dropdown has to follow
   // the request rather than the page mode.
   const showViewModeStatusActions =
+    canMoveStatus &&
     !!retirementRequest?.id &&
     !isEditMode &&
     !isCurrentSessionSaved &&
@@ -657,21 +671,28 @@ export default function RetirementPage() {
                 {retirementRequest?.requestNo && `: ${retirementRequest.requestNo}`}
               </p>
 
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-1">
                 <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
                   Member: {member.fullName} ({member.memberId})
                 </div>
 
-                {/*show status and incomplete reason if the request is in incomplete status*/}
+                {/*
+                  The reason reads as part of the status it explains, in view mode and
+                  edit mode alike. MMT16: a rejected request carries its reason the same
+                  way - it was stored and returned by the API all along but never
+                  rendered, so an officer opening a rejected request could not see why.
+                */}
                 {retirementRequest?.status && (
                   <p className="text-sm font-semibold text-blue-600">
                     Status: {retirementRequest.status}
                     {isIncompleteStatus &&
                       retirementRequest.incompleteReason &&
                       ` (${retirementRequest.incompleteReason})`}
+                    {retirementRequest.status === "REJECTED" &&
+                      retirementRequest.rejectReason &&
+                      ` (${retirementRequest.rejectReason})`}
                   </p>
                 )}
-
               </div>
               {saveError && (
                 <p className="text-red-500 text-sm mt-2">{saveError}</p>

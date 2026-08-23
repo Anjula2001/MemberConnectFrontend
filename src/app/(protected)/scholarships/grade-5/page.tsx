@@ -5,12 +5,10 @@ import { z } from "zod";
 import { Button } from "@/src/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import AccessRestricted from "@/src/components/AccessRestricted";
+import { SRI_LANKAN_DISTRICTS } from "@/lib/districts";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { getEducationalDistricts } from "@/lib/api/education";
-import {
-  canAccessGrade5,
-  canSelectAllLocations,
-  hasPermission,
-} from "@/lib/permissions";
+import {canAccessGrade5,canSelectAllLocations,hasPermission,} from "@/lib/permissions";
 
 const API_BASE_URL = "http://localhost:8080";
 
@@ -183,40 +181,8 @@ function MultiSelectDropdown({
   );
 }
 
-// The 25 administrative districts of Sri Lanka, spelled exactly as the District Office
-// master stores them. An earlier inline list used synthetic UPPERCASE codes such as
-// "NUWARA_ELIYA", which never matched the district names actually stored against a
-// member, so the filter could not have worked — these must stay in master casing.
-//
-// The master table is seeded with only a handful of districts, so the dropdown merges
-// this list with whatever the master returns rather than relying on either alone.
-const SRI_LANKA_DISTRICTS = [
-  "Ampara",
-  "Anuradhapura",
-  "Badulla",
-  "Batticaloa",
-  "Colombo",
-  "Galle",
-  "Gampaha",
-  "Hambantota",
-  "Jaffna",
-  "Kalutara",
-  "Kandy",
-  "Kegalle",
-  "Kilinochchi",
-  "Kurunegala",
-  "Mannar",
-  "Matale",
-  "Matara",
-  "Monaragala",
-  "Mullaitivu",
-  "Nuwara Eliya",
-  "Polonnaruwa",
-  "Puttalam",
-  "Ratnapura",
-  "Trincomalee",
-  "Vavuniya",
-];
+
+const SRI_LANKA_DISTRICTS = SRI_LANKAN_DISTRICTS;
 
 
 const statusOptions = [
@@ -246,11 +212,7 @@ const statusOptions = [
 export default function Grade5ScholarshipRequestsListPage() {
   const { user } = useAuth();
 
-  // Capability flags, replacing the hardcoded `true`s this page used to run on.
-  // The page itself is shared between two audiences — District Office searching
-  // their own requests and Head Office assembling approval lists — so the page
-  // guard only asks "may you see Grade 5 at all", and each control is gated
-  // separately below.
+  
   const canViewPage = canAccessGrade5(user?.role);
   const loggedUserCanEdit = hasPermission(user?.role, "G5_REQUEST_EDIT");
   const canCreateApprovalLists = hasPermission(user?.role, "G5_LIST_CREATE");
@@ -288,8 +250,7 @@ export default function Grade5ScholarshipRequestsListPage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  // Same District Office master the Member Directory filters on, so a location
-  // selected here matches the value actually stored against a request.
+  
   useEffect(() => {
     let cancelled = false;
     const buildOptions = (districts: string[]) => {
@@ -309,7 +270,7 @@ export default function Grade5ScholarshipRequestsListPage() {
         buildOptions(districts);
       })
       .catch(() => {
-        // Master unreachable — still offer the 25 districts so the filter works.
+        
         if (cancelled) return;
         buildOptions([]);
       });
@@ -318,25 +279,33 @@ export default function Grade5ScholarshipRequestsListPage() {
     };
   }, []);
 
-  // A location-restricted user (District Office) is pinned to their own branch and
-  // the dropdown is disabled. The backend re-pins them regardless of what is sent,
-  // so this only keeps the filter honest on screen.
+  // use for location restricted user
   useEffect(() => {
     if (!userHasMultipleLocations && user?.assignedDistrict) {
       setLocations([user.assignedDistrict]);
     }
   }, [userHasMultipleLocations, user?.assignedDistrict]);
 
-  // Retrieve board meetings
+  // use for get board meetings
   const fetchBoardMeetings = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/board-meetings/getAllBoardMeetings`);
       if (res.ok) {
         const data = await res.json();
-        setBoardMeetings(data);
-        if (data.length > 0) {
-          setSelectedBoardMeetingId(String(data[0].id));
-        }
+
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+          now.getDate()
+        ).padStart(2, "0")}`;
+
+        const upcoming = (Array.isArray(data) ? data : [])
+          // use for filter board meetings today and future date only
+          .filter((bm: any) => bm?.scheduledDate && bm.scheduledDate >= today)
+          // use for sort board meetings
+          .sort((a: any, b: any) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
+
+        setBoardMeetings(upcoming);
+        setSelectedBoardMeetingId(upcoming.length > 0 ? String(upcoming[0].id) : "");
       }
     } catch (error) {
       console.error("Failed to load board meetings", error);
@@ -490,8 +459,7 @@ export default function Grade5ScholarshipRequestsListPage() {
 
   const selectedRows = requests.filter((r) => selectedRequestNos.includes(r.requestNo));
 
-  // Eligibility to show Normal list button
-  // All selected rows must be SUBMITTED_FOR_NORMAL_APPROVAL (or REJECTED with no deviation)
+  // Eligibility to show Normal list button All selected rows must be SUBMITTED_FOR_NORMAL_APPROVAL (or REJECTED with no deviation)
   const canCreateNormalList =
     canCreateApprovalLists &&
     selectedRows.length > 0 &&
@@ -499,8 +467,7 @@ export default function Grade5ScholarshipRequestsListPage() {
       (r) => r.status === "SUBMITTED_FOR_NORMAL_APPROVAL" || (!r.hasDeviation && r.status === "REJECTED")
     );
 
-  // Eligibility to show Deviation list button
-  // All selected rows must be SUBMITTED_FOR_DEVIATION_APPROVAL (or REJECTED with deviation)
+  // Eligibility to show Deviation list button All selected rows must be SUBMITTED_FOR_DEVIATION_APPROVAL (or REJECTED with deviation)
   const canCreateDeviationList =
     canCreateApprovalLists &&
     selectedRows.length > 0 &&
@@ -775,8 +742,8 @@ export default function Grade5ScholarshipRequestsListPage() {
         {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <table className="w-full table-fixed text-sm">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[1020px] table-fixed text-sm">
           <thead className="bg-gray-100 text-gray-700">
             <tr>
               <th className="px-4 py-3 text-left w-12">
@@ -788,11 +755,12 @@ export default function Grade5ScholarshipRequestsListPage() {
                 />
               </th>
               <th className="px-4 py-3 text-left">Request ID</th>
+              <th className="px-4 py-3 text-left">Requested Date</th>
               <th className="px-4 py-3 text-left">Member ID</th>
               <th className="px-4 py-3 text-left">Exam No</th>
               <th className="px-4 py-3 text-left">Indicators</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-6 py-3 text-left">Action</th>
+              <th className="w-72 pl-4 pr-10 py-3 text-left">Status</th>
+              <th className="w-24 px-6 py-3 text-left">Action</th>
             </tr>
           </thead>
 
@@ -800,7 +768,7 @@ export default function Grade5ScholarshipRequestsListPage() {
             {loading ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-6 text-center text-gray-500"
                 >
                   Loading...
@@ -809,7 +777,7 @@ export default function Grade5ScholarshipRequestsListPage() {
             ) : requests.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-6 text-center text-gray-500"
                 >
                   No scholarship requests found.
@@ -835,11 +803,13 @@ export default function Grade5ScholarshipRequestsListPage() {
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
                       <button
                         onClick={() => handleView(row.memberId, row.requestNo)}
-                        className="text-blue-600 hover:underline font-medium"
+                        className="text-[#953002] hover:underline font-medium"
                       >
                         {row.requestNo}
                       </button>
                     </td>
+
+                    <td className="px-4 py-3 whitespace-nowrap">{row.requestedDate || "-"}</td>
 
                     <td className="px-4 py-3 whitespace-nowrap">{row.memberId}</td>
 
@@ -855,30 +825,32 @@ export default function Grade5ScholarshipRequestsListPage() {
                             row.hasDeviation || row.status?.includes("DEVIATION") ? (
                               <span
                                 title="Deviation Scholarship"
-                                className="font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-xs inline-block"
+                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700"
                               >
-                                D
+                                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                Deviation
                               </span>
                             ) : (
                               <span
                                 title="Normal Scholarship"
-                                className="font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 text-xs inline-block"
+                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
                               >
-                                N
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                Normal
                               </span>
                             )
                           )}
                       </div>
                     </td>
 
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(row.status)}`}>
+                    <td className="pl-4 pr-10 py-3 whitespace-nowrap align-middle">
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] leading-4 font-semibold ${getStatusBadgeClass(row.status)}`}>
                         {row.status?.replace(/_/g, " ") || "-"}
                       </span>
                     </td>
 
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2 px-6">
+                    <td className="px-6 py-3 align-middle">
+                      <div className="flex items-center gap-2">
 
                         {!submitted && loggedUserCanEdit && (
                           <button
@@ -925,7 +897,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                   </option>
                 ))}
                 {boardMeetings.length === 0 && (
-                  <option value="">No board meetings available</option>
+                  <option value="">No upcoming board meetings available</option>
                 )}
               </select>
             </div>

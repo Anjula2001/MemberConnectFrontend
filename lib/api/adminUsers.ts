@@ -8,6 +8,8 @@ export interface AdminUserItem {
   profilePictureUrl?: string | null;
   assignedDistrict?: string | null;
   active: boolean;
+  /** District Office / Head Office only — this account may authorise, not just prepare. */
+  authorized: boolean;
   createdAt: string;
 }
 
@@ -17,6 +19,7 @@ export interface CreateAdminUserPayload {
   fullName: string;
   role: string;
   assignedDistrict?: string | null;
+  authorized?: boolean;
 }
 
 export interface UpdateAdminUserPayload {
@@ -24,6 +27,7 @@ export interface UpdateAdminUserPayload {
   role?: string;
   assignedDistrict?: string | null;
   isActive?: boolean;
+  authorized?: boolean;
 }
 
 export async function fetchAdminUsers(): Promise<AdminUserItem[]> {

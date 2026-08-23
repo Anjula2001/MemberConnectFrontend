@@ -767,3 +767,65 @@ export function hasRetPermission(
 export function canAccessRetirement(role: UserRole | undefined | null): boolean {
   return hasRetPermission(role, "RET_REQUEST_VIEW");
 }
+
+// ─── Authorising power (the per-account "authority" flag) ────────────────────
+//
+// A right held *in addition* to a role, set per account by the Super Admin and
+// stored on Users.authority. The SRS keeps describing the status-change actor as
+// "the Authorized User from the District Office" (MMT16 / §3.1.1) rather than as the
+// District Office generally: an office holds both clerks who prepare a request and
+// officers who sign it off, and the role alone cannot tell the two apart.
+//
+// Only DISTRICT_OFFICE and HEAD_OFFICE accounts can carry it — UserAdminService
+// forces it false for every other role, so this file never has to special-case them.
+
+/** True when this account carries authorising power on top of its role. */
+export function isAuthorizedOfficer(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return !!user?.authorized;
+}
+
+/**
+ * Gate for the view-mode "Change status" dropdown.
+ *
+ * District Office is the only role split by the authority flag: an unauthorised
+ * District Office account may still raise, edit and submit a request, but may not
+ * move its status, so the dropdown is hidden from it entirely. Every other role keeps
+ * whatever its permission matrix already grants — this narrows District Office, it
+ * does not widen anyone.
+ *
+ * UX only, and — unlike the permission matrices above — it has NO backend twin yet:
+ * RetirementRequestController still authorises status changes on the role alone, so an
+ * unauthorised District Office account can still make the change by calling the
+ * endpoint directly. Closing that gap means checking the flag in
+ * requiredPermissionForStatusChange() as well.
+ */
+/**
+ * Gate for the Grade 5 "Delete List" button (MMS09 / MMS16).
+ *
+ * The SRS calls delete out as a separate "delete privilege" rather than as something
+ * the whole office holds, so at Head Office it belongs to the authorised officer and
+ * not to every account with a Head Office login. Head Office is the only role narrowed
+ * here - SUPER_ADMIN and BOARD_SECRETARY keep the right through the role matrix, and a
+ * role without G5_LIST_DELETE gains nothing from being authorised.
+ *
+ * UI only. Grade5ScholarshipApprovalListController still authorises delete on
+ * @PreAuthorize("hasAuthority('G5_LIST_DELETE')"), which the authority flag does not
+ * narrow, so an unauthorised Head Office account could still call the endpoint directly.
+ */
+export function canDeleteGrade5List(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  if (!hasPermission(user?.role, "G5_LIST_DELETE")) return false;
+  if (user?.role === "HEAD_OFFICE") return isAuthorizedOfficer(user);
+  return true;
+}
+
+export function canChangeRequestStatus(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  if (!user?.role) return false;
+  if (user.role === "DISTRICT_OFFICE") return isAuthorizedOfficer(user);
+  return true;
+}

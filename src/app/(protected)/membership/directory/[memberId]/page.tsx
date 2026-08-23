@@ -140,7 +140,7 @@ export default function MemberProfilePage({
 	};
 
 	const [loansData, setLoansData] = useState<{ loans: any[]; obligations: any[] } | null>(null);
-	const [scholarship, setScholarship] = useState<any | null>(null);
+	const [scholarships, setScholarships] = useState<any[]>([]);
 
 	// Filter out orphaned old local files ("uploads/...") for ALL documents
 	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
@@ -197,6 +197,27 @@ export default function MemberProfilePage({
 
 		if (!canRaiseRequests && !NON_REQUEST_ACTIONS.includes(action)) {
 			return NO_RAISE_HINT;
+		}
+
+		// Every request in this menu is raised against a live membership, so a member who
+		// is not ACTIVE - retired, terminated, deceased, dormant, awaiting activation -
+		// can have none of them raised. Previously only a handful of actions checked the
+		// status individually, which left Basic Profile Changes, Change Name, Change
+		// Remittance and Change Nominee openable against, say, a RETIRED member.
+		//
+		// Add Documents is the sole exception, and NON_REQUEST_ACTIONS is what says so:
+		// paperwork is usually the reason the member is in a non-active state, and
+		// blocking uploads would remove the only way to resolve it.
+		//
+		// The two carve-outs below are deliberate and predate this rule: each keeps an
+		// EXISTING request reachable so it can be reopened, rather than opening a new one.
+		if (
+			profile?.status !== "ACTIVE" &&
+			!NON_REQUEST_ACTIONS.includes(action) &&
+			!(action === "Record Member Death" && profile?.status === "MEMBER_DEATH_RECORDED") &&
+			!(action === "Member Termination" && profile?.status === "TERMINATION_REQUESTED")
+		) {
+			return `Not available while the member is ${(profile?.status ?? "not Active").replace(/_/g, " ")}`;
 		}
 
 		if (action === "Member Transfer" && !canCreateMemberTransfer) {
@@ -338,8 +359,8 @@ export default function MemberProfilePage({
 				}
 
 				if (data.memberId) {
-					// Load Grade 5 Scholarship request
-					fetch(`http://localhost:8080/api/grade5/${data.memberId}/request`)
+					// Load every Grade 5 Scholarship request this member holds
+					fetch(`http://localhost:8080/api/grade5/${data.memberId}/requests`)
 						.then(res => {
 							if (!res.ok) return null;
 							return res.text().then(text => {
@@ -351,9 +372,9 @@ export default function MemberProfilePage({
 							});
 						})
 						.then(scholData => {
-							if (scholData) setScholarship(scholData);
+							setScholarships(Array.isArray(scholData) ? scholData : scholData ? [scholData] : []);
 						})
-						.catch(e => console.error("Error loading scholarship request", e));
+						.catch(e => console.error("Error loading scholarship requests", e));
 
 					// Load Loans and Obligations
 					fetch(`http://localhost:8080/api/members/${data.memberId}/loans`)
@@ -611,7 +632,7 @@ export default function MemberProfilePage({
 										Outstanding
 									</span>
 								)}
-								{tab === "Scholarships" && scholarship && (
+								{tab === "Scholarships" && scholarships.length > 0 && (
 									<span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200 leading-none">
 										Active
 									</span>
@@ -858,35 +879,52 @@ export default function MemberProfilePage({
 									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
 								</div>
 
-								{scholarship ? (
-									<div className="grid grid-cols-3 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200">
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Request ID</p>
-											{scholarship.requestNo ? (
-												<button
-													type="button"
-													onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
-													className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
-												>
-													{scholarship.requestNo}
-												</button>
-											) : (
-												<p className="text-sm font-medium text-neutral-800">—</p>
-											)}
-										</div>
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
-											<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
-										</div>
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Status</p>
-											<Badge className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
-												scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
-													'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
-												}`}>
-												{scholarship.status?.replace(/_/g, ' ')}
-											</Badge>
-										</div>
+								{scholarships.length > 0 ? (
+									<div className="space-y-3">
+										{scholarships.map((scholarship, i) => (
+											<div
+												key={scholarship.requestNo ?? scholarship.id ?? i}
+												className="grid grid-cols-4 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200"
+											>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Request ID</p>
+													{scholarship.requestNo ? (
+														<button
+															type="button"
+															onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
+															className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+														>
+															{scholarship.requestNo}
+														</button>
+													) : (
+														<p className="text-sm font-medium text-neutral-800">—</p>
+													)}
+												</div>
+												{/* Which child the request is for. With more than one on screen the
+												    request number alone does not identify them. */}
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Student</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.studentName || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Status</p>
+													{/* ADDED TO SCHOLARSHIP DEVIATION APPROVAL LIST is 45 characters and
+													    was running out past the card. Smaller text, and allowed to wrap
+													    inside the column rather than forcing the row wider - Badge sets
+													    whitespace-nowrap by default, so it has to be overridden. */}
+													<Badge className={`inline-block max-w-full rounded-full px-2 py-0.5 text-[10px] leading-tight font-semibold whitespace-normal break-words ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
+														scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
+															'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
+														}`}>
+														{scholarship.status?.replace(/_/g, ' ')}
+													</Badge>
+												</div>
+											</div>
+										))}
 									</div>
 								) : (
 									<div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
