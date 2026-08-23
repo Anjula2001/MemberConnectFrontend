@@ -42,8 +42,39 @@ import {
 } from "@/src/components/ui/table-pagination";
 
 import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
-import { getEducationalDistricts } from "@/lib/api/education";
+import {
+	getEducationalDistricts,
+	getEducationalZonesByDistrict,
+} from "@/lib/api/education";
+import { getWorkingLocationTypes } from "@/lib/api/masters";
 import { useAuth } from "@/lib/auth-context";
+
+/**
+ * Every value of the backend MemberStatus enum, with a readable label.
+ *
+ * The filter previously offered five of the fifteen. The ten it omitted were not
+ * unused states - a third of the membership sat in them (dormant, termination and
+ * retirement requests, recorded deaths), and those members could not be filtered
+ * for at all. Anything the server can store has to be selectable here, so this list
+ * is kept exhaustive rather than curated.
+ */
+const MEMBER_STATUS_LABELS: Record<MemberStatus, string> = {
+	ACTIVE: "Active",
+	INACTIVE: "Inactive",
+	RESIGNED: "Resigned",
+	TERMINATION_REQUESTED: "Termination Requested",
+	TERMINATION_APPROVED: "Termination Approved",
+	TERMINATED: "Terminated",
+	RETIREMENT_REQUESTED: "Retirement Requested",
+	RETIREMENT_APPROVED: "Retirement Approved",
+	RETIRED: "Retired",
+	MEMBER_DEATH_RECORDED: "Death Recorded",
+	MEMBER_DEATH_APPROVED: "Death Approved",
+	DECEASED: "Deceased",
+	SELECTED_FOR_DORMANT: "Selected for Dormant",
+	SENT_FOR_DORMANT_APPROVAL: "Sent for Dormant Approval",
+	INACTIVE_DORMANT: "Inactive (Dormant)",
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -159,6 +190,8 @@ export default function MemberDirectoryPage() {
 	const [sortBy, setSortBy] = useState("membership-date");
 	const [sortAsc, setSortAsc] = useState(true);
 	const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+	const [zoneOptions, setZoneOptions] = useState<string[]>([]);
+	const [workingLocationTypeOptions, setWorkingLocationTypeOptions] = useState<string[]>([]);
 
 	// Load the real District Office location master (replaces a hardcoded sample list),
 	// and lock District Office users to their own assigned district — they shouldn't be
@@ -177,6 +210,47 @@ export default function MemberDirectoryPage() {
 			isCancelled = true;
 		};
 	}, []);
+
+	// The real Working Location Type master. These were hard-coded as
+	// "School / Office / University"; the master actually holds "Government School",
+	// "National School", "Zonal Education Office" and so on, and the server matches
+	// the stored name, so none of the three ever selected a member.
+	useEffect(() => {
+		let isCancelled = false;
+		getWorkingLocationTypes()
+			.then((types) => {
+				if (isCancelled) return;
+				setWorkingLocationTypeOptions(types.map((t) => t.name));
+			})
+			.catch(() => {
+				/* leave empty on failure - filter simply shows no options */
+			});
+		return () => {
+			isCancelled = true;
+		};
+	}, []);
+
+	// Zones belong to a district in the master, so the zone list follows the chosen
+	// Educational District - the same cascade the registration form uses. The old
+	// list was three invented slugs ("colombo-zone"), which matched nothing.
+	useEffect(() => {
+		if (educationalDistrict === "all-districts") {
+			setZoneOptions([]);
+			return;
+		}
+		let isCancelled = false;
+		getEducationalZonesByDistrict(educationalDistrict)
+			.then((zones) => {
+				if (isCancelled) return;
+				setZoneOptions(zones);
+			})
+			.catch(() => {
+				if (!isCancelled) setZoneOptions([]);
+			});
+		return () => {
+			isCancelled = true;
+		};
+	}, [educationalDistrict]);
 
 	useEffect(() => {
 		if (isDistrictOfficer && user?.assignedDistrict) {
@@ -276,13 +350,9 @@ export default function MemberDirectoryPage() {
 		label: district,
 	}));
 
-	const statusOptions: MultiSelectOption[] = [
-		{ value: "ACTIVE", label: "Active" },
-		{ value: "INACTIVE", label: "Inactive" },
-		{ value: "RESIGNED", label: "Resigned" },
-		{ value: "TERMINATED", label: "Terminated" },
-		{ value: "DECEASED", label: "Deceased" },
-	];
+	const statusOptions: MultiSelectOption[] = (
+		Object.keys(MEMBER_STATUS_LABELS) as MemberStatus[]
+	).map((value) => ({ value, label: MEMBER_STATUS_LABELS[value] }));
 
 	// ---------------------------------------------------------------------------
 	// Render helpers
@@ -450,9 +520,11 @@ export default function MemberDirectoryPage() {
 											</SelectTrigger>
 											<SelectContent>
 												<SelectItem value="all-types">All Types</SelectItem>
-												<SelectItem value="school">School</SelectItem>
-												<SelectItem value="office">Office</SelectItem>
-												<SelectItem value="university">University</SelectItem>
+												{workingLocationTypeOptions.map((type) => (
+													<SelectItem key={type} value={type}>
+														{type}
+													</SelectItem>
+												))}
 											</SelectContent>
 										</Select>
 									</div>
@@ -461,15 +533,27 @@ export default function MemberDirectoryPage() {
 										<p className="text-xs font-semibold text-neutral-600">
 											Educational Zone
 										</p>
-										<Select value={educationalZone} onValueChange={setEducationalZone}>
+										<Select
+											value={educationalZone}
+											onValueChange={setEducationalZone}
+											disabled={educationalDistrict === "all-districts"}
+										>
 											<SelectTrigger className="w-full border-neutral-300 bg-white">
-												<SelectValue placeholder="All Zones" />
+												<SelectValue
+													placeholder={
+														educationalDistrict === "all-districts"
+															? "Select a district first"
+															: "All Zones"
+													}
+												/>
 											</SelectTrigger>
 											<SelectContent>
 												<SelectItem value="all-zones">All Zones</SelectItem>
-												<SelectItem value="colombo-zone">Colombo Zone</SelectItem>
-												<SelectItem value="kandy-zone">Kandy Zone</SelectItem>
-												<SelectItem value="galle-zone">Galle Zone</SelectItem>
+												{zoneOptions.map((zone) => (
+													<SelectItem key={zone} value={zone}>
+														{zone}
+													</SelectItem>
+												))}
 											</SelectContent>
 										</Select>
 									</div>
@@ -482,7 +566,12 @@ export default function MemberDirectoryPage() {
 										</p>
 										<Select
 											value={educationalDistrict}
-											onValueChange={setEducationalDistrict}
+											onValueChange={(next) => {
+												setEducationalDistrict(next);
+												// The selected zone belongs to the district being replaced, so
+												// keeping it would filter on a zone the new district does not have.
+												setEducationalZone("all-zones");
+											}}
 										>
 											<SelectTrigger className="w-full border-neutral-300 bg-white">
 												<SelectValue placeholder="All Districts" />

@@ -21,6 +21,11 @@ import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
 import {
+  TablePagination,
+  clampPage,
+  pageSlice,
+} from "@/src/components/ui/table-pagination";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -81,6 +86,11 @@ export default function TerminationApprovalListsPage() {
   const initialListId = searchParams.get("listId") ?? "";
 
   const [dateFilter, setDateFilter] = useState("all");
+  // Bounds for the "Date Period" option. An empty side is open-ended, so a From
+  // with no To reads as "everything since that day", and a To with no From as
+  // "everything up to it".
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [approvalLists, setApprovalLists] = useState<TerminationApprovalListDTO[]>([]);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState(initialListId);
   const [requestsRetrieved, setRequestsRetrieved] = useState(false);
@@ -132,9 +142,41 @@ export default function TerminationApprovalListsPage() {
         );
       }
 
+      if (dateFilter === "datePeriod") {
+        // Filter on the board meeting date - that is the date shown against each
+        // row, and the one an operator has in mind when they type a period.
+        // createdAt is when the list was drawn up, usually weeks before the meeting
+        // it is for, so keying off it silently hides meetings that sit inside the
+        // chosen window. createdAt is only a fallback for a list with no meeting
+        // date yet. Both are cut back to YYYY-MM-DD so each bound stays inclusive
+        // and no timezone shift can move a record into the neighbouring day.
+        const meetingDay = (item.boardMeetingDate ?? item.createdAt ?? "").slice(0, 10);
+        if (!meetingDay) return false;
+        if (fromDate && meetingDay < fromDate) return false;
+        if (toDate && meetingDay > toDate) return false;
+        return true;
+      }
+
       return true;
     });
-  }, [approvalLists, dateFilter]);
+  }, [approvalLists, dateFilter, fromDate, toDate]);
+
+  const [listPage, setListPage] = useState(1);
+
+  // Narrowing the filter, or retrieving a fresh set, can leave the stored page
+  // beyond the end of the new result - page 3 of a list that now has four rows
+  // renders as empty rather than as "no matches". Going back to the first page
+  // whenever the criteria change is what keeps the panel showing the top of the
+  // result the user just asked for.
+  useEffect(() => {
+    setListPage(1);
+  }, [approvalLists, dateFilter, fromDate, toDate]);
+
+  const safeListPage = clampPage(listPage, filteredApprovalLists.length);
+  const pagedApprovalLists = useMemo(
+    () => pageSlice(filteredApprovalLists, listPage),
+    [filteredApprovalLists, listPage]
+  );
 
   const mapRequestToRow = (request: TerminationRequestResponse): ApprovalRequestRow => ({
     id: request.id ?? 0,
@@ -410,6 +452,7 @@ export default function TerminationApprovalListsPage() {
                   <SelectItem value="all">All Dates</SelectItem>
                   <SelectItem value="thisMonth">This Month</SelectItem>
                   <SelectItem value="lastMonth">Last Month</SelectItem>
+                  <SelectItem value="datePeriod">Date Period</SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -423,6 +466,57 @@ export default function TerminationApprovalListsPage() {
               </Button>
             </div>
           </div>
+
+          {dateFilter === "datePeriod" && (
+            <div className="mt-3 max-w-md">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="termination-list-from-date"
+                    className="text-xs font-medium text-gray-600"
+                  >
+                    From Date
+                  </label>
+                  <Input
+                    id="termination-list-from-date"
+                    type="date"
+                    value={fromDate}
+                    onChange={(event) => {
+                      const nextFrom = event.target.value;
+                      setFromDate(nextFrom);
+                      // The To picker below only offers days from From onward, so a
+                      // To carried over from an earlier range can be left outside
+                      // what that picker can still reach. Clearing it here is what
+                      // keeps the visible pair and the filtered result in agreement.
+                      if (nextFrom && toDate && toDate < nextFrom) {
+                        setToDate("");
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="termination-list-to-date"
+                    className="text-xs font-medium text-gray-600"
+                  >
+                    To Date
+                  </label>
+                  <Input
+                    id="termination-list-to-date"
+                    type="date"
+                    value={toDate}
+                    // Greys out every day before From in the native picker, so the
+                    // period can only ever run forwards from the day chosen there.
+                    min={fromDate || undefined}
+                    onChange={(event) => setToDate(event.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Leave either side empty for an open-ended range.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -444,7 +538,7 @@ export default function TerminationApprovalListsPage() {
                   No approval lists found.
                 </div>
               ) : (
-                filteredApprovalLists.map((item) => (
+                pagedApprovalLists.map((item) => (
                   <button
                     key={item.listId ?? item.id}
                     type="button"
@@ -473,6 +567,13 @@ export default function TerminationApprovalListsPage() {
                 ))
               )}
             </div>
+
+            <TablePagination
+              page={safeListPage}
+              total={filteredApprovalLists.length}
+              onPageChange={setListPage}
+              itemLabel="list"
+            />
 
             <div className="px-3 pt-3">
               <Button

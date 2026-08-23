@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -22,6 +22,11 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
+import {
+  TablePagination,
+  clampPage,
+  pageSlice,
+} from "@/src/components/ui/table-pagination";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import {
   Card,
@@ -192,7 +197,15 @@ export default function NewRegistrationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  // Spec MR02: "By default, 'New', 'Submitted for Approval', and 'Added to Board
+  // Approval List' statuses will be selected." Starting empty sent no status filter at
+  // all, so the first Retrieve also returned Rejected and Inactive applications - the
+  // two the default is meant to leave out.
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([
+    "new",
+    "submitted",
+    "board",
+  ]);
   const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -322,6 +335,11 @@ export default function NewRegistrationsPage() {
     };
   };
 
+  // Select-all stays scoped to the whole filtered result rather than the visible
+  // page: the count beside "Add to Board Approval List" already reports how many
+  // are held, so a selection spanning pages is visible rather than silent, and an
+  // operator adding 23 applications to a list does not have to walk three pages to
+  // do it.
   const selectableNewRowIds = displayData
     .filter(
       (row) => row.selectable &&
@@ -339,6 +357,15 @@ export default function NewRegistrationsPage() {
 
   const isSomeNewRowsSelected =
     selectedNewRowsCount > 0 && selectedNewRowsCount < selectableNewRowIds.length;
+
+  const [page, setPage] = useState(1);
+
+  // Only Retrieve resets the page, from inside handleRetrieve. displayData is also
+  // rewritten in place when a single row is approved or rejected, and resetting on
+  // every change to it would throw an operator working through page 3 back to page
+  // 1 each time they actioned a row.
+  const safePage = clampPage(page, displayData.length);
+  const pagedData = useMemo(() => pageSlice(displayData, page), [displayData, page]);
 
   // The Location dropdown carries slug values ("nuwara-eliya"); the backend filters on
   // the stored district label ("Nuwara Eliya"), so translate before querying.
@@ -433,12 +460,14 @@ export default function NewRegistrationsPage() {
         error instanceof Error ? error.message : "Failed to retrieve applications";
       alert(message);
       setDisplayData([]);
+      setPage(1);
       setHasRetrieved(true);
       setIsRetrieving(false);
       return;
     }
 
     setDisplayData(filtered);
+    setPage(1);
     setSelectedRows([]);
     setHasRetrieved(true);
     setIsRetrieving(false);
@@ -820,7 +849,7 @@ export default function NewRegistrationsPage() {
                 </TableCell>
               </TableRow>
             )}
-            {displayData.map((row) => (
+            {pagedData.map((row) => (
               <TableRow key={row.appId}>
                 {/* Checkbox */}
                 <TableCell className="px-4">
@@ -893,6 +922,13 @@ export default function NewRegistrationsPage() {
             ))}
           </TableBody>
         </Table>
+
+        <TablePagination
+          page={safePage}
+          total={displayData.length}
+          onPageChange={setPage}
+          itemLabel="registration"
+        />
       </Card>
 
       {/* Fixed-position action dropdown — renders outside Card overflow */}
