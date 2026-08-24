@@ -55,7 +55,7 @@ export default function Grade5ApprovalListPrintPage({
 
   useEffect(() => {
     let cancelled = false;
-
+    // Fetch the approval list and its associated scholarship requests
     const load = async () => {
       try {
         const [listRes, requestsRes] = await Promise.all([

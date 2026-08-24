@@ -65,8 +65,6 @@ interface RetirementRequest {
   status: string;
   incompleteReason?: string;
   rejectReason?: string;
-  // The member's own status. The request stays APPROVED after the Finance Module
-  // handoff — it is this that becomes RETIRED.
   memberStatus?: string;
 }
 
@@ -77,9 +75,7 @@ interface MemberDetails {
   nic: string;
 }
 
-// apiClient rejects with a plain Error carrying the backend's message, and turns a 403
-// into "You do not have permission to perform this action." — so every catch below just
-// needs to surface that text.
+
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
 
@@ -127,18 +123,14 @@ export default function RetirementPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingToFinance, setIsSendingToFinance] = useState(false);
 
-  // UX only — the backend enforces the same matrix in RolePermissions.java, and that
-  // copy is the one that counts.
+  
   const canCreateRequest = hasRetPermission(user?.role, "RET_REQUEST_CREATE");
   const canEditRequest = hasRetPermission(user?.role, "RET_REQUEST_EDIT");
   const canSubmitRequest = hasRetPermission(user?.role, "RET_REQUEST_SUBMIT");
   const canMarkIncomplete = hasRetPermission(user?.role, "RET_REQUEST_INCOMPLETE");
   const canApproveRequest = hasRetPermission(user?.role, "RET_REQUEST_APPROVE");
 
-  // MMT16 / §3.1.1 name "the Authorized User from the District Office" as the actor for
-  // a status change, not the District Office generally. The role matrix cannot express
-  // that, so it is carried per account by the authority flag: an unauthorised District
-  // Office user still raises, edits and submits, but never moves the status.
+
   const canMoveStatus = canChangeRequestStatus(user);
 
   const isRequestLocked = retirementRequest?.status
@@ -147,26 +139,20 @@ export default function RetirementPage() {
 
   const isEditMode = isEditing && !isRequestLocked;
   const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
-  // Approve and Reject move the request's status, so they answer to the same authority
-  // check as the Change status dropdown: an unauthorised District Office account holds
-  // RET_REQUEST_APPROVE by role, but MMT16 seats the decision with "the Authorized User
-  // from the District Office". Without canMoveStatus here, hiding the dropdown alone
-  // would leave the bigger decision on screen.
+ 
   const showApprovalActions =
     retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" &&
     !isEditMode &&
     canApproveRequest &&
     canMoveStatus;
 
-  // MMT17 — an approved retirement waiting on the Finance Module. Once Finance is
-  // done the member is RETIRED and there is nothing left to send.
+  
   const showSendToFinance =
     retirementRequest?.status === "APPROVED" &&
     retirementRequest?.memberStatus === "RETIREMENT_APPROVED" &&
     !isEditMode &&
     canApproveRequest;
-  // A user who cannot approve still must not see the create/edit buttons on a submitted
-  // request — hiding them depends on the status, not on who is looking.
+  
   const hideRequestEditActions =
     retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
   const isViewRequestMode = pageMode === "view" && !!requestId;
@@ -192,11 +178,7 @@ export default function RetirementPage() {
     ],
   };
 
-  // Mirrors requiredPermissionForStatusChange in RetirementRequestController:
-  //   -> INACTIVE                          SRS 3.2.4 "the user needs Inactive rights".
-  //   SUBMITTED/REJECTED/INACTIVE -> NEW    SRS 3.2.1 "the rights to change the status";
-  //                                         reopens a request that is out of the office's hands.
-  //   INCOMPLETE -> NEW                     the everyday fix-and-carry-on path, ordinary edit rights.
+  // Determine the available status actions for view mode based on the request's current status and user permissions.
   const viewModeStatusActions = (
     retirementRequest?.status
       ? VIEW_MODE_STATUS_TRANSITIONS[retirementRequest.status] || []
@@ -211,21 +193,13 @@ export default function RetirementPage() {
     return canEditRequest;
   });
 
-  // A closed request — approved, rejected or inactive — is finished with Save,
-  // Incomplete and Submit. An approved one is only waiting on the Finance Module; a
-  // rejected or inactive one is revived through Return to New / Reopen, not re-saved
-  // or resubmitted from here. Showing those buttons, even greyed out, implies a step
-  // that no longer exists.
+  // Determine if the current retirement request is in a closed state (approved, rejected, or inactive).
   const isClosedRequest =
     retirementRequest?.status === "APPROVED" ||
     retirementRequest?.status === "REJECTED" ||
     retirementRequest?.status === "INACTIVE";
 
-  // The status dropdown normally belongs to view mode. A closed request is the
-  // exception: rejecting or deactivating a request puts the member back to ACTIVE, so
-  // the office opens the create page for them again and lands on that old request.
-  // Changing its status is the only thing to do there, so the dropdown has to follow
-  // the request rather than the page mode.
+
   const showViewModeStatusActions =
     canMoveStatus &&
     !!retirementRequest?.id &&
@@ -556,9 +530,7 @@ export default function RetirementPage() {
       setRetirementRequest(updatedRequest);
       setSaveError("");
 
-      // Returning a request to New exists to let the office fix it and send it back
-      // up, so the form opens ready to edit rather than making the user hunt for the
-      // Edit button. Any other status change leaves the mode alone.
+      
       if (newStatus === "NEW") {
         setIsEditing(true);
         setIsCurrentSessionSaved(false);
@@ -571,8 +543,7 @@ export default function RetirementPage() {
     }
   };
 
-  // MMT17 — hand this approved retirement to the Finance Module. On success the
-  // member becomes RETIRED and the button drops away; the request stays APPROVED.
+  
   const handleSendToFinance = async () => {
     if (!retirementRequest?.requestNo) return;
 
@@ -647,9 +618,6 @@ export default function RetirementPage() {
     setOpenBankModal(false);
   };
 
-  // Reached from the Member Directory, which more roles can open than may work with
-  // retirements — so this screen needs its own guard rather than inheriting the
-  // directory's.
   if (user && !canAccessRetirement(user.role)) {
     return (
       <AccessRestricted
@@ -740,7 +708,7 @@ export default function RetirementPage() {
                 </>
               )}
 
-              {/* MMT17 — an approved retirement is released to the Finance Module from here. */}
+              {/* an approved retirement is released to the Finance Module from here. */}
               {showSendToFinance && (
                 <Button
                   onClick={handleSendToFinance}
@@ -809,13 +777,7 @@ export default function RetirementPage() {
               {/*  */}
               {showRequestEditActions && (
                 <>
-                  {/* Saving an existing record goes through the update endpoint, so it
-                      needs edit rights; a first save needs create rights.
-
-                      Hidden once saved, and on a request the Board has already decided.
-                      Deliberately NOT hidden in edit mode: returning a request to New
-                      opens the form for editing, and an edit that cannot be saved is
-                      not an edit. */}
+                  {/* Save button */}
                   {!isCurrentSessionSaved &&
                     !isClosedRequest &&
                     (retirementRequest?.id ? canEditRequest : canCreateRequest) && (

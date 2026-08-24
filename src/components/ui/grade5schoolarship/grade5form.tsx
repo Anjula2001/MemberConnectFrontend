@@ -60,9 +60,7 @@ const grade5Schema = z.object({
 
   studentName: z.string().min(1, "Student name is required"),
 
-  // At least 8 characters, of which at least 2 must be digits. Letters and
-  // separators are allowed, so formats such as "BC/1234/56" pass, but a value with
-  // fewer than two digits in it is not a certificate number.
+  // Birth certificate number must be at least 8 characters long and contain at least two digits
   birthCertificateNo: z
     .string()
     .trim()
@@ -94,8 +92,6 @@ const grade5Schema = z.object({
     .min(0, "Marks must be at least 0")
     .max(200, "Marks cannot exceed 200"),
 
-  // An examination number is digits only, and never shorter than 8 of them. The
-  // previous rule counted characters, so "ABC-12" padded out to 8 passed.
   examinationNumber: z
     .string()
     .trim()
@@ -243,6 +239,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         return;
       }
 
+      // Fetch district cutoff marks when district and year are selected
       const timeout = setTimeout(() => {
         const fetchCutoff = async () => {
           try {
@@ -342,9 +339,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       }
     };
 
-    // Validate birth certificate duplication by calling backend. One birth certificate
-    // identifies one student, so a second request carrying it duplicates an existing
-    // one. Skipped when editing a request that already owns the number.
+    // Validate birth certificate number duplication by calling backend
     const validateBirthCertificateNumber = async () => {
       const birthCertNo = getValues("birthCertificateNo")?.trim();
 
@@ -372,9 +367,6 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
           )}`
         );
 
-        // This check is a courtesy: saveRequest/updateRequest reject a duplicate
-        // server-side regardless. So an unreachable or not-yet-deployed endpoint must
-        // not block the save — it would turn a backend outage into a dead form.
         if (!res.ok) {
           console.warn(
             `[grade5] birth certificate duplicate check unavailable (HTTP ${res.status}) — deferring to the backend check on save`
@@ -421,7 +413,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       marksObtained: data.marksObtained,
     });
 
-
+    
     const onValid = async (
       data: Grade5FormValues,
       extraData: Record<string, unknown> = {},

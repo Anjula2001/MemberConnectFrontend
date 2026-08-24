@@ -340,6 +340,7 @@ export default function Grade5ScholarshipRequestsListPage() {
     fetchExamYears();
   }, []);
 
+  // Fetch scholarship requests based on the current filters and search criteria
   const fetchRequests = async () => {
     try {
       setLoading(true);

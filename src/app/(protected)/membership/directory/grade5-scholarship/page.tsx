@@ -17,7 +17,6 @@ type Grade5Request = Grade5InitialData & {
   requestNo?: string;
   status?: string;
   hasDeviation?: boolean;
-  /** Derived server-side; present only when hasDeviation is true. */
   deviationReason?: string;
   incompleteReason?: string;
   minorAccountExists?: boolean;
@@ -40,9 +39,7 @@ type UploadedDocument = {
   requiredDocumentId: number;
 };
 
-// Mirrors DEVIATION_REASON in Grade5ScholarshipService. The server sends this on every
-// read of a deviation request; this copy is the fallback for a response that predates
-// the field, so the panel can never render its heading over an empty line.
+
 const DEVIATION_MESSAGE =
   "This request follows the deviation process. Because The Scholarship Request Date " +
   "is not within the defined eligibility period from the last exam date.";
@@ -93,6 +90,8 @@ export default function Grade5ScholarshipPage() {
     ? LOCKED_STATUSES.includes(grade5Request.status)
     : false;
 
+  const isRequestIncomplete = grade5Request?.status === "INCOMPLETE";
+
   
   const canCreateRequest = hasPermission(user?.role, "G5_REQUEST_CREATE");
   const canEditRequest = hasPermission(user?.role, "G5_REQUEST_EDIT");
@@ -106,6 +105,9 @@ export default function Grade5ScholarshipPage() {
 
   const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
   const fundReadOnly = !!grade5Request?.id && !isEditMode;
+
+
+  const incompleteActionsBlocked = isRequestIncomplete && !isEditMode;
 
   const [openModal, setOpenModal] = useState(false);
   const [fundRefreshed, setFundRefreshed] = useState(false);
@@ -245,7 +247,6 @@ export default function Grade5ScholarshipPage() {
         fetchGrade5Requests();
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMode, selectedMemberId, requestId]);
 
   //Fetches the selected member details.
@@ -646,8 +647,7 @@ export default function Grade5ScholarshipPage() {
     });
   };
 
-  // MMS20 — hand this approved scholarship to the Finance Module. The backend closes
-  // the record on success, so the header status flips to Inactive.
+  // Sends the scholarship request to the Finance Module for disbursement.
   const handleSendToFinance = async () => {
     if (!grade5Request?.requestNo) return;
 
@@ -676,6 +676,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  // Confirms the status change after user confirmation in the modal.
   const confirmChangeStatus = async () => {
     const { newStatus } = statusConfirmModal;
     setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
@@ -707,7 +708,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-
+  // Handles the final submission of the Grade 5 request after user confirmation in the modal.
   const handleConfirmSubmit = async () => {
     if (!grade5Request?.id) {
       setSubmitError("Please save the Grade 5 request before submitting.");
@@ -799,6 +800,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  // Handles the change in minor account existence and recalculates disbursement amounts accordingly.
   const handleMinorAccountExistsChange = async (value: string) => {
     const exists = value === "YES";
 
@@ -985,7 +987,12 @@ export default function Grade5ScholarshipPage() {
                   {canMarkIncomplete && !isMemberBlocked && (
                     <Button
                       onClick={() => setOpenModal(true)}
-                      disabled={!grade5Request?.id || isRequestLocked}
+                      disabled={!grade5Request?.id || isRequestLocked || incompleteActionsBlocked}
+                      title={
+                        incompleteActionsBlocked
+                          ? "This request is already marked incomplete. Edit it to supply the missing details."
+                          : undefined
+                      }
                       className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
                     >
                       Mark Incomplete
@@ -995,7 +1002,12 @@ export default function Grade5ScholarshipPage() {
                   {canSubmitRequest && !isMemberBlocked && (
                     <Button
                       onClick={handleSubmitForm}
-                      disabled={!grade5Request?.id || isRequestLocked}
+                      disabled={!grade5Request?.id || isRequestLocked || incompleteActionsBlocked}
+                      title={
+                        incompleteActionsBlocked
+                          ? "An incomplete request cannot be submitted as it stands. Edit it to supply the missing details."
+                          : undefined
+                      }
                       className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
                     >
                       Submit

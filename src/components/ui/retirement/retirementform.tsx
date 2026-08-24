@@ -30,9 +30,7 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
-// The retirement takes effect on or before the day the request is raised, so the
-// Effective Date is bounded by the Requested Date rather than by today. Falls back
-// to today while no Requested Date has been picked yet.
+
 const getEffectiveDateError = (date: string, requestedDate: string) => {
   if (!date) {
     return "";
