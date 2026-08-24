@@ -5,7 +5,7 @@ import { ArrowLeft, Send, ChevronDown, AlertCircle, Loader2 } from 'lucide-react
 import { z } from 'zod';
 import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
-import { getMemberById } from '@/lib/api/member';
+import { resolveMember } from '@/lib/api/member';
 import { useToast } from '@/lib/toast-context';
 import { useAuth } from '@/lib/auth-context';
 import { hasRole, PROFILE_CHANGE_EDIT_ROLES } from '@/lib/permissions';
@@ -138,7 +138,7 @@ export default function NomineeChangeRequest({ editId, memberId }: { editId?: st
             }
           }
         } else if (memberId) {
-          const member = await getMemberById(Number(memberId));
+          const member = await resolveMember(memberId);
           const nomineeData = {
             newnommineName: member.nomineeFullName || member.nameWithInitials || member.fullName || "",
             relationship: member.nomineeRelationship || "",

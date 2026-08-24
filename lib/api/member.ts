@@ -107,6 +107,39 @@ export async function getMemberById(id: number) {
   return data;
 }
 
+/**
+ * Looks a member up by their business identifier - the "MEM-..." string the screens
+ * carry around - rather than the numeric primary key.
+ *
+ * The profile Actions menu passes `?memberId=MEM-DEMO-037`, so the four profile change
+ * screens were calling getMemberById(Number(memberId)), which is NaN for every real
+ * member. That produced "Could not load data. Check backend connection." on a perfectly
+ * healthy backend, with every current value blank.
+ */
+export async function getMemberByMemberId(memberId: string) {
+  const { data } = await apiClient.get<MemberDTO>(
+    `${BASE_PATH}/by-member-id/${encodeURIComponent(memberId)}`
+  );
+  return data;
+}
+
+/**
+ * Resolves whichever member identifier a screen was handed.
+ *
+ * The profile Actions menu passes the membership number (`?memberId=MEM-DEMO-037`),
+ * while older links passed the numeric primary key. Screens that assumed one or the
+ * other broke on the links they did not expect, so they all go through this instead of
+ * guessing.
+ *
+ * A value of pure digits is treated as the primary key; anything else as the membership
+ * number. Membership numbers always carry a prefix, so the two cannot be confused.
+ */
+export async function resolveMember(idOrMemberId: string) {
+  return /^\d+$/.test(idOrMemberId.trim())
+    ? getMemberById(Number(idOrMemberId))
+    : getMemberByMemberId(idOrMemberId.trim());
+}
+
 export async function getMemberByNic(nic: string) {
   const { data } = await apiClient.get<MemberDTO>(
     `${BASE_PATH}/getMemberByNic/${nic}`);

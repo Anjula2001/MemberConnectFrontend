@@ -20,6 +20,15 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import {
   TablePagination,
   clampPage,
@@ -588,7 +597,12 @@ export default function TerminationApprovalListsPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl py-0 shadow-sm">
+        {/* min-w-0 is what stops this card blowing past the viewport. A grid item
+            defaults to min-width:auto, so without it the column refuses to shrink below
+            the table's min-w-[680px] and the whole card grows instead of the table
+            scrolling inside it — clipping Print, Delete List, the last column and
+            Proceed. Same fix as the two scholarship approval-list screens. */}
+        <Card className="min-w-0 rounded-xl py-0 shadow-sm">
           <CardHeader className="px-5 pt-5 pb-3">
             <CardTitle className="text-base font-bold text-[#953002]">Termination Requests</CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -649,7 +663,7 @@ export default function TerminationApprovalListsPage() {
                 {/* Once processed there is no Print and no Process — the meeting
                     the sheet was printed for is over. */}
                 {!isSelectedListProcessed && (
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -682,25 +696,29 @@ export default function TerminationApprovalListsPage() {
                   </div>
                 )}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-xs font-semibold text-gray-500">
-                        <th className="pb-2 pr-3">Request ID</th>
-                        <th className="pb-2 pr-3">Member ID</th>
-                        <th className="pb-2 pr-3">Name</th>
-                        <th className="pb-2 pr-3">Indicators</th>
-                        <th className="pb-2 pr-3">Decision</th>
-                        <th className="pb-2 pr-3">Reason (If Reject)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="w-full overflow-x-auto">
+                  <Table className="min-w-[680px] border-collapse">
+                    <TableHeader>
+                      <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                        {["Request ID", "Member ID", "Name", "Indicators", "Decision", "Reason (If Reject)"].map(
+                          (h) => (
+                            <TableHead
+                              key={h}
+                              className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                            >
+                              {h}
+                            </TableHead>
+                          ),
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {selectedListRequests.map((request) => (
-                        <tr key={request.requestNo} className="align-top">
-                          <td className="py-3 pr-3 font-medium text-gray-800">
+                        <TableRow key={request.requestNo} className="align-top hover:bg-neutral-50">
+                          <TableCell className="px-4 py-4 font-medium">
                             {request.requestNo}
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             <button
                               type="button"
                               className="font-medium text-[#953002] hover:underline"
@@ -712,9 +730,11 @@ export default function TerminationApprovalListsPage() {
                             >
                               {request.memberId}
                             </button>
-                          </td>
-                          <td className="py-3 pr-3 text-gray-700">{request.memberName}</td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {request.memberName}
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             <div className="flex items-center gap-2">
                               {request.hasLoanBalance && (
                                 <CircleDollarSign className="h-4 w-4 text-amber-600" />
@@ -723,17 +743,13 @@ export default function TerminationApprovalListsPage() {
                                 <AlertTriangle className="h-4 w-4 text-red-600" />
                               )}
                             </div>
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             {isSelectedListProcessed ? (
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${request.status === "REJECTED"
-                                    ? "bg-rose-600"
-                                    : "bg-green-600"
-                                  }`}
-                              >
-                                {request.status === "REJECTED" ? "Rejected" : "Approved"}
-                              </span>
+                              <StatusBadge
+                                status={request.status === "REJECTED" ? "REJECTED" : "APPROVED"}
+                                vocabulary="request"
+                              />
                             ) : (
                               <Select
                                 value={requestDecisions[request.id]?.decision || "Approve"}
@@ -756,14 +772,14 @@ export default function TerminationApprovalListsPage() {
                                 </SelectContent>
                               </Select>
                             )}
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             {isSelectedListProcessed ? (
                               <span
                                 className={
                                   request.status === "REJECTED"
                                     ? "text-rose-600"
-                                    : "text-gray-500"
+                                    : "text-neutral-500"
                                 }
                               >
                                 {request.status === "REJECTED"
@@ -786,11 +802,11 @@ export default function TerminationApprovalListsPage() {
                                 placeholder="Reason required..."
                               />
                             )}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {!isSelectedListProcessed && (

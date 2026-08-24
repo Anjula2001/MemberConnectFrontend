@@ -6,7 +6,7 @@ import { z } from "zod";
 import axios from 'axios';
 import { apiClient } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
-import { getMemberById } from '@/lib/api/member';
+import { resolveMember } from '@/lib/api/member';
 import DocumentUploadCard from '@/src/components/membership/DocumentUploadCard';
 import { useToast } from '@/lib/toast-context';
 import { useAuth } from '@/lib/auth-context';
@@ -177,7 +177,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
             }
           }
         } else if (memberId) {
-          const data = await getMemberById(Number(memberId));
+          const data = await resolveMember(memberId);
           const mapped: ProfileData = {
             dob: data.dateOfBirth ?? "",
             nic: data.nic ?? data.identificationNumber ?? "",

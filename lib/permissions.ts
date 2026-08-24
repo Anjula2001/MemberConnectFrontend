@@ -88,6 +88,22 @@ export const MEMBER_TRANSFER_ROLES: UserRole[] = ["SUPER_ADMIN", "DISTRICT_OFFIC
 // Membership Document Dispatch update (MR18).
 export const DISPATCH_ROLES: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE", "DISTRICT_OFFICE"];
 
+/**
+ * MMD09: "the authorized users at District Office and Head Office can use the Add
+ * Documents option to upload documents to a Member Profile." SUPER_ADMIN is added on
+ * top of the SRS, as it is throughout the rest of the system.
+ *
+ * Kept in step with MemberAdHocDocumentController's @PreAuthorize and the service's
+ * ALLOWED_ROLES: a role offered the button here but refused there would only produce a
+ * 403 on Save. Note the scoping differs from the membership - District Office is
+ * narrowed to its own district server-side, Head Office and Super Admin are not.
+ */
+export const AD_HOC_DOCUMENT_ROLES: UserRole[] = [
+  "DISTRICT_OFFICE",
+  "HEAD_OFFICE",
+  "SUPER_ADMIN",
+];
+
 // Testing-only member Activate override (stand-in until the Finance Module exists).
 export const TESTING_ACTIVATE_ROLES: UserRole[] = ["SUPER_ADMIN"];
 
@@ -586,8 +602,10 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   // privileges that DELETE_RIGHTS_ROLES also grants.
   BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
 
-  // Seat of the University Scholarship Committee (MMS26), and owner of the exam /
-  // university masters.
+  // Seat of the University Scholarship Committee (MMS26), and owner of the university
+  // master. The Exam Master is NOT its to maintain: exam dates and district cut-off
+  // marks decide who qualifies for a scholarship, so that stays with Super Admin - kept
+  // in step with RolePermissions.java, which is what actually enforces it.
   //
   // Note the asymmetry between the modules, which is deliberate: on Grade 5 this role
   // may raise requests, because Grade 5 has no committee step for it to then approve.
@@ -597,7 +615,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   SCHOLARSHIP_OFFICER: [
     ...GRADE5_DISTRICT,
     "G5_LIST_VIEW",
-    "G5_EXAM_MASTER_MANAGE",
     "US_REQUEST_VIEW",
     "US_COMMITTEE_APPROVE",
     "US_LIST_VIEW",

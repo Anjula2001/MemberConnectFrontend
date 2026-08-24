@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/src/components/ui/table";
-import { Badge } from "@/src/components/ui/badge";
+import { StatusBadge } from "@/src/components/ui/status-badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import {
   searchDeathDonationRequests,
@@ -54,13 +54,19 @@ type DeathDonationStatus =
   | "APPROVED"
   | "INACTIVE";
 
+/*
+ * MMD02: "By default, All statuses except Incomplete, Rejected, Approved and Inactive
+ * will be displayed."
+ *
+ * Which is to say: the four stages that still need somebody to act. Approved and
+ * Rejected were also selected here, so the default view opened padded with settled
+ * requests - the opposite of what the filter is for.
+ */
 const DEFAULT_STATUSES: DeathDonationStatus[] = [
   "NEW",
   "SUBMITTED_FOR_APPROVAL",
   "DISTRICT_COMMITTEE",
   "PD_COMMITTEE",
-  "APPROVED",
-  "REJECTED",
 ];
 
 const NON_EDITABLE_STATUSES: DeathDonationStatus[] = [
@@ -83,29 +89,7 @@ const STATUS_OPTIONS: { value: DeathDonationStatus; label: string }[] = [
   { value: "INACTIVE", label: "Inactive" },
 ];
 
-const STATUS_LABELS: Record<string, string> = {
-  NEW: "New",
-  INCOMPLETE: "Incomplete",
-  SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
-  DISTRICT_COMMITTEE: "District Committee",
-  PD_COMMITTEE: "P&D Committee",
-  P_AND_D_COMMITTEE: "P&D Committee",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-  INACTIVE: "Inactive",
-};
 
-const STATUS_BADGE_CLASSES: Record<string, string> = {
-  NEW: "bg-slate-100 text-slate-800 hover:bg-slate-100",
-  INCOMPLETE: "bg-orange-100 text-orange-800 hover:bg-orange-100",
-  SUBMITTED_FOR_APPROVAL: "bg-green-100 text-green-800 hover:bg-green-100",
-  DISTRICT_COMMITTEE: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100",
-  PD_COMMITTEE: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  P_AND_D_COMMITTEE: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  APPROVED: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
-  REJECTED: "bg-red-100 text-red-800 hover:bg-red-100",
-  INACTIVE: "bg-gray-100 text-gray-700 hover:bg-gray-100",
-};
 
 // Locations come from the Educational Districts master (/api/education/districts),
 // the same source the Member Directory and Termination filters use, so the three
@@ -193,7 +177,7 @@ function LocationMultiSelect({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -273,7 +257,7 @@ function StatusMultiSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -432,18 +416,9 @@ export default function DeathDonationPage() {
     }
   };
 
-  const getStatusBadge = (status?: string) => {
-    const normalized = status ?? "UNKNOWN";
-    const label = STATUS_LABELS[normalized] ?? normalized.replaceAll("_", " ");
-    const className =
-      STATUS_BADGE_CLASSES[normalized] ?? "bg-gray-100 text-gray-800 hover:bg-gray-100";
-
-    return (
-      <Badge variant="secondary" className={className}>
-        {label}
-      </Badge>
-    );
-  };
+  const getStatusBadge = (status?: string) => (
+    <StatusBadge status={status} vocabulary="donation" />
+  );
 
   const getStatusIndicators = (status?: string) => {
     if (status === "SUBMITTED_FOR_APPROVAL") {
@@ -525,47 +500,56 @@ export default function DeathDonationPage() {
 
       <Card>
         <CardContent className="p-6">
-          <h2 className="mb-4 text-lg font-semibold text-[#953002]">Search & Filter</h2>
+          <h2 className="mb-6 text-lg font-bold text-[#8B3205]">Search Criteria</h2>
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="w-52">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                Location
-              </label>
-              <LocationMultiSelect
-                selectedLocations={selectedLocations}
-                onLocationChange={setSelectedLocations}
-                availableLocations={availableLocations}
-                disabled={!!pinnedDistrict}
-              />
-            </div>
+          {/* Same arrangement as the Termination, Dormant and Profile Changes screens:
+              the filters on one row (where, when, which status), the date pair only when
+              a period is chosen, then search with sort and Retrieve. Previously a single
+              flex-wrap row of fixed-width fields, so they reflowed into ragged rows and
+              Retrieve landed wherever the wrap left it. */}
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Location</label>
+                <LocationMultiSelect
+                  selectedLocations={selectedLocations}
+                  onLocationChange={setSelectedLocations}
+                  availableLocations={availableLocations}
+                  disabled={!!pinnedDistrict}
+                />
+              </div>
 
-            <div className="w-52">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                Request Received On
-              </label>
-              <Select
-                value={dateFilter}
-                onValueChange={(value) => setDateFilter(value as DateFilterType)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_days">All Days</SelectItem>
-                  <SelectItem value="this_month">This Month</SelectItem>
-                  <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
-                  <SelectItem value="date_period">Date Period</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Request Received On</label>
+                <Select
+                  value={dateFilter}
+                  onValueChange={(value) => setDateFilter(value as DateFilterType)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all_days">All Days</SelectItem>
+                    <SelectItem value="this_month">This Month</SelectItem>
+                    <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
+                    <SelectItem value="date_period">Date Period</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Status</label>
+                <StatusMultiSelect
+                  selectedStatuses={selectedStatuses}
+                  onStatusChange={setSelectedStatuses}
+                />
+              </div>
             </div>
 
             {dateFilter === "date_period" && (
-              <>
-                <div className="w-40">
-                  <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                    From Date
-                  </label>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">From Date</label>
                   <Input
                     type="date"
                     value={fromDate}
@@ -574,10 +558,8 @@ export default function DeathDonationPage() {
                     className="w-full"
                   />
                 </div>
-                <div className="w-40">
-                  <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                    To Date
-                  </label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">To Date</label>
                   <Input
                     type="date"
                     value={toDate}
@@ -586,66 +568,58 @@ export default function DeathDonationPage() {
                     className="w-full"
                   />
                 </div>
-              </>
+              </div>
             )}
 
-            <div className="w-56">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">Status</label>
-              <StatusMultiSelect
-                selectedStatuses={selectedStatuses}
-                onStatusChange={setSelectedStatuses}
-              />
-            </div>
+            <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-4">
+              <div className="flex flex-col gap-1 md:col-span-2">
+                <label className="text-xs font-medium text-gray-600">Search Member</label>
+                <Input
+                  type="text"
+                  placeholder="Member name, member number, NIC, death certificate no..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full"
+                />
+              </div>
 
-            <div className="min-w-64 flex-1">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                Search Member
-              </label>
-              <Input
-                type="text"
-                placeholder="Member name, member number, NIC, death certificate no..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full"
-              />
-            </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort By</label>
+                <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select sort option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="requestedDate">Requested Date</SelectItem>
+                    <SelectItem value="deceasedDate">Deceased Date</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="memberId">Member ID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="w-52">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">Sort By</label>
-              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select sort option" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="requestedDate">Requested Date</SelectItem>
-                  <SelectItem value="deceasedDate">Deceased Date</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                  <SelectItem value="memberId">Member ID</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort Order</label>
+                <div className="flex items-center gap-2">
+                  <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                      <SelectItem value="desc">Descending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => void handleRetrieve()}
+                    disabled={loading}
+                    className="whitespace-nowrap bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                  >
+                    {loading ? "Retrieving..." : "Retrieve"}
+                  </Button>
+                </div>
+              </div>
             </div>
-
-            <div className="w-40">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                Sort Order
-              </label>
-              <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                  <SelectItem value="desc">Descending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={() => void handleRetrieve()}
-              className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
-            >
-              {loading ? "Retrieving..." : "Retrieve"}
-            </Button>
           </div>
         </CardContent>
       </Card>

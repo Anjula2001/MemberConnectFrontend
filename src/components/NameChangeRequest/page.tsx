@@ -5,7 +5,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import { z } from "zod";
 import { useRouter } from 'next/navigation';
-import { getMemberById } from '@/lib/api/member';
+import { resolveMember } from '@/lib/api/member';
 import { useToast } from '@/lib/toast-context';
 import { useAuth } from '@/lib/auth-context';
 import { hasRole, PROFILE_CHANGE_EDIT_ROLES } from '@/lib/permissions';
@@ -181,7 +181,7 @@ export default function NameChangeRequest({ editId, memberId }: { editId?: strin
         setLoadingRequest(true);
         setLoadError(null);
         try {
-          const member = await getMemberById(Number(memberId));
+          const member = await resolveMember(memberId);
           const memberData = {
             newTitle: member.title || "",
             newNameWithInitials: member.nameWithInitials || "",

@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/src/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { useToast } from "@/lib/toast-context";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -363,24 +371,28 @@ export default function Grade5ExamCutoffManagementPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700 border-b">
-                    <tr>
-                      <th className="px-6 py-3 text-left font-semibold">District Name</th>
-                      <th className="px-6 py-3 text-left font-semibold w-64">Cutoff Marks (0 - 200) <span className="text-red-500">*</span></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                      <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                        District Name
+                      </TableHead>
+                      <TableHead className="w-64 px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                        Cutoff Marks (0 - 200) <span className="text-red-500">*</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {cutoffs.map((item) => {
                       const hasError = !!(errors.cutoffs && errors.cutoffs[item.district]);
                       const errorMsg = errors.cutoffs?.[item.district];
 
                       return (
-                        <tr key={item.district} className="hover:bg-gray-50/50">
-                          <td className="px-6 py-4 font-medium text-gray-800">
+                        <TableRow key={item.district} className="hover:bg-neutral-50">
+                          <TableCell className="px-4 py-4 font-medium">
                             {item.district}
-                          </td>
-                          <td className="px-6 py-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             <div className="space-y-1">
                               <input
                                 type="text"
@@ -394,19 +406,19 @@ export default function Grade5ExamCutoffManagementPage() {
                                 <p className="text-xs text-red-500 font-medium">{errorMsg}</p>
                               )}
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
                     {cutoffs.length === 0 && (
-                      <tr>
-                        <td colSpan={2} className="px-6 py-8 text-center text-gray-500 font-medium">
+                      <TableRow>
+                        <TableCell colSpan={2} className="py-10 text-center text-neutral-500">
                           No educational districts found.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>

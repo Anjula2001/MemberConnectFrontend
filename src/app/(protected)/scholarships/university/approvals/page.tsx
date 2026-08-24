@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
-import { Card } from "@/src/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Upload, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -471,32 +471,19 @@ function ApprovalsPageInner() {
   };
 
   // ── Print ─────────────────────────────────────────────────────────────────
-  const printRequests = () => window.print();
-
-  // ── Status badge ─────────────────────────────────────────────────────────
-  const statusBadge = (status?: string) => {
-    if (!status) return null;
-    const statusKey = normalizeScholarshipStatus(status);
-    const map: Record<string, string> = {
-      approved: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700",
-      addedtoscholarshipnormalapprovallist: "bg-blue-100 text-blue-700",
-      addedtoscholarshipdeviationapprovallist: "bg-purple-100 text-purple-700",
-    };
-    const cls = map[statusKey] ?? "bg-gray-100 text-gray-600";
-    const label =
-      statusKey === "addedtoscholarshipnormalapprovallist"
-        ? "Added to Scholarship Normal Approval List"
-        : statusKey === "addedtoscholarshipdeviationapprovallist"
-          ? "Added to Scholarship Deviation Approval List"
-          : status;
-    return (
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
-        {label}
-      </span>
+  /*
+   * Opens the report route rather than printing this page. window.print() here put the
+   * sidebar, the tab bar and the search panel on the sheet - a screenshot of the
+   * application, not a board report.
+   */
+  const printRequests = () => {
+    if (!selectedListId) return;
+    router.push(
+      `/scholarships/university/approvals/print/${encodeURIComponent(selectedListId)}`
     );
   };
 
+  // ── Status badge ─────────────────────────────────────────────────────────
   // ── Derived counts for popup summary ─────────────────────────────────────
   const totalCount = retrievedRequests.length;
   const approveCount = retrievedRequests.filter((req) => {
@@ -553,9 +540,13 @@ function ApprovalsPageInner() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    /* Same page shell as the Grade 5 approval lists: full width, and one gap-4 between
+       the title, the tabs, the search card and the grid — rather than max-w-7xl with a
+       different ad-hoc margin on each child, which is what made the vertical rhythm
+       uneven and the cards sit in a narrower centred column. */
+    <div className="w-full flex flex-1 flex-col gap-4 p-6 pt-0">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-3">
         <Link href="/scholarships/university">
           <Button variant="ghost" size="icon" className="text-[#953002] hover:bg-[#fff6f2]">
             <ArrowLeft className="h-5 w-5" />
@@ -566,51 +557,70 @@ function ApprovalsPageInner() {
         </h1>
       </div>
 
-      {/* ── TAB BAR ─────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => switchTab("normal")}
-          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "normal"
-            ? "bg-white text-[#953002] shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+      {/* Tabs — same control the Grade 5 approval lists use. */}
+      <div className="inline-flex w-fit rounded-md border bg-muted p-1">
+        <Button
+          type="button"
+          variant={activeTab === "normal" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTab === "normal"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
             }`}
+          onClick={() => switchTab("normal")}
         >
           Normal Board Approval
-        </button>
-        <button
-          onClick={() => switchTab("deviation")}
-          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "deviation"
-            ? "bg-white text-[#953002] shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "deviation" ? "secondary" : "ghost"}
+          className={`h-8 rounded-sm px-3 text-xs ${activeTab === "deviation"
+            ? "bg-white text-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-transparent"
             }`}
+          onClick={() => switchTab("deviation")}
         >
           Deviation Board Approval
-        </button>
+        </Button>
       </div>
 
-      {/* ── FILTER SECTION ──────────────────────────────────────────────── */}
-      <Card className="rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <h2 className="text-lg font-bold text-[#953002] mb-4">Search Approval Lists</h2>
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Filter</label>
-            <div className="relative w-64">
+      {/* Search Approval Lists — Card + CardHeader, h-9 controls, Retrieve inline,
+          matching the Grade 5 approval lists and the rest of the criteria panels. */}
+      <Card className="rounded-xl py-0 shadow-sm">
+        <CardHeader className="px-5 pt-5 pb-3">
+          <CardTitle className="text-lg font-bold text-[#953002]">
+            Search Approval Lists
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5">
+          <div className="flex w-full flex-col gap-1 md:max-w-md">
+            <label className="text-xs font-medium text-gray-600 uppercase tracking-wider">
+              Date Filter
+            </label>
+            <div className="flex items-center gap-2">
               <select
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 appearance-none bg-white text-gray-700 w-full pr-10 shadow-sm"
                 value={filterMode}
                 onChange={(e) => setFilterMode(e.target.value as "all" | "custom")}
+                className="h-9 flex-1 rounded-md border bg-white px-3 text-sm"
               >
                 <option value="all">All Dates</option>
                 <option value="custom">Select Board Meeting Date Period</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <Button
+                type="button"
+                onClick={retrieveLists}
+                disabled={isRetrieving}
+                className="h-9 bg-[#953002] text-white hover:bg-[#7a2700]"
+              >
+                <Search size={14} className="mr-1" />
+                {isRetrieving ? "Retrieving..." : "Retrieve"}
+              </Button>
             </div>
           </div>
 
           {filterMode === "custom" && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">From Date</label>
+            <div className="mt-3 grid max-w-md grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">From Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -619,11 +629,11 @@ function ApprovalsPageInner() {
                     setStartDate(e.target.value);
                     setDateError("");
                   }}
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
+                  className="h-9 w-full rounded-md border bg-white px-3 text-sm"
                 />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">To Date</label>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">To Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -632,61 +642,53 @@ function ApprovalsPageInner() {
                     setEndDate(e.target.value);
                     setDateError("");
                   }}
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002]/40 text-gray-700 shadow-sm"
+                  className="h-9 w-full rounded-md border bg-white px-3 text-sm"
                 />
               </div>
-            </>
+            </div>
           )}
 
-          <Button
-            onClick={retrieveLists}
-            disabled={isRetrieving}
-            className="bg-[#8b3007] hover:bg-[#702604] text-white gap-2 h-9 px-4 rounded-lg flex items-center justify-center font-semibold text-sm shadow-sm"
-          >
-            <Search size={15} />
-            {isRetrieving ? "Retrieving..." : "Retrieve"}
-          </Button>
-        </div>
-
-        {dateError && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {dateError}
-          </div>
-        )}
+          {dateError && (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {dateError}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
-      {/* ── TWO-COLUMN GRID ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mb-6">
-        {/* Left Column: Approval Lists (col-span-4) */}
-        <Card className="lg:col-span-4 rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between min-h-[480px]">
-          <div>
-            <h2 className="text-[#953002] text-lg font-bold">Approval Lists</h2>
-            <p className="text-xs text-gray-400 font-medium mt-0.5 mb-6">Select a list to view details</p>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[350px_1fr]">
 
-            {/* Headers */}
-            <div className="flex justify-between items-center text-[11px] font-bold text-gray-400 uppercase tracking-wider pb-2 border-b border-gray-100 mb-3 px-1">
-              <span>List ID</span>
-              <span>Status</span>
-            </div>
+        {/* Left Panel: Approval Lists — same card, header row and row treatment as the
+            Grade 5 approval lists. */}
+        <Card className="overflow-hidden rounded-xl py-0 shadow-sm">
+          <CardHeader className="px-5 pt-5 pb-3">
+            <CardTitle className="text-lg font-bold text-[#953002]">Approval Lists</CardTitle>
+            <p className="text-xs text-muted-foreground">Select a list to view details</p>
+          </CardHeader>
+          <CardContent className="px-0 pb-4">
+            <div className="border-y text-sm">
+              <div className="grid grid-cols-[1fr_auto] px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <span>List ID</span>
+                <span>Status</span>
+              </div>
 
-            {/* List Body */}
-            {!hasRetrieved ? (
-              <div className="text-center py-12 text-gray-400 text-xs italic">
-                Use the filter above to retrieve lists
-              </div>
-            ) : filteredLists.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-xs">
-                No approval lists found
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                {filteredLists.map((list) => {
+              {!hasRetrieved ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  Use the filter above to retrieve lists.
+                </div>
+              ) : filteredLists.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No approval lists found.
+                </div>
+              ) : (
+                filteredLists.map((list) => {
                   const isSelected = selectedListId === list.approvalListId;
                   const status = getListStatus(list);
 
                   return (
-                    <div
+                    <button
                       key={list.approvalListId}
+                      type="button"
                       onClick={() => {
                         setSelectedListId(isSelected ? null : list.approvalListId);
                         setHasRetrievedRequests(false);
@@ -694,58 +696,59 @@ function ApprovalsPageInner() {
                         setDecisions({});
                         setShowConfirmPopup(false);
                       }}
-                      className={`flex justify-between items-center p-3 rounded-lg border transition-all cursor-pointer ${isSelected
-                        ? "bg-gray-100 border-transparent"
-                        : "bg-white border-gray-100 hover:bg-gray-50/80"
+                      className={`grid w-full grid-cols-[1fr_auto] items-center border-t px-5 py-3 text-left transition-colors first:border-t-0 hover:bg-[#f6f6f6] ${isSelected ? "bg-[#d9d9d9]" : ""
                         }`}
                     >
-                      <div className="flex flex-col min-w-0 flex-1 mr-2">
-                        <span className="text-sm font-semibold text-gray-800 font-mono truncate block max-w-[160px]" title={list.approvalListId}>
+                      <div className="leading-tight">
+                        <p className="truncate text-sm font-medium text-gray-800" title={list.approvalListId}>
                           {list.approvalListId}
-                        </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {list.scheduledDate || "—"}
+                        </p>
                       </div>
-
-                      <div>
-                        {isSelected ? (
-                          <span className="text-xs font-bold text-gray-800">
-                            {status}
-                          </span>
-                        ) : (
-                          <span className="border border-gray-200 px-2 py-0.5 rounded-full text-[10px] font-semibold text-gray-500 bg-white">
-                            {status}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === "PROCEED"
+                        ? "bg-green-100 text-green-700 border border-green-200"
+                        : "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                        }`}>
+                        {status}
+                      </span>
+                    </button>
                   );
-                })}
-              </div>
-            )}
-          </div>
+                })
+              )}
+            </div>
 
-          {/* Action button at the bottom of left card */}
-          <div className="mt-6">
-            <Button
-              onClick={retrieveRequestsForList}
-              disabled={selectedListId === null || isLoadingRequests}
-              className="bg-[#8b3007] hover:bg-[#702604] disabled:bg-gray-100 disabled:text-gray-400 text-white font-semibold py-2.5 px-4 rounded-lg w-full transition-all duration-200 text-center text-sm shadow-sm flex items-center justify-center gap-2"
-            >
-              {isLoadingRequests ? "Retrieving..." : "Retrieve University Scholarship Requests"}
-            </Button>
-          </div>
+            <div className="px-3 pt-3">
+              <Button
+                type="button"
+                className="h-9 w-full bg-[#953002] text-white hover:bg-[#7a2700]"
+                disabled={selectedListId === null || isLoadingRequests}
+                onClick={retrieveRequestsForList}
+              >
+                {isLoadingRequests ? "Retrieving..." : "Retrieve Applications"}
+              </Button>
+            </div>
+          </CardContent>
         </Card>
 
-        {/* Right Column: Applications Details (col-span-8) */}
-        <Card className="lg:col-span-8 rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col min-h-[480px]">
-          {/* Card Header */}
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-[#953002] text-lg font-bold">Applications</h2>
-              <p className="text-xs text-gray-400 font-medium mt-0.5">
-                {isProcessed
-                  ? "This list has already been processed and is in read-only mode."
-                  : "Click 'Retrieve University Scholarship Requests' to view data"}
-              </p>
+        {/* min-w-0 is what stops this card blowing past the viewport. A grid item
+            defaults to min-width:auto, so without it the column refuses to shrink below
+            the table's intrinsic width and the whole card grows instead of the table
+            scrolling inside it — clipping the action buttons and the last column. */}
+        {/* Right Panel: Applications Details — same card shell as Grade 5. */}
+        <Card className="min-w-0 rounded-xl py-0 shadow-sm">
+          <CardHeader className="px-5 pt-5 pb-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-lg font-bold text-[#953002]">Applications</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {isProcessed
+                    ? "This list has already been processed and is in read-only mode."
+                    : hasRetrievedRequests && retrievedRequests.length > 0
+                      ? `Showing ${retrievedRequests.length} applications for List ${selectedListId}`
+                      : "Click 'Retrieve Applications' to view data"}
+                </p>
               {isProcessed && firstRequest && (
                 <div className="mt-3 text-xs text-gray-600 bg-amber-50/60 border border-amber-200/60 rounded-xl p-3 flex flex-col gap-1 max-w-md">
                   <p>
@@ -771,7 +774,7 @@ function ApprovalsPageInner() {
             </div>
 
             {hasRetrievedRequests && retrievedRequests.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {!isProcessed && canDelete && selectedListId !== null && (
                   <Button
                     variant="outline"
@@ -797,17 +800,19 @@ function ApprovalsPageInner() {
                     Print List
                   </Button>
                 )}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          </CardHeader>
 
+          <CardContent className="px-5 pb-5">
           {/* Card Body */}
           {!hasRetrievedRequests ? (
             /* Empty State */
             <div className="flex flex-col items-center justify-center flex-1 py-16">
               <File size={56} className="text-gray-200 stroke-[1.2] mb-3" />
               <p className="text-sm font-semibold text-gray-400">
-                Select a list and click Retrieve University Scholarship Requests
+                Select a list and click Retrieve Applications
               </p>
             </div>
           ) : retrievedRequests.length === 0 ? (
@@ -816,19 +821,40 @@ function ApprovalsPageInner() {
             </div>
           ) : (
             <>
-              <div className="border border-gray-100 rounded-lg overflow-x-auto flex-1 shadow-sm">
-                <Table>
+              <div className="w-full flex-1 overflow-x-auto rounded-lg border border-neutral-300">
+                <Table className="border-collapse">
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
-                      <TableHead className="font-semibold text-xs text-gray-600">Request ID</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">Member ID</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">Student Name</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">NIC</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">Member Name</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">University</TableHead>
-                      <TableHead className="font-semibold text-xs text-gray-600">Decision</TableHead>
-                      {/* New Approve/Reject column */}
-                      <TableHead className="font-semibold text-xs text-gray-600 min-w-[210px]">Approve / Reject</TableHead>
+                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                      {/*
+                        * "Decision" used to sit here as a status badge, next to the
+                        * Approve / Reject control. It carried nothing per row: before
+                        * processing every request in a list holds the same status, and
+                        * after processing the Approve / Reject cell already reads
+                        * "Approved" or "Rejected" with the reason underneath.
+                        */}
+                      {/*
+                        * The same column set as the Grade 5 approval lists and the
+                        * Termination approval lists: identity, then the module's own
+                        * decision data, then Decision and Reason as two columns.
+                        *
+                        * NIC and Member Name are gone. With Member ID and Student Name
+                        * already present they were a third and fourth identifier the
+                        * board never acts on, and they squeezed the decision controls.
+                        */}
+                      {[
+                        "Request ID",
+                        "Member ID",
+                        "Student Name",
+                        "University",
+                      ].map((h) => (
+                        <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                          {h}
+                        </TableHead>
+                      ))}
+                      <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase w-40">Decision</TableHead>
+                      <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                        Reason (If Reject)
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -864,64 +890,63 @@ function ApprovalsPageInner() {
                           </TableCell>
 
                           <TableCell className="p-3 text-gray-700">{req.studentName}</TableCell>
-                          <TableCell className="p-3 text-gray-500">{req.nic || "—"}</TableCell>
-                          <TableCell className="p-3 text-gray-700">{req.memberName || "—"}</TableCell>
                           <TableCell className="p-3 text-gray-600">{req.universityName || "—"}</TableCell>
-                          <TableCell className="p-3">{statusBadge(req.status)}</TableCell>
 
-                          {/* ── NEW: Approve / Reject column ── */}
+                          {/* Decision */}
                           <TableCell className="p-3">
                             {isProcessed ? (
-                              <div className="flex flex-col gap-1">
-                                <span className={`font-semibold px-2 py-0.5 rounded text-[11px] w-fit ${req.status === "APPROVED"
-                                  ? "bg-green-50 text-green-700 border border-green-200"
-                                  : "bg-red-50 text-red-700 border border-red-200"
-                                  }`}>
-                                  {req.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
-                                </span>
-                                {req.status === "REJECTED" && req.rejectReason && (
-                                  <p className="text-[10px] text-gray-500 font-medium italic mt-0.5">
-                                    Reason: {req.rejectReason}
-                                  </p>
+                              <span className={`font-semibold px-2 py-0.5 rounded text-[11px] w-fit inline-block ${req.status === "APPROVED"
+                                ? "bg-green-50 text-green-700 border border-green-200"
+                                : "bg-red-50 text-red-700 border border-red-200"
+                                }`}>
+                                {req.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
+                              </span>
+                            ) : (
+                              <div className="relative">
+                                <select
+                                  value={dec.action}
+                                  onChange={(e) =>
+                                    handleDecisionChange(key, e.target.value as "approve" | "reject")
+                                  }
+                                  className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${dec.action === "approve"
+                                    ? "border-green-300 bg-green-50 text-green-700"
+                                    : "border-red-300 bg-red-50 text-red-700"
+                                    }`}
+                                >
+                                  <option value="approve">✓ Approve</option>
+                                  <option value="reject">✗ Reject</option>
+                                </select>
+                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-400" />
+                              </div>
+                            )}
+                          </TableCell>
+
+                          {/* Reason (If Reject) — its own column now, so the decision
+                              control keeps a stable width whether or not a reason is
+                              being entered. */}
+                          <TableCell className="p-3">
+                            {isProcessed ? (
+                              req.status === "REJECTED" && req.rejectReason ? (
+                                <span className="text-xs text-gray-600">{req.rejectReason}</span>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )
+                            ) : dec.action === "reject" ? (
+                              <div className="flex flex-col gap-0.5">
+                                <textarea
+                                  rows={2}
+                                  placeholder="Enter rejection reason (mandatory)…"
+                                  value={dec.reason}
+                                  onChange={(e) => handleReasonChange(key, e.target.value)}
+                                  className={`w-full border rounded-md px-2 py-1.5 text-xs text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-red-400/40 placeholder:text-gray-400 shadow-sm ${rowError ? "border-red-400 bg-red-50" : "border-red-200 bg-white"
+                                    }`}
+                                />
+                                {rowError && (
+                                  <p className="text-[10px] text-red-600 font-medium">{rowError}</p>
                                 )}
                               </div>
                             ) : (
-                              <div className="flex flex-col gap-1.5 min-w-[190px]">
-                                {/* Dropdown */}
-                                <div className="relative">
-                                  <select
-                                    value={dec.action}
-                                    onChange={(e) =>
-                                      handleDecisionChange(key, e.target.value as "approve" | "reject")
-                                    }
-                                    className={`w-full border rounded-md px-2 py-1.5 text-xs font-semibold appearance-none pr-7 focus:outline-none focus:ring-2 focus:ring-[#953002]/30 shadow-sm transition-colors ${dec.action === "approve"
-                                      ? "border-green-300 bg-green-50 text-green-700"
-                                      : "border-red-300 bg-red-50 text-red-700"
-                                      }`}
-                                  >
-                                    <option value="approve">✓ Approve</option>
-                                    <option value="reject">✗ Reject</option>
-                                  </select>
-                                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-400" />
-                                </div>
-
-                                {/* Rejection reason — shown only when Reject is selected */}
-                                {dec.action === "reject" && (
-                                  <div className="flex flex-col gap-0.5">
-                                    <textarea
-                                      rows={2}
-                                      placeholder="Enter rejection reason (mandatory)…"
-                                      value={dec.reason}
-                                      onChange={(e) => handleReasonChange(key, e.target.value)}
-                                      className={`w-full border rounded-md px-2 py-1.5 text-xs text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-red-400/40 placeholder:text-gray-400 shadow-sm ${rowError ? "border-red-400 bg-red-50" : "border-red-200 bg-white"
-                                        }`}
-                                    />
-                                    {rowError && (
-                                      <p className="text-[10px] text-red-600 font-medium">{rowError}</p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                              <span className="text-xs text-gray-400">-</span>
                             )}
                           </TableCell>
                         </TableRow>
@@ -936,7 +961,7 @@ function ApprovalsPageInner() {
                 <div className="mt-5 flex justify-end">
                   <Button
                     onClick={handleProceed}
-                    className="bg-[#8b3007] hover:bg-[#702604] text-white font-semibold px-6 py-2.5 rounded-lg shadow-sm flex items-center gap-2 text-sm"
+                    className="bg-[#953002] hover:bg-[#7a2700] text-white font-semibold px-6 py-2.5 rounded-lg shadow-sm flex items-center gap-2 text-sm"
                   >
                     <CheckCircle2 size={15} />
                     Proceed
@@ -945,6 +970,7 @@ function ApprovalsPageInner() {
               )}
             </>
           )}
+          </CardContent>
         </Card>
       </div>
 
@@ -1193,7 +1219,7 @@ function ApprovalsPageInner() {
                 <Button
                   onClick={handleProcess}
                   disabled={isProcessing || processSuccess}
-                  className="bg-[#8b3007] hover:bg-[#702604] text-white font-semibold px-6 text-sm gap-2 shadow-sm"
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white font-semibold px-6 text-sm gap-2 shadow-sm"
                 >
                   <CheckCircle2 size={15} />
                   {isProcessing ? "Processing..." : "Process"}

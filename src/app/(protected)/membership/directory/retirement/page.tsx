@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/src/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import RetirementForm, { RetirementFormRef } from "@/src/components/ui/retirement/retirementform";
 import DocumentUpload from "@/src/components/ui/documentupload";
@@ -937,38 +945,35 @@ export default function RetirementPage() {
                         Minor Saving Accounts
                       </p>
 
-                      <table className="w-3/4 border border-gray-200 rounded-lg">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="w-1/4 text-left px-4 py-2 border-b">
-                              Minor Account No
-                            </th>
-                            <th className="w-1/4 text-left px-4 py-2 border-b">
-                              Holder Name
-                            </th>
-                            <th className="w-1/4 text-left px-4 py-2 border-b">
-                              Balance
-                            </th>
-                          </tr>
-                        </thead>
+                      <div className="w-3/4 overflow-hidden rounded-lg border border-neutral-300">
+                        <Table className="border-collapse">
+                          <TableHeader>
+                            <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                              {["Minor Account No", "Holder Name", "Balance"].map((h) => (
+                                <TableHead key={h} className="w-1/4 px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                                  {h}
+                                </TableHead>
+                              ))}
+                            </TableRow>
+                          </TableHeader>
 
-                        <tbody>
-                          {minorSavingsAccounts.map((account) => (
-                            <tr key={account.minorAccountNo}>
-                              <td className="px-4 py-2 border-b">
-                                {account.minorAccountNo}
-                              </td>
-                              <td className="px-4 py-2 border-b">
-                                {account.holderName}
-                              </td>
-                              <td className="px-4 py-2 border-b">
-                                {account.balance}
-                              </td>
-
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          <TableBody>
+                            {minorSavingsAccounts.map((account) => (
+                              <TableRow key={account.minorAccountNo} className="hover:bg-neutral-50">
+                                <TableCell className="px-4 py-4 text-neutral-700">
+                                  {account.minorAccountNo}
+                                </TableCell>
+                                <TableCell className="px-4 py-4 text-neutral-700">
+                                  {account.holderName}
+                                </TableCell>
+                                <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                                  {account.balance}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
 
                     {bankAccounts.length === 0 ? (
@@ -981,58 +986,56 @@ export default function RetirementPage() {
                           Disbursement Bank Details
                         </p>
 
-                        <table className="w-3/4 border border-gray-200 rounded-lg">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="w-1/4 text-left px-4 py-2 border-b">
-                                Bank
-                              </th>
-                              <th className="w-1/4 text-left px-4 py-2 border-b">
-                                Branch
-                              </th>
-                              <th className="w-1/4 text-left px-4 py-2 border-b">
-                                Account Number
-                              </th>
+                        <div className="w-3/4 overflow-hidden rounded-lg border border-neutral-300">
+                          <Table className="border-collapse">
+                            <TableHeader>
+                              <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                                {["Bank", "Branch", "Account Number"].map((h) => (
+                                  <TableHead key={h} className="w-1/4 px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                                    {h}
+                                  </TableHead>
+                                ))}
 
-                              {/** Only show action column when the user can edit the bank details */}
-                              {isEditMode && (
-                                <th className="w-1/4 text-left px-4 py-2 border-b">Action</th>
-                              )}
-                            </tr>
-                          </thead>
-
-                          <tbody>
-                            {bankAccounts.map((account) => (
-                              <tr key={account.id}>
-                                <td className="px-4 py-2 border-b">
-                                  {account.bankName}
-                                </td>
-                                <td className="px-4 py-2 border-b">
-                                  {account.branchName}
-                                </td>
-                                <td className="px-4 py-2 border-b">
-                                  {account.accountNumber}
-                                </td>
-
+                                {/** Only show action column when the user can edit the bank details */}
                                 {isEditMode && (
-                                  <td className="px-4 py-2 border-b">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="bg-[#953002] text-white hover:bg-gray-100"
-                                      onClick={() => {
-                                        setEditingBankAccount(account);
-                                        setOpenBankModal(true);
-                                      }}
-                                    >
-                                      Edit
-                                    </Button>
-                                  </td>
+                                  <TableHead className="w-1/4 px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">Action</TableHead>
                                 )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                              </TableRow>
+                            </TableHeader>
+
+                            <TableBody>
+                              {bankAccounts.map((account) => (
+                                <TableRow key={account.id} className="hover:bg-neutral-50">
+                                  <TableCell className="px-4 py-4 text-neutral-700">
+                                    {account.bankName}
+                                  </TableCell>
+                                  <TableCell className="px-4 py-4 text-neutral-700">
+                                    {account.branchName}
+                                  </TableCell>
+                                  <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                                    {account.accountNumber}
+                                  </TableCell>
+
+                                  {isEditMode && (
+                                    <TableCell className="px-4 py-4">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                                        onClick={() => {
+                                          setEditingBankAccount(account);
+                                          setOpenBankModal(true);
+                                        }}
+                                      >
+                                        Edit
+                                      </Button>
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </div>
                     )}
                   </>

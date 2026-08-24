@@ -1027,10 +1027,12 @@ export default function BoardApprovalsPage() {
       </div>
 
       {activeTab === "meetings" ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        /* items-start: without it the grid stretches both cards to the taller one, so
+           the Create panel grew a large empty area whenever the meetings list was long. */
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Create Board Meeting
               </CardTitle>
               <p className="text-sm text-muted-foreground">Schedule new meetings</p>
@@ -1063,7 +1065,7 @@ export default function BoardApprovalsPage() {
 
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Board Meetings Created
               </CardTitle>
             </CardHeader>
@@ -1077,11 +1079,19 @@ export default function BoardApprovalsPage() {
                   No meetings added yet.
                 </div>
               ) : (
-                <div className="flex flex-col gap-2">
+                /*
+                 * Fixed height with the list scrolling inside, so the card stays the same
+                 * size whatever it holds. Left to grow, a busy year of meetings stretched
+                 * this card far past the Create panel beside it and pushed everything
+                 * below off screen. ~5 rows is what fits before scrolling starts.
+                 *
+                 * pr-1 keeps the scrollbar off the row borders.
+                 */
+                <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
                   {createdMeetings.map((meeting) => (
                     <div
                       key={meeting.id}
-                      className="flex items-center justify-between rounded-lg border px-4 py-3"
+                      className="flex shrink-0 items-center justify-between rounded-lg border px-4 py-3"
                     >
                       <div className="flex items-center gap-3">
                         <Button
@@ -1127,7 +1137,7 @@ export default function BoardApprovalsPage() {
         <>
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Search Approval Lists
               </CardTitle>
             </CardHeader>
@@ -1215,7 +1225,7 @@ export default function BoardApprovalsPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
             <Card className="rounded-xl py-0 shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
-                <CardTitle className="text-4 font-bold text-[#953002]">Approval Lists</CardTitle>
+                <CardTitle className="text-lg font-bold text-[#953002]">Approval Lists</CardTitle>
                 <p className="text-sm text-muted-foreground">Select a list to view details</p>
               </CardHeader>
               <CardContent className="px-0 pb-4">
@@ -1300,9 +1310,11 @@ export default function BoardApprovalsPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl py-0 shadow-sm">
+            {/* min-w-0: the table below carries min-w-[560px], and without this the
+                grid column would grow to fit it instead of the table scrolling inside. */}
+            <Card className="min-w-0 rounded-xl py-0 shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
-                <CardTitle className="text-4 font-bold text-[#953002]">
+                <CardTitle className="text-lg font-bold text-[#953002]">
                   {selectedListKind === "termination" && selectedApprovalListId
                     ? "Termination Requests"
                     : "Applications"}
@@ -1382,7 +1394,7 @@ export default function BoardApprovalsPage() {
                       </div>
                     )}
 
-                    <div className="overflow-x-auto">
+                    <div className="w-full overflow-x-auto">
                         {selectedListNameChangeRequests.length > 0 && (
                           <div className="mb-4">
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Name Change Requests in this list</h3>
@@ -1509,6 +1521,15 @@ export default function BoardApprovalsPage() {
                             </div>
                           </div>
                         )}
+                      {/*
+                        * Only render the applications table when there are applications.
+                        * A Name Change or Nominee Change list has none — its requests are
+                        * the cards above — so this used to leave a bare header row
+                        * (App ID / Name / Decision / Reason / Action) under them with
+                        * nothing beneath it. The same happened for an empty membership
+                        * list; the "Showing 0 applications" line above already says so.
+                        */}
+                      {selectedListApplications.length > 0 && (
                       <table className="w-full min-w-[560px] text-sm">
                         <thead>
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
@@ -1630,6 +1651,7 @@ export default function BoardApprovalsPage() {
                           ))}
                         </tbody>
                       </table>
+                      )}
                     </div>
 
                     {(!selectedProcessedState || isEditingProcessedList) && (

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
+import { StatusBadge } from "@/src/components/ui/status-badge";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
 import {
   SubmitConfirmationModal,
@@ -104,24 +105,6 @@ function formatAmount(value?: number | string | null) {
 function formatStatus(status?: string) {
   if (!status) return "New";
   return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
-}
-
-function getStatusBadgeClass(status?: string) {
-  switch (status) {
-    case "NEW":
-      return "bg-blue-100 text-blue-800";
-    case "SUBMITTED_FOR_APPROVAL":
-    case "DISTRICT_COMMITTEE":
-    case "PD_COMMITTEE":
-      return "bg-yellow-100 text-yellow-800";
-    case "APPROVED":
-      return "bg-green-100 text-green-800";
-    case "INCOMPLETE":
-    case "REJECTED":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
 }
 
 export default function RecordMemberDeathPage() {
@@ -680,9 +663,7 @@ export default function RecordMemberDeathPage() {
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Badge className={`${getStatusBadgeClass(status)} px-3 py-1`}>
-            {formatStatus(status)}
-          </Badge>
+          <StatusBadge status={status} vocabulary="donation" />
           <span className="text-xs text-gray-500">
             Record ID: {recordNo ?? "NEW"}
           </span>

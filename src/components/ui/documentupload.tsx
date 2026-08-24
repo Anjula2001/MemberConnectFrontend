@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./table";
 import { apiClient } from "@/lib/api/client";
 
 /**
@@ -360,60 +368,66 @@ export default function DocumentUpload({
         {uploadedDocuments.length === 0 ? (
           <p className="text-gray-500 text-sm">No uploaded files.</p>
         ) : (
-          <table className="w-full border border-gray-200 rounded-lg">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="text-left px-4 py-2 border-b">Document</th>
-                <th className="text-left px-4 py-2 border-b">File Name</th>
-                <th className="text-left px-4 py-2 border-b">File Type</th>
-                <th className="text-left px-4 py-2 border-b">Uploaded At</th>
-                <th className="text-left px-4 py-2 border-b">Action</th>
-              </tr>
-            </thead>
+          <div className="overflow-hidden rounded-lg border border-neutral-300">
+            <Table className="border-collapse">
+              <TableHeader>
+                <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                  {["Document", "File Name", "File Type", "Uploaded At"].map((h) => (
+                    <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                      {h}
+                    </TableHead>
+                  ))}
+                  <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
 
-            <tbody>
-              {uploadedDocuments.map((file) => {
-                const document = requiredDocuments.find(
-                  (item) => item.id === file.requiredDocumentId
-                );
+              <TableBody>
+                {uploadedDocuments.map((file) => {
+                  const document = requiredDocuments.find(
+                    (item) => item.id === file.requiredDocumentId
+                  );
 
-                const isDeleting = deletingDocumentId === file.id;
+                  const isDeleting = deletingDocumentId === file.id;
 
-                return (
-                  <tr key={file.id}>
-                    <td className="px-4 py-2 border-b">
-                      {document?.documentName || "Unknown"}
-                    </td>
+                  return (
+                    <TableRow key={file.id} className="hover:bg-neutral-50">
+                      <TableCell className="px-4 py-4 text-neutral-700">
+                        {document?.documentName || "Unknown"}
+                      </TableCell>
 
-                    <td className="px-4 py-2 border-b">
-                      <button
-                        type="button"
-                        onClick={() => handleDownload(file.id, file.fileName)}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {file.fileName}
-                      </button>
-                    </td>
+                      <TableCell className="px-4 py-4 font-medium">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(file.id, file.fileName)}
+                          className="text-[#9d3602] hover:underline"
+                        >
+                          {file.fileName}
+                        </button>
+                      </TableCell>
 
-                    <td className="px-4 py-2 border-b">{file.fileType}</td>
+                      <TableCell className="px-4 py-4 text-neutral-700">{file.fileType}</TableCell>
 
-                    <td className="px-4 py-2 border-b">{file.uploadedAt}</td>
+                      <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                        {file.uploadedAt}
+                      </TableCell>
 
-                    <td className="px-4 py-2 border-b">
-                      <Button
-                        type="button"
-                        onClick={() => handleDelete(file.id)}
-                        disabled={isReadOnly || isDeleting}
-                        className="bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-                      >
-                        {isDeleting ? "Deleting..." : "Delete"}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <TableCell className="px-4 py-4 text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleDelete(file.id)}
+                          disabled={isReadOnly || isDeleting}
+                          className="bg-red-500 text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
+                        >
+                          {isDeleting ? "Deleting..." : "Delete"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
     </div>

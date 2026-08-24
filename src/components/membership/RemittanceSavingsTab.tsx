@@ -6,6 +6,14 @@ import { Info, Loader2, Pencil } from "lucide-react";
 
 import { Badge } from "@/src/components/ui/badge";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import {
   getMemberFinancials,
   type MemberFinancialsDTO,
 } from "@/lib/api/memberFinancials";
@@ -70,24 +78,28 @@ export default function RemittanceSavingsTab({ memberId }: { memberId: number })
       </div>
 
       <div className="overflow-hidden rounded-xl border border-neutral-200">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-            <tr>
-              <th className="px-4 py-2 font-semibold">Account</th>
-              <th className="px-4 py-2 font-semibold">Monthly Amount</th>
-              <th className="px-4 py-2 font-semibold">Effective From</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="border-collapse">
+          <TableHeader>
+            <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+              {["Account", "Monthly Amount", "Effective From"].map((h) => (
+                <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                  {h}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data.remittances?.map((r) => (
-              <tr key={r.accountCode} className="border-t border-neutral-100">
-                <td className="px-4 py-2 text-neutral-800">{r.accountName}</td>
-                <td className="px-4 py-2 font-medium text-neutral-900">{money(r.amount)}</td>
-                <td className="px-4 py-2 text-neutral-600">{r.effectiveFrom ?? "—"}</td>
-              </tr>
+              <TableRow key={r.accountCode} className="hover:bg-neutral-50">
+                <TableCell className="px-4 py-4 text-neutral-700">{r.accountName}</TableCell>
+                <TableCell className="px-4 py-4 font-medium tabular-nums">{money(r.amount)}</TableCell>
+                <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                  {r.effectiveFrom ?? "—"}
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <div className="flex items-center justify-between">
@@ -100,26 +112,27 @@ export default function RemittanceSavingsTab({ memberId }: { memberId: number })
       </div>
 
       <div className="overflow-hidden rounded-xl border border-neutral-200">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-            <tr>
-              <th className="px-4 py-2 font-semibold">Account</th>
-              <th className="px-4 py-2 font-semibold">Account Number</th>
-              <th className="px-4 py-2 font-semibold">Balance</th>
-              <th className="px-4 py-2 font-semibold">Source</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="border-collapse">
+          <TableHeader>
+            <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+              {["Account", "Account Number", "Balance", "Source"].map((h) => (
+                <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                  {h}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data.accounts?.map((a) => (
-              <tr key={a.accountCode} className="border-t border-neutral-100">
-                <td className="px-4 py-2 text-neutral-800">{a.accountName}</td>
-                <td className="px-4 py-2 text-neutral-900">
+              <TableRow key={a.accountCode} className="hover:bg-neutral-50">
+                <TableCell className="px-4 py-4 text-neutral-700">{a.accountName}</TableCell>
+                <TableCell className="px-4 py-4 text-neutral-700">
                   {a.accountNumber ?? (
                     <span className="text-neutral-400">Not yet created</span>
                   )}
-                </td>
-                <td className="px-4 py-2 font-medium text-neutral-900">{money(a.balance)}</td>
-                <td className="px-4 py-2">
+                </TableCell>
+                <TableCell className="px-4 py-4 font-medium tabular-nums">{money(a.balance)}</TableCell>
+                <TableCell className="px-4 py-4">
                   {a.source === "FINANCE" ? (
                     <Badge className="border border-green-300 bg-green-100 text-green-700 hover:bg-green-100">
                       Synced
@@ -131,11 +144,11 @@ export default function RemittanceSavingsTab({ memberId }: { memberId: number })
                   ) : (
                     <span className="text-xs text-neutral-400">—</span>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">

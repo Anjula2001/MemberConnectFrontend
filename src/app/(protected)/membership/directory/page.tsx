@@ -15,7 +15,6 @@ import {
 	SlidersHorizontal,
 } from "lucide-react";
 
-import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Checkbox } from "@/src/components/ui/checkbox";
@@ -42,6 +41,7 @@ import {
 } from "@/src/components/ui/table-pagination";
 
 import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
+import { StatusBadge } from "@/src/components/ui/status-badge";
 import {
 	getEducationalDistricts,
 	getEducationalZonesByDistrict,
@@ -79,18 +79,6 @@ const MEMBER_STATUS_LABELS: Record<MemberStatus, string> = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const STATUS_BADGE_CLASSES: Record<string, string> = {
-	ACTIVE: "bg-green-600 hover:bg-green-600 text-white",
-	INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
-	RESIGNED: "bg-yellow-600 hover:bg-yellow-600 text-white",
-	TERMINATED: "bg-red-600 hover:bg-red-600 text-white",
-	DECEASED: "bg-neutral-700 hover:bg-neutral-700 text-white",
-};
-
-function statusBadgeClass(status?: string) {
-	return STATUS_BADGE_CLASSES[status ?? ""] ?? "bg-gray-400 hover:bg-gray-400 text-white";
-}
 
 // ---------------------------------------------------------------------------
 // MultiSelectDropdown
@@ -696,11 +684,7 @@ export default function MemberDirectoryPage() {
 											{member.workingLocation ?? member.educationalDistrict ?? "—"}
 										</TableCell>
 										<TableCell className="px-4 py-4">
-											<Badge
-												className={`px-2.5 py-0.5 text-[11px] font-semibold ${statusBadgeClass(member.status)}`}
-											>
-												{member.status ?? "—"}
-											</Badge>
+											<StatusBadge status={member.status} vocabulary="member" />
 										</TableCell>
 									</TableRow>
 								))

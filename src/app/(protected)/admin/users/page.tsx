@@ -1,6 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import { TablePagination, clampPage, pageSlice } from "@/src/components/ui/table-pagination";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/lib/toast-context";
 import {
@@ -143,6 +153,7 @@ export default function UserManagementPage() {
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [districtFilter, setDistrictFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -346,6 +357,11 @@ export default function UserManagementPage() {
     return true;
   });
 
+  // Clamped every render: the filters above narrow the list without touching `page`,
+  // so a search that shrinks the results must not strand the user on a page past the end.
+  const safePage = clampPage(page, filteredUsers.length);
+  const pagedUsers = pageSlice(filteredUsers, safePage);
+
   // Statistics
   const totalCount = users.length;
   const activeCount = users.filter((u) => u.active).length;
@@ -530,19 +546,24 @@ export default function UserManagementPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-neutral-200 bg-[#f4f4f5]/60 text-[12px] font-semibold uppercase tracking-wider text-neutral-500">
-                <tr>
-                  <th className="px-5 py-3.5">Staff User</th>
-                  <th className="px-5 py-3.5">Role</th>
-                  <th className="px-5 py-3.5">Assigned District</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Created Date</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredUsers.map((u) => {
+            <Table className="border-collapse">
+              <TableHeader>
+                <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                  {["Staff User", "Role", "Assigned District", "Status", "Created Date"].map((h) => (
+                    <TableHead
+                      key={h}
+                      className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                    >
+                      {h}
+                    </TableHead>
+                  ))}
+                  <TableHead className="px-4 py-3 text-right text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pagedUsers.map((u) => {
                   const roleMeta = ROLE_CONFIG[u.role] || {
                     label: u.role,
                     bg: "bg-neutral-50",
@@ -561,9 +582,9 @@ export default function UserManagementPage() {
                   const isMe = u.username === currentUser?.username;
 
                   return (
-                    <tr key={u.id} className="transition-colors hover:bg-[#fdf5f2]/40">
+                    <TableRow key={u.id} className="hover:bg-neutral-50">
                       {/* User details */}
-                      <td className="px-5 py-4">
+                      <TableCell className="px-4 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shadow-xs overflow-hidden">
                             {u.profilePictureUrl ? (
@@ -588,10 +609,10 @@ export default function UserManagementPage() {
                             <span className="text-xs text-neutral-400">@{u.username}</span>
                           </div>
                         </div>
-                      </td>
+                      </TableCell>
 
                       {/* Role Badge */}
-                      <td className="px-5 py-4">
+                      <TableCell className="px-4 py-4">
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border}`}
                           title={roleMeta.desc}
@@ -599,10 +620,10 @@ export default function UserManagementPage() {
                           <Shield className="h-3 w-3 shrink-0" />
                           {roleMeta.label}
                         </span>
-                      </td>
+                      </TableCell>
 
                       {/* District */}
-                      <td className="px-5 py-4">
+                      <TableCell className="px-4 py-4">
                         {u.assignedDistrict ? (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-neutral-700">
                             <Building2 className="h-3.5 w-3.5 text-neutral-400" />
@@ -611,25 +632,18 @@ export default function UserManagementPage() {
                         ) : (
                           <span className="text-xs text-neutral-400">All / Head Office</span>
                         )}
-                      </td>
+                      </TableCell>
 
                       {/* Status */}
-                      <td className="px-5 py-4">
-                        {u.active ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 border border-red-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                            Inactive
-                          </span>
-                        )}
-                      </td>
+                      <TableCell className="px-4 py-4">
+                        <StatusBadge
+                          status={u.active ? "ACTIVE" : "INACTIVE"}
+                          vocabulary="account"
+                        />
+                      </TableCell>
 
                       {/* Created At */}
-                      <td className="px-5 py-4 text-xs text-neutral-500">
+                      <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
                         {u.createdAt
                           ? new Date(u.createdAt).toLocaleDateString("en-US", {
                               year: "numeric",
@@ -637,10 +651,10 @@ export default function UserManagementPage() {
                               day: "numeric",
                             })
                           : "—"}
-                      </td>
+                      </TableCell>
 
                       {/* Actions */}
-                      <td className="px-5 py-4 text-right">
+                      <TableCell className="px-4 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Edit */}
                           <button
@@ -676,12 +690,21 @@ export default function UserManagementPage() {
                             <Power className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+
+            {filteredUsers.length > 0 && (
+              <TablePagination
+                page={safePage}
+                total={filteredUsers.length}
+                onPageChange={setPage}
+                itemLabel="user"
+              />
+            )}
           </div>
         )}
       </div>

@@ -14,7 +14,21 @@ import type { MemberDTO } from "@/lib/api/member";
  * All dimensions are in millimetres so the card prints at true physical size
  * regardless of screen DPI. Values are the signed-off mockup's pixels / 10.
  */
-export default function MembershipCardTemplate({ member }: { member: MemberDTO }) {
+export default function MembershipCardTemplate({
+  member,
+  photoUrl,
+}: {
+  member: MemberDTO;
+  /**
+   * The member's photograph, resolved by the caller from the PROFILE_PHOTO document.
+   *
+   * Member.profilePictureUrl is a column nothing populates - the photograph is uploaded
+   * as a document against the member's application, which is where the Member Profile
+   * reads it from too. Relying on the column alone printed the silhouette on every card.
+   * The column is still honoured as a fallback for any record that does carry one.
+   */
+  photoUrl?: string | null;
+}) {
   const [qr, setQr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -117,10 +131,10 @@ export default function MembershipCardTemplate({ member }: { member: MemberDTO }
               overflow: "hidden",
             }}
           >
-            {member.profilePictureUrl ? (
+            {photoUrl || member.profilePictureUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={member.profilePictureUrl}
+                src={photoUrl || member.profilePictureUrl}
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />

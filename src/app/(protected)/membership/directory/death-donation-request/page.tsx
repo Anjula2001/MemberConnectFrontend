@@ -6,6 +6,14 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Info, Pencil } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
@@ -1345,56 +1353,65 @@ export default function DeathDonationRequestPage() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full border text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="border-b px-4 py-2 text-left">Member ID</th>
-                    <th className="border-b px-4 py-2 text-left">Relationship</th>
-                    <th className="border-b px-4 py-2 text-left">Source</th>
-                    <th className="border-b px-4 py-2 text-left">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {relatives.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
-                        No close relatives added yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    relatives.map((relative, index) => (
-                      <tr key={`${relative.relativeMemberId}-${index}`}>
-                        <td className="border-b px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            {relative.autoPopulated && (
-                              <Info className="h-4 w-4 text-amber-600" aria-label="Auto populated" />
+              <div className="overflow-hidden rounded-lg border border-neutral-300">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                      {["Member ID", "Relationship", "Source", "Action"].map((h) => (
+                        <TableHead
+                          key={h}
+                          className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                        >
+                          {h}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {relatives.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-10 text-center text-neutral-500">
+                          No close relatives added yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      relatives.map((relative, index) => (
+                        <TableRow
+                          key={`${relative.relativeMemberId}-${index}`}
+                          className="hover:bg-neutral-50"
+                        >
+                          <TableCell className="px-4 py-4 font-medium">
+                            <div className="flex items-center gap-2">
+                              {relative.autoPopulated && (
+                                <Info className="h-4 w-4 text-amber-600" aria-label="Auto populated" />
+                              )}
+                              {relative.relativeMemberId}
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {relative.relationshipToDeceased}
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {relative.autoPopulated ? "Auto" : "Manual"}
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
+                            {!relative.autoPopulated && isFormEditable && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleRemoveRelative(index)}
+                              >
+                                Remove
+                              </Button>
                             )}
-                            {relative.relativeMemberId}
-                          </div>
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {relative.relationshipToDeceased}
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {relative.autoPopulated ? "Auto" : "Manual"}
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {!relative.autoPopulated && isFormEditable && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleRemoveRelative(index)}
-                            >
-                              Remove
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
 
