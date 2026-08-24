@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { z } from "zod";
 import { Button } from "@/src/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
@@ -10,7 +11,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, ShieldAlert, X, } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
-import { getEducationalDistricts } from "@/lib/api/education";
+import { SRI_LANKAN_DISTRICTS } from "@/lib/districts";
 import { useAuth } from "@/lib/auth-context";
 import {
   BOARD_MEETING_VIEW_ROLES,
@@ -19,13 +20,17 @@ import {
   MEMBER_DEATH_VIEW_ROLES,
   TERMINATION_BOARD_ROLES,
   TERMINATION_VIEW_ROLES,
+  hasRetPermission,
   hasRole,
+  isLocationRestricted,
 } from "@/lib/permissions";
 import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
   createTerminationApprovalList,
   type TerminationApprovalListDTO,
 } from "@/lib/api/terminationApprovalLists";
+import { searchRetirementRequests } from "@/lib/api/retirementRequests";
+import { cn } from "@/lib/utils";
 
 interface TerminationRequest {
   id: string;
@@ -102,15 +107,62 @@ type SortBy = "requestedDate" | "status" | "memberId";
 type SortOrder = "asc" | "desc";
 
 const TODAY = new Date().toISOString().split("T")[0];
+
+
+const filterSchema = z
+  .object({
+    dateFilter: z.string(),
+    fromDate: z.string().optional(),
+    toDate: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.dateFilter !== "date_period") return;
+
+    if (!data.fromDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromDate"],
+        message: "From Date is required",
+      });
+    }
+
+    if (!data.toDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["toDate"],
+        message: "To Date is required",
+      });
+    }
+
+    if (data.fromDate && data.fromDate > TODAY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromDate"],
+        message: "From Date cannot be a future date",
+      });
+    }
+
+    if (data.toDate && data.toDate > TODAY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["toDate"],
+        message: "To Date cannot be a future date",
+      });
+    }
+
+    if (data.fromDate && data.toDate && data.toDate < data.fromDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["toDate"],
+        message: "To Date cannot be earlier than From Date",
+      });
+    }
+  });
+  
 const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval",];
-const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
-  "submitted_for_approval",
-  "rejected",
-  "added_to_approval_list",
-];
-// MMT19: "By default, New, Submitted for Approval, District Committee and P&D
-// Committee statuses will be selected." Those are the four that still need
-// somebody to act on them.
+const DEFAULT_TERMINATION_STATUSES: StatusType[] = ["submitted_for_approval", "rejected", "added_to_approval_list",];
+
+// Committee statuses will be selected." Those are the four that still need somebody to act on them.
 const DEFAULT_MEMBER_DEATH_STATUSES: StatusType[] = [
   "new",
   "submitted_for_approval",
@@ -128,10 +180,7 @@ const TERMINATION_STATUS_LABELS: Record<string, string> = {
   INCOMPLETE: "Incomplete",
   INACTIVE: "Inactive",
 };
-const SELECTABLE_TERMINATION_STATUSES: TerminationRequest["status"][] = [
-  "SUBMITTED_FOR_APPROVAL",
-  "REJECTED",
-];
+const SELECTABLE_TERMINATION_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL", "REJECTED",];
 const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_APPROVAL", "ADDED_TO_APPROVAL_LIST", "APPROVED", "REJECTED",];
 
 // Status options by request type
@@ -256,16 +305,18 @@ function LocationMultiSelect({
   selectedLocations,
   onLocationChange,
   availableLocations,
+  disabled = false,
 }: {
   selectedLocations: string[];
   onLocationChange: (locations: string[]) => void;
   availableLocations: { id: string; name: string }[];
+  /**a user with access to only their own district gets this un-editable. */
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const locationOptions = availableLocations.filter(
-    (location) => location.id !== ALL_LOCATIONS_OPTION.id
-  );
+  const locationOptions = availableLocations;
+  const allSelected = selectedLocations.includes(ALL_LOCATIONS_OPTION.id);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -284,19 +335,27 @@ function LocationMultiSelect({
   }, [isOpen]);
 
   const toggleLocation = (locationId: string) => {
+    if (locationId === ALL_LOCATIONS_OPTION.id) {
+      onLocationChange(allSelected ? [] : [ALL_LOCATIONS_OPTION.id]);
+      return;
+    }
+
+    const withoutAll = selectedLocations.filter(
+      (id) => id !== ALL_LOCATIONS_OPTION.id
+    );
+
     onLocationChange(
-      selectedLocations.includes(locationId)
-        ? selectedLocations.filter((id) => id !== locationId)
-        : [...selectedLocations, locationId]
+      withoutAll.includes(locationId)
+        ? withoutAll.filter((id) => id !== locationId)
+        : [...withoutAll, locationId]
     );
   };
 
   const displayText =
-    selectedLocations.length === 0
-      ? "All Locations"
+    allSelected || selectedLocations.length === 0
+      ? ALL_LOCATIONS_OPTION.name
       : selectedLocations.length === 1
-        ? locationOptions.find((location) => location.id === selectedLocations[0])
-          ?.name
+        ? locationOptions.find((location) => location.id === selectedLocations[0])?.name
         : `${selectedLocations.length} selected`;
 
   return (
@@ -304,7 +363,14 @@ function LocationMultiSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between"
+        disabled={disabled}
+        title={disabled ? "You can only view your own district's requests." : undefined}
+        className={cn(
+          "w-full px-3 py-2 text-left border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between",
+          disabled
+            ? "bg-gray-100 text-gray-600 cursor-not-allowed"
+            : "bg-white hover:bg-gray-50"
+        )}
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown
@@ -312,7 +378,7 @@ function LocationMultiSelect({
         />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
           <div className="p-2 max-h-64 overflow-y-auto">
             {locationOptions.map((location) => (
@@ -335,10 +401,33 @@ function LocationMultiSelect({
   );
 }
 
-// Locations come from the Educational Districts master (/api/education/districts),
-// the same source the Member Directory filter uses, so the two screens can never
-// drift apart. "All Locations" is prepended locally as a UI convenience.
+
 const ALL_LOCATIONS_OPTION = { id: "all", name: "All Locations" };
+
+
+const LOCATION_OPTIONS = [
+  ALL_LOCATIONS_OPTION,
+  ...SRI_LANKAN_DISTRICTS.map((district) => ({ id: district, name: district })),
+];
+
+
+const resolveLocationId = (
+  district: string | null | undefined,
+  options: { id: string; name: string }[]
+): string | null => {
+  if (!district?.trim()) return null;
+
+  const key = (value: string) => value.trim().toLowerCase().replace(/[\s_]+/g, " ");
+  const target = key(district);
+
+  const match = options.find(
+    (location) =>
+      location.id !== ALL_LOCATIONS_OPTION.id &&
+      (key(location.id) === target || key(location.name) === target)
+  );
+
+  return match?.id ?? null;
+};
 
 // Helper function to get current month date range
 const getCurrentMonthRange = () => {
@@ -366,10 +455,15 @@ export default function TerminationPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
 
-  // MMT23 / MMT24 send the District and P&D Committees to this same screen, but
-  // Member Deaths are the only thing they are actors for. Pinning the type filter
-  // keeps "All" from firing termination and retirement calls their role is
-  // rightly refused.
+
+  const canViewRetirement = hasRetPermission(user?.role, "RET_REQUEST_VIEW");
+  const canEditRetirement = hasRetPermission(user?.role, "RET_REQUEST_EDIT");
+
+
+  // District Office is the only role that lands here.
+  const locationRestricted = isLocationRestricted(user?.role);
+
+
   const isMemberDeathOnlyUser = hasRole(user?.role, MEMBER_DEATH_ONLY_ROLES);
   const canViewTerminationsAndRetirements = hasRole(user?.role, TERMINATION_VIEW_ROLES);
   const canViewMemberDeaths = hasRole(user?.role, MEMBER_DEATH_VIEW_ROLES);
@@ -384,32 +478,19 @@ export default function TerminationPage() {
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [availableLocations, setAvailableLocations] = useState([ALL_LOCATIONS_OPTION]);
+  const availableLocations = LOCATION_OPTIONS;
 
-  useEffect(() => {
-    let cancelled = false;
-    getEducationalDistricts()
-      .then((districts) => {
-        if (cancelled) return;
-        setAvailableLocations([
-          ALL_LOCATIONS_OPTION,
-          ...districts.map((district) => ({ id: district, name: district })),
-        ]);
-      })
-      .catch(() => {
-        /* leave the master unloaded - the filter simply offers no districts */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const pinnedLocationId = resolveLocationId(user?.assignedDistrict, availableLocations);
+
   const [dateFilter, setDateFilter] = useState<DateFilterType>("all_days");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [sortBy, setSortBy] = useState<SortBy>("requestedDate");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
@@ -422,9 +503,7 @@ export default function TerminationPage() {
   const [approvalListError, setApprovalListError] = useState("");
   const showRequestTypeColumn = requestType === "all";
   const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
-  // Creating and viewing Termination Approval Lists is the board half of the
-  // flow (MMT05/MMT06) - a District Office user raises requests but never
-  // assembles them for a Board Meeting.
+
   const showApprovalListActions =
     requestType === "termination" && hasRole(user?.role, TERMINATION_BOARD_ROLES);
   const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
@@ -458,13 +537,14 @@ export default function TerminationPage() {
   // Get current status options based on request type
   const currentStatusOptions = STATUS_OPTIONS_BY_TYPE[requestType];
 
-  // Board meetings feed the approval-list modal only, and that modal is board
-  // roles' business (showApprovalListActions above). Fetching them unconditionally
-  // earned every District Office user a 403 on page load, since
-  // BoardMeetingController refuses the role outright. Waiting on isAuthLoading
-  // matters: AuthProvider hydrates `user` from localStorage in its own effect, so
-  // a bare role check here would run against a null user and skip the fetch for
-  // everyone.
+  // use for location restricted user
+  useEffect(() => {
+    if (locationRestricted && pinnedLocationId) {
+      setSelectedLocations([pinnedLocationId]);
+    }
+  }, [locationRestricted, pinnedLocationId]);
+
+  // get board meeting details
   useEffect(() => {
     if (isAuthLoading || !canViewBoardMeetings) return;
 
@@ -493,6 +573,7 @@ export default function TerminationPage() {
             : []
     );
   };
+
 
   const normalizeStatusForApi = (status: StatusType) => {
     const normalized = status.toUpperCase().replaceAll("-", "_");
@@ -586,6 +667,14 @@ export default function TerminationPage() {
   const buildQueryParams = (statuses: StatusType[] = selectedStatuses) => {
     const params = new URLSearchParams();
 
+    selectedLocations.forEach((locId) => {
+      if (locId !== "all") {
+        const locObj = availableLocations.find((l) => l.id === locId);
+        const nameToSend = locObj ? locObj.name : locId;
+        params.append("locations", nameToSend);
+      }
+    });
+
     statuses.forEach((status) => params.append("statuses", normalizeStatusForApi(status)));
 
     if (searchQuery.trim()) {
@@ -608,9 +697,7 @@ export default function TerminationPage() {
     params.append("sortBy", sortBy);
     params.append("sortOrder", sortOrder);
 
-    // "All Locations" means no restriction, so it is not sent. The server
-    // overrides this entirely for District Office users - see
-    // TerminationService.resolveVisibleLocations.
+
     selectedLocations
       .filter((location) => location !== ALL_LOCATIONS_OPTION.id)
       .forEach((location) => params.append("locations", location));
@@ -638,6 +725,23 @@ export default function TerminationPage() {
     return normalizeApiRows(data, sourceType);
   };
 
+  const fetchRetirementRequestsFromApi = async (
+    statuses: StatusType[] = selectedStatuses
+  ) => {
+    const params = buildQueryParams(statuses);
+    const data = (await searchRetirementRequests({
+      locations: params.getAll("locations"),
+      statuses: params.getAll("statuses"),
+      fromDate: params.get("fromDate") ?? undefined,
+      toDate: params.get("toDate") ?? undefined,
+      searchKey: params.get("searchKey") ?? undefined,
+      sortBy: params.get("sortBy") ?? undefined,
+      sortOrder: params.get("sortOrder") ?? undefined,
+    })) as TerminationRequestApiResponse;
+
+    return normalizeApiRows(data, "retirement");
+  };
+
   const sortMergedRequests = (requests: TerminationRequest[]) => {
     return [...requests].sort((a, b) => {
       let result = 0;
@@ -659,28 +763,16 @@ export default function TerminationPage() {
       setLoading(true);
       setError("");
 
-      //Validate Dates
-      if (dateFilter === "date_period") {
-        if (fromDate && fromDate > TODAY) {
-          setError("From Date cannot be a future date.");
-          setRequests([]);
-          return;
-        }
-
-        if (toDate && toDate > TODAY) {
-          setError("To Date cannot be a future date.");
-          setRequests([]);
-          return;
-        }
-      }
-
       let retrievedRequests: TerminationRequest[];
 
       if (requestType === "all") {
+
         const [terminationRequests, retirementRequests, memberDeathRequests] =
           await Promise.all([
             fetchRequestsFromApi("termination-requests", "termination", statuses),
-            fetchRequestsFromApi("retirement-requests", "retirement", statuses),
+            canViewRetirement
+              ? fetchRetirementRequestsFromApi(statuses)
+              : Promise.resolve([] as TerminationRequest[]),
             fetchMemberDeathRequestsFromApi(statuses),
           ]);
         retrievedRequests = sortMergedRequests([
@@ -695,17 +787,14 @@ export default function TerminationPage() {
           statuses
         );
       } else if (requestType === "retirement") {
-        retrievedRequests = await fetchRequestsFromApi(
-          "retirement-requests",
-          "retirement",
-          statuses
-        );
+        retrievedRequests = await fetchRetirementRequestsFromApi(statuses);
       } else {
         retrievedRequests = await fetchMemberDeathRequestsFromApi(statuses);
       }
 
       setRequests(retrievedRequests);
       setSelectedRows([]);
+      setHasFetched(true);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
       setError(
@@ -714,6 +803,7 @@ export default function TerminationPage() {
           : "Failed to retrieve requests."
       );
       setRequests([]);
+      setHasFetched(true);
     } finally {
       setLoading(false);
     }
@@ -774,14 +864,6 @@ export default function TerminationPage() {
   const handleOpenRequest = (request: TerminationRequest) => {
     router.push(
       `${getRequestBasePath(request.sourceType)}?requestId=${encodeURIComponent(request.id)}&memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
-    );
-  };
-
-  const handleOpenMemberRequest = (request: TerminationRequest) => {
-    if (request.sourceType !== "termination") return;
-
-    router.push(
-      `/membership/directory/termination-request?memberId=${encodeURIComponent(request.memberNumber)}&mode=view`
     );
   };
 
@@ -884,15 +966,29 @@ export default function TerminationPage() {
   };
 
   const handleRetrieve = () => {
+    const result = filterSchema.safeParse({
+      dateFilter,
+      fromDate,
+      toDate,
+    });
+
+    if (!result.success) {
+      const errors: Record<string, string> = {};
+
+      result.error.issues.forEach((issue) => {
+        const field = issue.path[0] as string;
+        errors[field] = errors[field] ?? issue.message;
+      });
+
+      setFieldErrors(errors);
+      return;
+    }
+
+    setFieldErrors({});
     fetchRequests();
   };
 
-  // Server-side @PreAuthorize is the real gate; this keeps a role that cannot
-  // use the screen from being shown a page of failing requests.
-  //
-  // The District and P&D Committees reach this screen for Member Deaths only
-  // (MMT23 / MMT24) - they are not termination or retirement actors, so they are
-  // admitted here and then pinned to the Member Deaths type below.
+
   if (user && !canViewTerminationsAndRetirements && !canViewMemberDeaths) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center p-6 text-center">
@@ -938,17 +1034,18 @@ export default function TerminationPage() {
         </h2>
 
 
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="w-52">
+        <div className="grid grid-cols-4 gap-4">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
             <LocationMultiSelect
               selectedLocations={selectedLocations}
               availableLocations={availableLocations}
               onLocationChange={setSelectedLocations}
+              disabled={locationRestricted}
             />
           </div>
 
-          <div className="w-52">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
             <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
               <SelectTrigger className="w-full">
@@ -959,7 +1056,9 @@ export default function TerminationPage() {
                   <>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="termination">Termination</SelectItem>
-                    <SelectItem value="retirement">Retirement</SelectItem>
+                    {canViewRetirement && (
+                      <SelectItem value="retirement">Retirement</SelectItem>
+                    )}
                   </>
                 )}
                 {canViewMemberDeaths && (
@@ -969,9 +1068,15 @@ export default function TerminationPage() {
             </Select>
           </div>
 
-          <div className="w-52">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
-            <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
+            <Select
+              value={dateFilter}
+              onValueChange={(value) => {
+                setDateFilter(value as DateFilterType);
+                setFieldErrors({});
+              }}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select date range" />
               </SelectTrigger>
@@ -986,30 +1091,49 @@ export default function TerminationPage() {
 
           {dateFilter === "date_period" && (
             <>
-              <div className="w-40">
+              <div>
                 <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
                 <Input
                   type="date"
                   value={fromDate}
-                  max={TODAY}
-                  onChange={(e) => setFromDate(e.target.value)}
+                  max={toDate && toDate <= TODAY ? toDate : TODAY}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFromDate(value);
+                    setFieldErrors((prev) => ({ ...prev, fromDate: "" }));
+                    // Drop a To Date that is now before the new From Date.
+                    if (value && toDate && toDate < value) {
+                      setToDate("");
+                      setFieldErrors((prev) => ({ ...prev, toDate: "" }));
+                    }
+                  }}
                   className="w-full"
                 />
+                {fieldErrors.fromDate && (
+                  <p className="text-sm text-red-500 mt-1">{fieldErrors.fromDate}</p>
+                )}
               </div>
-              <div className="w-40">
+              <div>
                 <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
                 <Input
                   type="date"
                   value={toDate}
+                  min={fromDate || undefined}
                   max={TODAY}
-                  onChange={(e) => setToDate(e.target.value)}
+                  onChange={(e) => {
+                    setToDate(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, toDate: "" }));
+                  }}
                   className="w-full"
                 />
+                {fieldErrors.toDate && (
+                  <p className="text-sm text-red-500 mt-1">{fieldErrors.toDate}</p>
+                )}
               </div>
             </>
           )}
 
-          <div className="w-52">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
             <StatusMultiSelect
               selectedStatuses={selectedStatuses}
@@ -1018,7 +1142,8 @@ export default function TerminationPage() {
             />
           </div>
 
-          <div className="flex-1 min-w-45">
+
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
             <Input
               type="text"
@@ -1029,7 +1154,7 @@ export default function TerminationPage() {
             />
           </div>
 
-          <div className="w-52">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
             <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
               <SelectTrigger className="w-full">
@@ -1043,7 +1168,7 @@ export default function TerminationPage() {
             </Select>
           </div>
 
-          <div className="w-40">
+          <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
             <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
               <SelectTrigger className="w-full">
@@ -1055,7 +1180,10 @@ export default function TerminationPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white">Retrieve</Button>
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white px-6">Retrieve</Button>
         </div>
       </div>
 
@@ -1132,19 +1260,7 @@ export default function TerminationPage() {
                     </TableCell>
                   )}
                   <TableCell className="px-6">{request.date}</TableCell>
-                  <TableCell className="px-6">
-                    {request.sourceType === "termination" ? (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenMemberRequest(request)}
-                        className="font-medium text-[#8B4513] hover:underline"
-                      >
-                        {request.memberNumber}
-                      </button>
-                    ) : (
-                      request.memberNumber
-                    )}
-                  </TableCell>
+                  <TableCell className="px-6">{request.memberNumber}</TableCell>
                   <TableCell className="px-6">{request.member}</TableCell>
                   <TableCell className="px-6">
                     <div className="flex px-6 items-center gap-2">
@@ -1168,25 +1284,29 @@ export default function TerminationPage() {
                   <TableCell>{getStatusBadge(request.status)}</TableCell>
                   <TableCell className=" text-center">
                     <div className="flex items-center justify-center gap-2">
-                      {/* MMT19: the Edit icon appears only when the record is not
-                          submitted AND the user has edit rights. For Member Death
-                          rows that means the District Office, the sole MMT21 actor —
-                          a committee reads a record, it never edits one. */}
+
                       {!NON_EDITABLE_STATUSES.includes(request.status) &&
+                        (request.sourceType !== "retirement" || canEditRetirement) &&
                         (request.sourceType !== "member_death" || canEditMemberDeaths) && (
-                        <Button variant="ghost" size="sm"
-                          onClick={() => handleEditRequest(request)}
-                          className="h-8 w-8 p-0">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
+                          <Button variant="ghost" size="sm"
+                            onClick={() => handleEditRequest(request)}
+                            className="h-8 w-8 p-0">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
                     </div>
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow className="h-12">
-                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">To load data click retrive button </TableCell>
+                <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">
+                  {loading
+                    ? "Loading..."
+                    : hasFetched
+                      ? "No request found"
+                      : "To load data click retrive button"}
+                </TableCell>
               </TableRow>
             )}
           </TableBody>

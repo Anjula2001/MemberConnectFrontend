@@ -24,6 +24,14 @@ export interface AuthUser {
   role: UserRole;
   profilePictureUrl?: string | null;
   assignedDistrict?: string | null;
+  /**
+   * Authorising power held on top of the role, set per-account by the Super Admin.
+   *
+   * Only District Office and Head Office accounts can carry it — the backend forces it
+   * false for every other role. Sessions stored before this field existed read back as
+   * undefined, which the permission helpers treat as "not authorised".
+   */
+  authorized?: boolean;
 }
 
 interface AuthContextType {
@@ -48,6 +56,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
+  /**
+   * Re-read the signed-in user from /api/profile and merge it over the stored copy.
+   *
+   * Deliberately silent on failure: an offline tab or a flaky request must leave the
+   * session exactly as it was, not sign anyone out. A genuinely dead token is already
+   * handled by the 401 interceptor in api/client.ts.
+   */
+  const refreshCurrentUser = async () => {
+    try {
+      const { data } = await apiClient.get("/api/profile");
+      setUser((prev) => {
+        if (!prev) return prev;
+        const next: AuthUser = {
+          ...prev,
+          fullName: data.fullName ?? prev.fullName,
+          role: data.role ?? prev.role,
+          profilePictureUrl: data.profilePictureUrl ?? prev.profilePictureUrl,
+          assignedDistrict: data.assignedDistrict ?? prev.assignedDistrict,
+          authorized: !!data.authorized,
+        };
+        localStorage.setItem("auth_user", JSON.stringify(next));
+        return next;
+      });
+    } catch {
+      // Keep the stored session as-is.
+    }
+  };
+
   // Load from localStorage on first render
   useEffect(() => {
     const storedToken = localStorage.getItem("auth_token");
@@ -57,15 +93,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(JSON.parse(storedUser));
       // Attach token to all future requests
       apiClient.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
+      // …then bring it up to date from the server. The stored copy is a snapshot taken
+      // at login, so a Super Admin granting authority — or changing a role or district —
+      // would otherwise not reach the user until they next signed out and in. The
+      // backend already resolves authorities per request for exactly this reason; this
+      // keeps the values the UI hides buttons on from lagging behind it.
+      void refreshCurrentUser();
     }
     setIsLoading(false);
   }, []);
 
   const login = async (username: string, password: string) => {
     const response = await apiClient.post("/api/auth/login", { username, password });
-    const { token: newToken, username: uname, fullName, role, profilePictureUrl, assignedDistrict } = response.data;
+    const {
+      token: newToken,
+      username: uname,
+      fullName,
+      role,
+      profilePictureUrl,
+      assignedDistrict,
+      authorized,
+    } = response.data;
 
-    const authUser: AuthUser = { username: uname, fullName, role, profilePictureUrl, assignedDistrict };
+    const authUser: AuthUser = {
+      username: uname,
+      fullName,
+      role,
+      profilePictureUrl,
+      assignedDistrict,
+      authorized: !!authorized,
+    };
 
     // Persist
     localStorage.setItem("auth_token", newToken);

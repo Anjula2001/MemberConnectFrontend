@@ -30,10 +30,21 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
-const getEffectiveDateError = (date: string) => {
-  return date && date > getTodayDate()
-    ? "Effective Date cannot be a future date"
-    : "";
+
+const getEffectiveDateError = (date: string, requestedDate: string) => {
+  if (!date) {
+    return "";
+  }
+
+  if (date > getTodayDate()) {
+    return "Effective Date cannot be a future date";
+  }
+
+  if (requestedDate && date > requestedDate) {
+    return "Effective Date cannot be later than the Requested Date";
+  }
+
+  return "";
 };
 
 const getRequestedDateError = (date: string) => {
@@ -64,6 +75,18 @@ const retirementFormSchema = z
         path: ["effectiveDate"],
       });
     }
+
+    if (
+      data.effectiveDate &&
+      data.requestedDate &&
+      data.effectiveDate > data.requestedDate
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Effective Date cannot be later than the Requested Date",
+        path: ["effectiveDate"],
+      });
+    }
   });
 
 type RetirementFormErrors = {
@@ -77,7 +100,12 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
     const [effectiveDate, setEffectiveDate] = useState(initialData?.effectiveDate || "");
     const [comment, setComment] = useState(initialData?.comment || "");
     const [error, setError] = useState("");
-    const [fieldErrors, setFieldErrors] = useState<RetirementFormErrors>({effectiveDate: getEffectiveDateError(initialData?.effectiveDate || ""),});
+    const [fieldErrors, setFieldErrors] = useState<RetirementFormErrors>({
+      effectiveDate: getEffectiveDateError(
+        initialData?.effectiveDate || "",
+        initialData?.requestedDate || ""
+      ),
+    });
 
     const handleRequestedDateChange = (e: ChangeEvent<HTMLInputElement>) => {
       const selectedDate = e.target.value;
@@ -86,6 +114,9 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
       setFieldErrors((previousErrors) => ({
         ...previousErrors,
         requestedDate: getRequestedDateError(selectedDate),
+        // Moving the Requested Date earlier can invalidate an Effective Date that
+        // was fine a moment ago, so it is re-checked against the new bound.
+        effectiveDate: getEffectiveDateError(effectiveDate, selectedDate),
       }));
     };
 
@@ -95,7 +126,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
       setEffectiveDate(selectedDate);
       setFieldErrors((previousErrors) => ({
         ...previousErrors,
-        effectiveDate: getEffectiveDateError(selectedDate),
+        effectiveDate: getEffectiveDateError(selectedDate, requestedDate),
       }));
     };
 
@@ -167,7 +198,7 @@ const RetirementForm = forwardRef<RetirementFormRef, Props>(
             <input
               type="date"
               value={effectiveDate}
-              max={getTodayDate()}
+              max={requestedDate || getTodayDate()}
               onChange={handleEffectiveDateChange}
               disabled={readOnly}
               className="border rounded-md px-3 py-2 w-full"

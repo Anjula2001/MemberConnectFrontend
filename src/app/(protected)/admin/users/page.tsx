@@ -27,6 +27,7 @@ import {
   Search,
   Shield,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   UserCheck,
   UserCog,
@@ -134,6 +135,13 @@ const ROLE_CONFIG: Record<
   },
 };
 
+// Roles that may hold authorising power. Both offices mix clerks who prepare records
+// with officers who sign them off, so the role alone cannot tell the two apart —
+// everyone else is created unauthorised and the checkbox is not offered.
+const AUTHORITY_ROLES = ["DISTRICT_OFFICE", "HEAD_OFFICE"];
+
+const canHoldAuthority = (role: string) => AUTHORITY_ROLES.includes(role);
+
 export default function UserManagementPage() {
   const { user: currentUser } = useAuth();
   const { addToast } = useToast();
@@ -161,6 +169,7 @@ export default function UserManagementPage() {
   const [createPassword, setCreatePassword] = useState("");
   const [createRole, setCreateRole] = useState("DISTRICT_OFFICE");
   const [createDistrict, setCreateDistrict] = useState("Colombo");
+  const [createAuthorized, setCreateAuthorized] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [submittingCreate, setSubmittingCreate] = useState(false);
 
@@ -169,6 +178,7 @@ export default function UserManagementPage() {
   const [editRole, setEditRole] = useState("");
   const [editDistrict, setEditDistrict] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editAuthorized, setEditAuthorized] = useState(false);
   const [submittingEdit, setSubmittingEdit] = useState(false);
 
   // Reset Password State
@@ -219,6 +229,7 @@ export default function UserManagementPage() {
         fullName: createFullName.trim(),
         role: createRole,
         assignedDistrict: createRole === "DISTRICT_OFFICE" ? createDistrict : null,
+        authorized: canHoldAuthority(createRole) ? createAuthorized : false,
       });
 
       setUsers((prev) => [newUser, ...prev]);
@@ -230,6 +241,7 @@ export default function UserManagementPage() {
       setCreatePassword("");
       setCreateRole("DISTRICT_OFFICE");
       setCreateDistrict("Colombo");
+      setCreateAuthorized(false);
       setShowCreateModal(false);
     } catch (err) {
       console.error("Create user failed", err);
@@ -246,6 +258,7 @@ export default function UserManagementPage() {
     setEditRole(u.role);
     setEditDistrict(u.assignedDistrict || "Colombo");
     setEditIsActive(u.active);
+    setEditAuthorized(u.authorized);
     setShowEditModal(true);
   };
 
@@ -260,6 +273,7 @@ export default function UserManagementPage() {
         role: editRole,
         assignedDistrict: editRole === "DISTRICT_OFFICE" ? editDistrict : null,
         isActive: editIsActive,
+        authorized: canHoldAuthority(editRole) ? editAuthorized : false,
       });
 
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
@@ -592,13 +606,24 @@ export default function UserManagementPage() {
 
                       {/* Role Badge */}
                       <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border}`}
-                          title={roleMeta.desc}
-                        >
-                          <Shield className="h-3 w-3 shrink-0" />
-                          {roleMeta.label}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border}`}
+                            title={roleMeta.desc}
+                          >
+                            <Shield className="h-3 w-3 shrink-0" />
+                            {roleMeta.label}
+                          </span>
+                          {u.authorized && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-md border border-[#9e3600]/25 bg-[#fdf5f2] px-2 py-1 text-xs font-semibold text-[#9e3600]"
+                              title="Holds authorising power, not preparation only"
+                            >
+                              <ShieldCheck className="h-3 w-3 shrink-0" />
+                              Authorized
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* District */}
@@ -818,6 +843,34 @@ export default function UserManagementPage() {
                 </div>
               )}
 
+              {/* Authority (District Office & Head Office only) */}
+              {canHoldAuthority(createRole) && (
+                <div className="rounded-lg border border-neutral-200 bg-[#fdf5f2]/50 p-3">
+                  <div className="flex items-start gap-2.5">
+                    <input
+                      id="create-authorized"
+                      type="checkbox"
+                      checked={createAuthorized}
+                      onChange={(e) => setCreateAuthorized(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#9e3600] focus:ring-[#9e3600]"
+                    />
+                    <div>
+                      <label
+                        htmlFor="create-authorized"
+                        className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-neutral-800"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 text-[#9e3600]" />
+                        Authorized Officer
+                      </label>
+                      <p className="mt-0.5 text-[11px] text-neutral-500">
+                        Grant authorising power in addition to the role. Leave unchecked for staff
+                        who only prepare records for someone else to sign off.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
                 <button
@@ -917,6 +970,33 @@ export default function UserManagementPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* Authority (District Office & Head Office only) */}
+              {canHoldAuthority(editRole) && (
+                <div className="rounded-lg border border-neutral-200 bg-[#fdf5f2]/50 p-3">
+                  <div className="flex items-start gap-2.5">
+                    <input
+                      id="edit-authorized"
+                      type="checkbox"
+                      checked={editAuthorized}
+                      onChange={(e) => setEditAuthorized(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#9e3600] focus:ring-[#9e3600]"
+                    />
+                    <div>
+                      <label
+                        htmlFor="edit-authorized"
+                        className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-neutral-800"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 text-[#9e3600]" />
+                        Authorized Officer
+                      </label>
+                      <p className="mt-0.5 text-[11px] text-neutral-500">
+                        Grant authorising power in addition to the role.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 

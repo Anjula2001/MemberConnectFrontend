@@ -9,6 +9,27 @@ import DocumentUpload from "@/src/components/ui/documentupload";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
 import AddBankDetails, { AddBankDetailsRef } from "@/src/components/ui/retirement/addbankdetails";
 import { SubmitSuccessModal } from "@/src/components/ui/termination/SubmitConfirmationModal";
+import AccessRestricted from "@/src/components/AccessRestricted";
+import { useAuth } from "@/lib/auth-context";
+import { canAccessRetirement, canChangeRequestStatus, hasRetPermission } from "@/lib/permissions";
+import {
+  approveRetirementRequest,
+  changeRetirementRequestStatus,
+  getMemberSummary,
+  getMembers,
+  getRetirementRequestById,
+  getRetirementRequestsByMember,
+  getRetirementValidation,
+  markRetirementRequestIncomplete,
+  rejectRetirementRequest,
+  saveRetirementRequest,
+  sendRetirementToFinance,
+  submitRetirementRequest,
+  updateRetirementRequest,
+  getRetirementRequiredDocuments,
+} from "@/lib/api/retirementRequests";
+import { getMemberBankAccounts, getMinorSavingsAccounts } from "@/lib/api/memberDeath";
+
 
 interface BankAccountRow {
   id: number;
@@ -43,6 +64,8 @@ interface RetirementRequest {
   comment?: string;
   status: string;
   incompleteReason?: string;
+  rejectReason?: string;
+  memberStatus?: string;
 }
 
 interface MemberDetails {
@@ -52,7 +75,9 @@ interface MemberDetails {
   nic: string;
 }
 
-const API_BASE_URL = "http://localhost:8080";
+
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 const LOCKED_STATUSES = [
   "SUBMITTED_FOR_APPROVAL",
@@ -61,6 +86,7 @@ const LOCKED_STATUSES = [
 ];
 
 export default function RetirementPage() {
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const formRef = useRef<RetirementFormRef>(null);
   const bankFormRef = useRef<AddBankDetailsRef>(null);
@@ -95,6 +121,17 @@ export default function RetirementPage() {
   const [openSubmitSuccess, setOpenSubmitSuccess] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingToFinance, setIsSendingToFinance] = useState(false);
+
+  
+  const canCreateRequest = hasRetPermission(user?.role, "RET_REQUEST_CREATE");
+  const canEditRequest = hasRetPermission(user?.role, "RET_REQUEST_EDIT");
+  const canSubmitRequest = hasRetPermission(user?.role, "RET_REQUEST_SUBMIT");
+  const canMarkIncomplete = hasRetPermission(user?.role, "RET_REQUEST_INCOMPLETE");
+  const canApproveRequest = hasRetPermission(user?.role, "RET_REQUEST_APPROVE");
+
+
+  const canMoveStatus = canChangeRequestStatus(user);
 
   const isRequestLocked = retirementRequest?.status
     ? LOCKED_STATUSES.includes(retirementRequest.status)
@@ -102,8 +139,22 @@ export default function RetirementPage() {
 
   const isEditMode = isEditing && !isRequestLocked;
   const isIncompleteStatus = retirementRequest?.status === "INCOMPLETE";
-  const showApprovalActions = retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
-  const hideRequestEditActions = showApprovalActions;
+ 
+  const showApprovalActions =
+    retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" &&
+    !isEditMode &&
+    canApproveRequest &&
+    canMoveStatus;
+
+  
+  const showSendToFinance =
+    retirementRequest?.status === "APPROVED" &&
+    retirementRequest?.memberStatus === "RETIREMENT_APPROVED" &&
+    !isEditMode &&
+    canApproveRequest;
+  
+  const hideRequestEditActions =
+    retirementRequest?.status === "SUBMITTED_FOR_APPROVAL" && !isEditMode;
   const isViewRequestMode = pageMode === "view" && !!requestId;
 
   const VIEW_MODE_STATUS_TRANSITIONS: Record<string, { status: string; label: string }[]> = {
@@ -127,15 +178,34 @@ export default function RetirementPage() {
     ],
   };
 
-  const viewModeStatusActions = retirementRequest?.status
-    ? VIEW_MODE_STATUS_TRANSITIONS[retirementRequest.status] || []
-    : [];
+  // Determine the available status actions for view mode based on the request's current status and user permissions.
+  const viewModeStatusActions = (
+    retirementRequest?.status
+      ? VIEW_MODE_STATUS_TRANSITIONS[retirementRequest.status] || []
+      : []
+  ).filter((action) => {
+    if (action.status === "INACTIVE") {
+      return hasRetPermission(user?.role, "RET_REQUEST_SET_INACTIVE");
+    }
+    if (action.status === "NEW" && retirementRequest?.status !== "INCOMPLETE") {
+      return hasRetPermission(user?.role, "RET_REQUEST_RETURN_TO_NEW");
+    }
+    return canEditRequest;
+  });
+
+  // Determine if the current retirement request is in a closed state (approved, rejected, or inactive).
+  const isClosedRequest =
+    retirementRequest?.status === "APPROVED" ||
+    retirementRequest?.status === "REJECTED" ||
+    retirementRequest?.status === "INACTIVE";
+
 
   const showViewModeStatusActions =
+    canMoveStatus &&
     !!retirementRequest?.id &&
     !isEditMode &&
     !isCurrentSessionSaved &&
-    isViewRequestMode &&
+    (isViewRequestMode || isClosedRequest) &&
     viewModeStatusActions.length > 0;
 
   const showDisabledRequestActions =
@@ -143,6 +213,7 @@ export default function RetirementPage() {
     !isEditMode &&
     !isCurrentSessionSaved &&
     isViewRequestMode &&
+    !isClosedRequest &&
     viewModeStatusActions.length === 0;
 
   const showRequestEditActions =
@@ -160,10 +231,8 @@ export default function RetirementPage() {
     } else {
       const fetchDefaultMember = async () => {
         try {
-          const res = await fetch(`${API_BASE_URL}/api/members/getMembers`);
-          if (!res.ok) throw new Error("Failed to fetch members");
-          const members = await res.json();
-          const activeMember = members.find((m: { status: string; memberId: string }) => m.status === "ACTIVE" || m.status === "active");
+          const members = await getMembers();
+          const activeMember = members.find((m) => m.status === "ACTIVE" || m.status === "active");
           if (activeMember) {
             setSelectedMemberId(activeMember.memberId);
           } else if (members.length > 0) {
@@ -194,13 +263,7 @@ export default function RetirementPage() {
   //Fetches the selected member details for the page header and member panel.
   const fetchMember = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/members/${selectedMemberId}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch member");
-      }
-
-      const memberData = await response.json();
+      const memberData = await getMemberSummary(selectedMemberId);
 
       setMember({
         memberId: memberData.memberId,
@@ -216,17 +279,7 @@ export default function RetirementPage() {
   // Checks whether the member can submit a retirement request.
   const fetchRetirementValidation = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/retirement-validation`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText);
-      }
-
-      const validationData = await response.json();
-      setValidation(validationData);
+      setValidation(await getRetirementValidation(selectedMemberId));
     } catch (error) {
       console.error("Retirement validation error:", error);
     }
@@ -235,17 +288,7 @@ export default function RetirementPage() {
   // Loads minor savings accounts linked to the selected member.
   const fetchMinorSavingsAccounts = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/minor-savings-accounts`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const accounts = await response.json();
-      setMinorSavingsAccounts(accounts);
+      setMinorSavingsAccounts(await getMinorSavingsAccounts(selectedMemberId));
     } catch (error) {
       console.error("Fetch minor savings accounts error:", error);
     }
@@ -254,17 +297,7 @@ export default function RetirementPage() {
   // Loads disbursement bank account details already saved for the member.
   const fetchMemberBankAccounts = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/members/${selectedMemberId}/bank-accounts`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const accounts = await response.json();
-      setBankAccounts(accounts);
+      setBankAccounts(await getMemberBankAccounts(selectedMemberId));
     } catch (error) {
       console.error("Fetch member bank accounts error:", error);
     }
@@ -273,29 +306,14 @@ export default function RetirementPage() {
   // Loads the existing retirement request for the selected member.
   const fetchRetirementRequests = async () => {
     try {
-      let response;
-
       if (requestId) {
-        response = await fetch(
-          `${API_BASE_URL}/api/retirement-requests/request/${requestId}`
+        setRetirementRequest(
+          (await getRetirementRequestById(requestId)) as RetirementRequest
         );
       } else {
-        response = await fetch(
-          `${API_BASE_URL}/api/retirement-requests/member/${selectedMemberId}`
-        );
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(errorData.message || "Failed to fetch retirement request");
-        return;
-      }
-
-      if (requestId) {
-        const request: RetirementRequest = await response.json();
-        setRetirementRequest(request);
-      } else {
-        const requests: RetirementRequest[] = await response.json();
+        const requests = (await getRetirementRequestsByMember(
+          selectedMemberId
+        )) as RetirementRequest[];
 
         if (requests.length > 0) {
           setRetirementRequest(requests[0]);
@@ -305,6 +323,7 @@ export default function RetirementPage() {
       setIsCurrentSessionSaved(false);
     } catch (error) {
       console.error("Fetch retirement request error:", error);
+      setSaveError(errorMessage(error, "Failed to fetch retirement request"));
     }
   };
 
@@ -341,31 +360,17 @@ export default function RetirementPage() {
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/mark-incomplete`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ reason: trimmedReason }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(errorData.message || "Failed to mark incomplete.");
-        return;
-      }
-
-      const updatedRequest: RetirementRequest = await response.json();
+      const updatedRequest = (await markRetirementRequestIncomplete(
+        retirementRequest.requestNo!,
+        trimmedReason
+      )) as RetirementRequest;
 
       setRetirementRequest(updatedRequest);
       setOpenModal(false);
       setSaveError("");
     } catch (error) {
       console.error("Mark incomplete error:", error);
-      setSaveError("Failed to mark request as incomplete.");
+      setSaveError(errorMessage(error, "Failed to mark request as incomplete."));
     }
   };
 
@@ -380,33 +385,9 @@ export default function RetirementPage() {
     try {
       const isUpdate = !!retirementRequest?.id && isEditMode;
 
-      const response = await fetch(
-        isUpdate
-          ? `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}`
-          : `${API_BASE_URL}/api/retirement-requests/${selectedMemberId}`,
-        {
-          method: isUpdate ? "PUT" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        try {
-          const errorData = JSON.parse(errorText);
-          setSaveError(errorData.message || errorData.error || "Failed to save request");
-        } catch {
-          setSaveError(errorText || "Failed to save request");
-        }
-
-        return;
-      }
-
-      const savedRequest: RetirementRequest = await response.json();
+      const savedRequest = (isUpdate
+        ? await updateRetirementRequest(retirementRequest.requestNo!, formData)
+        : await saveRetirementRequest(selectedMemberId, formData)) as RetirementRequest;
 
       setRetirementRequest(savedRequest);
       setIsEditing(false);
@@ -414,7 +395,7 @@ export default function RetirementPage() {
       setSaveError("");
     } catch (error) {
       console.error("Save request error:", error);
-      setSaveError("Failed to save retirement request.");
+      setSaveError(errorMessage(error, "Failed to save retirement request."));
     }
   };
 
@@ -426,16 +407,10 @@ export default function RetirementPage() {
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/required-documents?memberId=${encodeURIComponent(selectedMemberId)}`
+      const docs = await getRetirementRequiredDocuments(
+        retirementRequest.requestNo,
+        selectedMemberId
       );
-
-      if (!response.ok) {
-        setSaveError("Failed to validate required documents.");
-        return false;
-      }
-
-      const docs: { id: number; documentName: string; mandatory: boolean; uploaded: boolean }[] = await response.json();
       const hasMissingMandatory = docs.some((doc) => doc.mandatory && !doc.uploaded);
 
       if (hasMissingMandatory) {
@@ -446,7 +421,7 @@ export default function RetirementPage() {
       return true;
     } catch (error) {
       console.error("Document validation error:", error);
-      setSaveError("Failed to validate mandatory documents.");
+      setSaveError(errorMessage(error, "Failed to validate mandatory documents."));
       return false;
     }
   };
@@ -488,21 +463,9 @@ export default function RetirementPage() {
       setIsSubmitting(true);
       setSaveError("");
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/submit`,
-        {
-          method: "POST",
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(errorData.message || "Cannot submit request.");
-        setOpenSubmitConfirm(false);
-        return;
-      }
-
-      const submittedRequest: RetirementRequest = await response.json();
+      const submittedRequest = (await submitRetirementRequest(
+        retirementRequest.requestNo
+      )) as RetirementRequest;
 
       setRetirementRequest(submittedRequest);
       setSaveError("");
@@ -510,7 +473,7 @@ export default function RetirementPage() {
       setOpenSubmitSuccess(true);
     } catch (error) {
       console.error("Submit request error:", error);
-      setSaveError("Failed to submit retirement request.");
+      setSaveError(errorMessage(error, "Failed to submit retirement request."));
       setOpenSubmitConfirm(false);
     } finally {
       setIsSubmitting(false);
@@ -559,31 +522,48 @@ export default function RetirementPage() {
     if (!retirementRequest?.requestNo) return;
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/status`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(errorData.message || "Failed to change retirement request status.");
-        return;
-      }
-
-      const updatedRequest: RetirementRequest = await response.json();
+      const updatedRequest = (await changeRetirementRequestStatus(
+        retirementRequest.requestNo,
+        newStatus
+      )) as RetirementRequest;
 
       setRetirementRequest(updatedRequest);
       setSaveError("");
+
+      
+      if (newStatus === "NEW") {
+        setIsEditing(true);
+        setIsCurrentSessionSaved(false);
+      }
+
       await fetchMember();
     } catch (error) {
       console.error("Change status error:", error);
-      setSaveError("Failed to change retirement request status.");
+      setSaveError(errorMessage(error, "Failed to change retirement request status."));
+    }
+  };
+
+  
+  const handleSendToFinance = async () => {
+    if (!retirementRequest?.requestNo) return;
+
+    setSaveError("");
+    setIsSendingToFinance(true);
+
+    try {
+      const updatedRequest = (await sendRetirementToFinance(
+        retirementRequest.requestNo
+      )) as RetirementRequest;
+
+      setRetirementRequest(updatedRequest);
+      await fetchMember();
+    } catch (error) {
+      console.error("Send to Finance error:", error);
+      setSaveError(
+        errorMessage(error, "Failed to send the retirement to the Finance Module.")
+      );
+    } finally {
+      setIsSendingToFinance(false);
     }
   };
 
@@ -609,35 +589,13 @@ export default function RetirementPage() {
     try {
       setApprovalAction(action);
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/retirement-requests/${retirementRequest.requestNo}/${action}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body:
-            action === "reject"
-              ? JSON.stringify({ reason: comment.trim() })
-              : undefined,
-        }
-      );
+      const updatedRequest = (action === "approve"
+        ? await approveRetirementRequest(retirementRequest.requestNo!)
+        : await rejectRetirementRequest(
+          retirementRequest.requestNo!,
+          comment.trim()
+        )) as RetirementRequest;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        setSaveError(
-          errorData.message || `Failed to ${action} retirement request.`
-        );
-        return;
-      }
-
-      const responseText = await response.text();
-      const updatedRequest: RetirementRequest = responseText
-        ? JSON.parse(responseText)
-        : {
-          ...retirementRequest,
-          status: action === "approve" ? "APPROVED" : "REJECTED",
-        };
       setRetirementRequest(updatedRequest);
       await fetchMember();
       setSaveError("");
@@ -645,7 +603,7 @@ export default function RetirementPage() {
       setRejectComment("");
     } catch (error) {
       console.error(`${action} request error:`, error);
-      setSaveError(`Failed to ${action} retirement request.`);
+      setSaveError(errorMessage(error, `Failed to ${action} retirement request.`));
     } finally {
       setApprovalAction(null);
     }
@@ -660,6 +618,16 @@ export default function RetirementPage() {
     setOpenBankModal(false);
   };
 
+  if (user && !canAccessRetirement(user.role)) {
+    return (
+      <AccessRestricted
+        message="Retirement requests are restricted to District Office, Head Office and Accounts personnel."
+        fallbackHref="/membership/directory"
+        fallbackLabel="Back to Member Directory"
+      />
+    );
+  }
+
   return (
     <>
       <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6 pt-0">
@@ -671,21 +639,28 @@ export default function RetirementPage() {
                 {retirementRequest?.requestNo && `: ${retirementRequest.requestNo}`}
               </p>
 
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-1">
                 <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
                   Member: {member.fullName} ({member.memberId})
                 </div>
 
-                {/*show status and incomplete reason if the request is in incomplete status*/}
+                {/*
+                  The reason reads as part of the status it explains, in view mode and
+                  edit mode alike. MMT16: a rejected request carries its reason the same
+                  way - it was stored and returned by the API all along but never
+                  rendered, so an officer opening a rejected request could not see why.
+                */}
                 {retirementRequest?.status && (
                   <p className="text-sm font-semibold text-blue-600">
                     Status: {retirementRequest.status}
                     {isIncompleteStatus &&
                       retirementRequest.incompleteReason &&
                       ` (${retirementRequest.incompleteReason})`}
+                    {retirementRequest.status === "REJECTED" &&
+                      retirementRequest.rejectReason &&
+                      ` (${retirementRequest.rejectReason})`}
                   </p>
                 )}
-
               </div>
               {saveError && (
                 <p className="text-red-500 text-sm mt-2">{saveError}</p>
@@ -699,7 +674,8 @@ export default function RetirementPage() {
                 retirementRequest?.id &&
                 !isRequestLocked &&
                 !isEditMode &&
-                !isCurrentSessionSaved && (
+                !isCurrentSessionSaved &&
+                canEditRequest && (
                   <Button
                     onClick={() => setIsEditing(true)}
                     className="bg-white text-black hover:bg-gray-100"
@@ -730,6 +706,18 @@ export default function RetirementPage() {
                     {approvalAction === "reject" ? "Rejecting..." : "Reject"}
                   </Button>
                 </>
+              )}
+
+              {/* an approved retirement is released to the Finance Module from here. */}
+              {showSendToFinance && (
+                <Button
+                  onClick={handleSendToFinance}
+                  disabled={isSendingToFinance}
+                  title="Send this approved retirement to the Finance Module"
+                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  {isSendingToFinance ? "Sending..." : "Send to Finance"}
+                </Button>
               )}
 
               {/*  */}
@@ -764,58 +752,71 @@ export default function RetirementPage() {
 
               {showDisabledRequestActions && (
                 <>
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
+                  {canMarkIncomplete && (
+                    <Button
+                      type="button"
+                      disabled
+                      className="bg-[#D4183D] text-white disabled:bg-[#D4183D] hover:bg-[#b31334] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      Mark Incomplete
+                    </Button>
+                  )}
 
-                  <Button
-                    type="button"
-                    disabled
-                    className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    Submit for Approval
-                  </Button>
+                  {canSubmitRequest && (
+                    <Button
+                      type="button"
+                      disabled
+                      className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      Submit for Approval
+                    </Button>
+                  )}
                 </>
               )}
 
               {/*  */}
               {showRequestEditActions && (
                 <>
-                  <Button
-                    onClick={handleSave}
-                    className="bg-white text-black hover:bg-gray-100"
-                  >
-                    Save
-                  </Button>
+                  {/* Save button */}
+                  {!isCurrentSessionSaved &&
+                    !isClosedRequest &&
+                    (retirementRequest?.id ? canEditRequest : canCreateRequest) && (
+                    <Button
+                      onClick={handleSave}
+                      className="bg-white text-black hover:bg-gray-100"
+                    >
+                      Save
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={() => setOpenModal(true)}
-                    disabled={
-                      !retirementRequest?.id ||
-                      isRequestLocked ||
-                      (isIncompleteStatus && !isEditMode)
-                    }
-                    className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
-                  >
-                    Mark Incomplete
-                  </Button>
+                  {!isClosedRequest && canMarkIncomplete && (
+                    <Button
+                      onClick={() => setOpenModal(true)}
+                      disabled={
+                        !retirementRequest?.id ||
+                        isRequestLocked ||
+                        (isIncompleteStatus && !isEditMode)
+                      }
+                      className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
+                    >
+                      Mark Incomplete
+                    </Button>
+                  )}
 
-                  <Button
-                    onClick={handleSubmitForm}
-                    disabled={
-                      !retirementRequest?.id ||
-                      isRequestLocked ||
-                      (isIncompleteStatus && !isEditMode) ||
-                      (validation ? !validation.canSubmit : true)
-                    }
-                    className="bg-[#953002] text-white  hover:bg-[#7a2702] disabled:cursor-not-allowed"
-                  >
-                    Submit for Approval
-                  </Button>
+                  {!isClosedRequest && canSubmitRequest && (
+                    <Button
+                      onClick={handleSubmitForm}
+                      disabled={
+                        !retirementRequest?.id ||
+                        isRequestLocked ||
+                        (isIncompleteStatus && !isEditMode) ||
+                        (validation ? !validation.canSubmit : true)
+                      }
+                      className="bg-[#953002] text-white  hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                    >
+                      Submit for Approval
+                    </Button>
+                  )}
                 </>
               )}
             </div>
