@@ -9,6 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/c
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Clock, Info } from "lucide-react";
+import { authFetch } from "@/lib/api/authFetch";
+import { useAuth } from "@/lib/auth-context";
+import { canSelectAllLocations } from "@/lib/permissions";
+import { getEducationalDistricts } from "@/lib/api/education";
 
 type RequestRow = {
     id: number;
@@ -28,9 +32,16 @@ type RequestRow = {
     newComputerNoInPayslip?: string;
     newDesignation?: any;
     newNatureOfOccupation?: any;
+    // The District Office the request belongs to - what MMC28's Location filter means
+    submissionLocation?: string;
 };
 
 export default function Page() {
+    const { user } = useAuth();
+    // A District Office user is pinned to their own office; Head Office and the
+    // national roles may pick any location or all of them (MMC28).
+    const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
+
     const [requests, setRequests] = useState<RequestRow[]>([]);
     const [displayed, setDisplayed] = useState<RequestRow[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -63,33 +74,33 @@ export default function Page() {
         return dt;
     };
 
-    const locationOptions = [
-        { value: "colombo", label: "Colombo" },
-        { value: "kandy", label: "Kandy" },
-        { value: "galle", label: "Galle" },
-        { value: "matara", label: "Matara" },
-        { value: "jaffna", label: "Jaffna" },
-        { value: "kilinochchi", label: "Kilinochchi" },
-        { value: "mannar", label: "Mannar" },
-        { value: "mullaitivu", label: "Mullaitivu" },
-        { value: "vavuniya", label: "Vavuniya" },
-        { value: "puttalam", label: "Puttalam" },
-        { value: "kurunagala", label: "Kurunagala" },
-        { value: "kaluthara", label: "Kaluthara" },
-        { value: "Gampaha", label: "Gampaha" },
-        { value: "anuradhapura", label: "Anuradhapura" },
-        { value: "polonnaruwa", label: "Polonnaruwa" },
-        { value: "mathale", label: "Mathale" },
-        { value: "nuwaraeliya", label: "Nuwara Eliya" },
-        { value: "kegalla", label: "Kegalla" },
-        { value: "rathnapura", label: "Rathnapura" },
-        { value: "Trincomalee", label: "Trincomalee" },
-        { value: "batticaloa", label: "Batticaloa" },
-        { value: "ampara", label: "Ampara" },
-        { value: "badulla", label: "Badulla" },
-        { value: "monaragala", label: "Monaragala" },
-        { value: "hambantota", label: "Hambantota" }
-    ];
+    const [locationOptions, setLocationOptions] = useState<
+        { value: string; label: string }[]
+    >([]);
+
+    useEffect(() => {
+        let cancelled = false;
+        getEducationalDistricts()
+            .then((districts) => {
+                if (cancelled) return;
+                setLocationOptions(
+                    districts.map((district) => ({ value: district, label: district }))
+                );
+            })
+            .catch(() => {
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // A user who cannot widen the filter has their own district selected for them
+    useEffect(() => {
+        if (!canSelectAllLocationOptions && user?.assignedDistrict) {
+            setSelectedLocations([user.assignedDistrict]);
+        }
+    }, [canSelectAllLocationOptions, user?.assignedDistrict]);
+
 
     const typeOptions = [
         { value: "basicprofilechanges", label: "Basic Profile Changes" },
@@ -162,14 +173,18 @@ export default function Page() {
         if (requestType !== "membertransfers") {
             filtered = [];
         } else {
-            // Filter by location (District name or member current/new educational district)
+            // Filter by the District Office the request belongs to. Deliberately not the
+            // new or current working district: those are what the transfer changes,
+            // whereas MMC28's Location is the office that raised the request - the same
+            // field the server scopes on.
             if (selectedLocations.length > 0) {
                 filtered = filtered.filter((r) => {
-                    const districtName = (r.newEducationalDistrict?.name || "").toLowerCase().trim();
-                    const memberDistrict = (r.member?.educationalDistrict || "").toLowerCase().trim();
-                    return selectedLocations.some(loc =>
-                        districtName === loc.toLowerCase().trim() ||
-                        memberDistrict === loc.toLowerCase().trim()
+                    const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
+                    if (!requestLocation) {
+                        return false;
+                    }
+                    return selectedLocations.some(
+                        (loc) => requestLocation === loc.toLowerCase().trim()
                     );
                 });
             }
@@ -261,11 +276,13 @@ export default function Page() {
         selected,
         onChange,
         placeholder = "Select...",
+        disabled = false,
     }: {
         options: { value: string; label: string }[];
         selected: string[];
         onChange: (values: string[]) => void;
         placeholder?: string;
+        disabled?: boolean;
     }) {
         const [open, setOpen] = useState(false);
         const ref = useRef<HTMLDivElement>(null);
@@ -299,6 +316,7 @@ export default function Page() {
             <div ref={ref} className="relative">
                 <button
                     type="button"
+                    disabled={disabled}
                     onClick={() => setOpen((o) => !o)}
                     className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 >
@@ -308,7 +326,7 @@ export default function Page() {
                     <ChevronDown size={14} className="text-muted-foreground shrink-0" />
                 </button>
 
-                {open && (
+                {open && !disabled && (
                     <div className="absolute z-50 mt-1 w-full min-w-[8rem] rounded-md border border-border bg-popover shadow-md">
                         <div className="p-1 flex flex-col gap-0.5 max-h-60 overflow-y-auto">
                             {options.map((opt) => (
@@ -388,7 +406,7 @@ export default function Page() {
             setIsLoading(true);
             setApiError(null);
 
-            const res = await fetch("http://localhost:8080/api/member-transfers");
+            const res = await authFetch("http://localhost:8080/api/member-transfers");
 
             if (!res.ok) {
                 throw new Error(`Server responded with status ${res.status}`);
@@ -414,7 +432,8 @@ export default function Page() {
                     newSalaryPayingOffice: item.newSalaryPayingOffice,
                     newComputerNoInPayslip: item.newComputerNoInPayslip,
                     newDesignation: item.newDesignation,
-                    newNatureOfOccupation: item.newNatureOfOccupation
+                    newNatureOfOccupation: item.newNatureOfOccupation,
+                    submissionLocation: item.submissionLocation
                 }));
                 setRequests(mapped);
             } else {
@@ -473,6 +492,7 @@ export default function Page() {
                                     selected={selectedLocations}
                                     onChange={setSelectedLocations}
                                     placeholder="Select Locations"
+                                    disabled={!canSelectAllLocationOptions}
                                 />
                             </div>
 

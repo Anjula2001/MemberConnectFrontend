@@ -20,7 +20,6 @@ import { useAuth } from "@/lib/auth-context";
 import {
 	DEATH_DONATION_ENTRY_ROLES,
 	MEMBER_DEATH_ENTRY_ROLES,
-	MEMBER_TRANSFER_ROLES,
 	PROFILE_CHANGE_CREATE_ROLES,
 	TESTING_ACTIVATE_ROLES,
 	hasPermission,
@@ -59,16 +58,15 @@ const actionGroups = {
 };
 
 /**
- * Actions that an INACTIVE member may not start.
+ * Actions that only an ACTIVE member may start.
  *
  * Transferring a member who holds no active membership moves nothing, and a new
  * University Scholarship would be raised against a membership that cannot fund it.
  *
- * Scoped to INACTIVE specifically, per the requirement. Other non-active statuses
- * (INACTIVE_DORMANT, RETIRED, TERMINATED, DECEASED, RESIGNED) are deliberately NOT
- * covered here — widen this list if they should be.
+ * Any status other than ACTIVE blocks these — INACTIVE, INACTIVE_DORMANT, RETIRED,
+ * TERMINATED, DECEASED, RESIGNED, MEMBER_DEATH_RECORDED, TERMINATION_REQUESTED alike.
  */
-const BLOCKED_WHILE_INACTIVE = ["Member Transfer", "University Scholarship"];
+const ACTIVE_MEMBER_ONLY_ACTIONS = ["Member Transfer", "University Scholarship"];
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
 	return (
@@ -98,6 +96,9 @@ export default function MemberProfilePage({
 	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
 	const [isActivating, setIsActivating] = useState(false);
+	// Request id of the member's transfer request awaiting approval, if any. A
+	// second one would compete with it, so the action is offered but disabled.
+	const [inFlightTransferId, setInFlightTransferId] = useState<string | null>(null);
 	const { addToast } = useToast();
 	const { user } = useAuth();
 	// MMC01/05/14/18 name the District Office System User as the one who raises a
@@ -116,7 +117,9 @@ export default function MemberProfilePage({
 	// Raising a request is the originating office's job. Head Office holds neither
 	// right, so it reviews these rather than creating them.
 	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
-	const canCreateMemberTransfer = hasRole(user?.role, MEMBER_TRANSFER_ROLES);
+	// Now a named permission rather than a role list, so this agrees with the
+	// MT_REQUEST_CREATE check the server applies to POST /api/member-transfers/submit.
+	const canCreateMemberTransfer = hasPermission(user?.role, "MT_REQUEST_CREATE");
 
 	// Real activation is supposed to come from the Finance Module once the member's
 	// accounts are created there (out of scope for this build). This button is a
@@ -199,6 +202,10 @@ export default function MemberProfilePage({
 			return NO_RAISE_HINT;
 		}
 
+		if (ACTIVE_MEMBER_ONLY_ACTIONS.includes(action) && profile?.status !== "ACTIVE") {
+			return "Available only while the member is active";
+		}
+
 		// Every request in this menu is raised against a live membership, so a member who
 		// is not ACTIVE - retired, terminated, deceased, dormant, awaiting activation -
 		// can have none of them raised. Previously only a handful of actions checked the
@@ -220,16 +227,21 @@ export default function MemberProfilePage({
 			return `Not available while the member is ${(profile?.status ?? "not Active").replace(/_/g, " ")}`;
 		}
 
-		if (action === "Member Transfer" && !canCreateMemberTransfer) {
-			return "Your role cannot raise a Member Transfer request";
+		if (action === "Member Transfer") {
+			if (!canCreateMemberTransfer) {
+				return "Your role cannot raise a Member Transfer request";
+			}
+			// Only one transfer request may be awaiting approval at a time; a second
+			// would compete with it.
+			if (inFlightTransferId !== null) {
+				return inFlightTransferId
+					? `Transfer request ${inFlightTransferId} is already awaiting approval`
+					: "A transfer request is already awaiting approval";
+			}
 		}
 
 		if (isUniversityScholarshipAction(action) && !canCreateUniversityScholarship) {
 			return "Your role cannot raise a University Scholarship request";
-		}
-
-		if (BLOCKED_WHILE_INACTIVE.includes(action) && profile?.status === "INACTIVE") {
-			return "Not available for an inactive member";
 		}
 
 		if (action === "Death Donation Request") {
@@ -276,6 +288,18 @@ export default function MemberProfilePage({
 	};
 
 	const isActionDisabled = (action: string) => actionDisabledReason(action) !== null;
+
+	// A note printed under the entry name. Only the pending transfer request gets
+	// one: it is a temporary state the user can clear by deciding that request,
+	// unlike a role or member-status block, which the tooltip alone explains.
+	const actionNote = (action: string): string | null => {
+		if (action === "Member Transfer" && inFlightTransferId !== null) {
+			return inFlightTransferId
+				? `Already has a pending request (${inFlightTransferId})`
+				: "Already has a pending request";
+		}
+		return null;
+	};
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -375,6 +399,16 @@ export default function MemberProfilePage({
 							setScholarships(Array.isArray(scholData) ? scholData : scholData ? [scholData] : []);
 						})
 						.catch(e => console.error("Error loading scholarship requests", e));
+
+					// Load any member transfer request awaiting approval
+					fetch(`http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(data.memberId)}`)
+						.then(res => (res.ok ? res.json() : null))
+						.then(transferVal => {
+							if (transferVal?.hasInFlight) {
+								setInFlightTransferId(transferVal.requestId || "");
+							}
+						})
+						.catch(e => console.error("Error loading member transfer status", e));
 
 					// Load Loans and Obligations
 					fetch(`http://localhost:8080/api/members/${data.memberId}/loans`)
@@ -507,6 +541,7 @@ export default function MemberProfilePage({
 									{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
 										const disabledReason = actionDisabledReason(item);
 										const isDisabled = disabledReason !== null;
+										const note = actionNote(item);
 
 										return (
 											<button
@@ -522,6 +557,11 @@ export default function MemberProfilePage({
 												}
 											>
 												{item}
+												{note && (
+													<span className="mt-0.5 block text-xs font-normal whitespace-normal text-amber-600">
+														{note}
+													</span>
+												)}
 											</button>
 										);
 									})}

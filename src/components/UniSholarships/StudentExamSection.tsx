@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
@@ -86,6 +86,48 @@ type FundRequestRow = {
   status?: string;
 };
 
+// Fields compared against the saved record to decide whether the form has
+// unsaved changes. "duration" is left out: it is read-only and re-fetched from
+// the API whenever university/program changes, which are tracked already.
+const CHANGE_TRACKED_FIELDS = [
+  "requestDate",
+  "studentName",
+  "nic",
+  "bcNo",
+  "address",
+  "mobile",
+  "isSchoolApplicant",
+  "examYear",
+  "examNo",
+  "zscore",
+  "university",
+  "program",
+  "academicYearStart",
+  "accountNo",
+  "bank",
+  "branch",
+  "hasMinorAccount",
+  "minorAccountMonths",
+  "specialDegree",
+] as const;
+
+// Subset editable while an approved request is in "Edit Details" mode
+const APPROVED_DETAIL_FIELDS = [
+  "academicYearStart",
+  "hasMinorAccount",
+  "minorAccountMonths",
+  "specialDegree",
+  "bank",
+  "branch",
+  "accountNo",
+] as const;
+
+const BOOLEAN_FIELDS: (keyof FormData)[] = ["isSchoolApplicant", "specialDegree"];
+
+// Dropdowns are filled in by effects once their option lists arrive, so an
+// empty value against a non-empty baseline means "not populated yet"
+const LOOKUP_FIELDS: (keyof FormData)[] = ["university", "program", "bank", "branch"];
+
 export default function StudentExamSection() {
   const router = useRouter();
   const { user } = useAuth();
@@ -101,13 +143,16 @@ export default function StudentExamSection() {
   const [branches, setBranches] = useState<any[]>([]);
   const [showExamNoPopup, setShowExamNoPopup] = useState(false);
   const [examNoPopupMessage, setExamNoPopupMessage] = useState("");
+  // Whether the popup is reporting a failure. Set explicitly by whoever raises it,
+  // because the message alone cannot be read reliably - a validation error such as
+  // "Another University Scholarship was approved for the Member within a year" reads
+  // as a success to any keyword match. null falls back to the keyword guess.
+  const [popupIsError, setPopupIsError] = useState<boolean | null>(null);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
   const [statusChangeTarget, setStatusChangeTarget] = useState<"NEW" | "INACTIVE" | "">("");
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Ref mirrors isSubmitting so a double-click in the same tick is rejected before
-  // React has re-rendered the disabled button.
   const isSubmittingRef = useRef(false);
   const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
   const [isExamNoDuplicate, setIsExamNoDuplicate] = useState(false);
@@ -147,13 +192,9 @@ export default function StudentExamSection() {
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
-  // MMS41 — amending an approved award (academic start date, special degree flag,
-  // disbursement bank account) is "a special authorization", held by Head Office and
-  // Board Secretary but not District Office.
+
   const canEditApprovedScholarshipDetails = hasPermission(user?.role, "US_APPROVED_EDIT");
-  // The right is part of the mode, not just the button: without it, a District Office
-  // user could enter the edit form by putting ?mode=approved-edit in the URL and only
-  // discover the 403 on save.
+
   const isApprovedDetailsEditMode =
     isExistingRequest
     && mode === "approved-edit"
@@ -164,9 +205,6 @@ export default function StudentExamSection() {
   const cannotEdit = !isEditMode && isSaved;
   const incomplete = status === "INCOMPLETE";
 
-  // MMS25 — status changes available from View Mode, keyed by current status.
-  // Mirrors the closed table enforced in UniversityScholarshipService; APPROVED and
-  // the ADDED_TO_*_LIST states are absent on purpose and so offer nothing.
   const STATUS_CHANGE_TARGETS: Record<string, ("NEW" | "INACTIVE")[]> = {
     NEW: ["INACTIVE"],
     INCOMPLETE: ["NEW", "INACTIVE"],
@@ -177,9 +215,6 @@ export default function StudentExamSection() {
     INACTIVE: ["NEW"],
   };
 
-  // Returning a request to New needs US_REQUEST_REOPEN and deactivating it needs
-  // US_REQUEST_SET_INACTIVE. Both sit with Super Admin, Head Office and Board
-  // Secretary, so District Office never sees this control.
   const canReopenToNew = hasPermission(user?.role, "US_REQUEST_REOPEN");
   const canSetInactive = hasPermission(user?.role, "US_REQUEST_SET_INACTIVE");
 
@@ -189,6 +224,10 @@ export default function StudentExamSection() {
   const canChangeStatus = isViewMode && availableStatusTargets.length > 0;
   const isApprovedDetailFieldDisabled = isApprovedDetailsEditMode ? false : isInputsDisabled || cannotEdit;
 
+  // Incomplete / Save / Submit belong to the create and edit flows only —
+  // hidden in view mode and while editing an approved request's details
+  const showEditActions = !isViewMode && !isApprovedDetailsEditMode;
+
   const {
     register,
     handleSubmit,
@@ -196,7 +235,7 @@ export default function StudentExamSection() {
     getValues,
     setValue,
     reset,
-    formState: { errors, isValid, isDirty },
+    formState: { errors, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(universityScholarshipSchema) as any,
     mode: "onChange",
@@ -212,6 +251,70 @@ export default function StudentExamSection() {
   const selectedProgram = watch("program");
   const selectedBank = watch("bank");
   const selectedExamNo = watch("examNo");
+
+  // Values currently persisted for this request. The Save / Update buttons stay
+  // disabled until a tracked field differs from this baseline.
+  const [savedSnapshot, setSavedSnapshot] = useState<FormData | null>(null);
+
+  const recordBaseline = useMemo(() => {
+    const matchByName = (list: any[], key: string, name?: string | null) =>
+      list.find(
+        (item) =>
+          item[key]?.toString().trim().toLowerCase() ===
+          name?.toString().trim().toLowerCase()
+      );
+
+    const university = matchByName(universities, "name", loadedRecord?.universityName);
+    const program = matchByName(programs, "programName", loadedRecord?.programName);
+    const bank = matchByName(banks, "name", loadedRecord?.bankName);
+    const branch = matchByName(branches, "name", loadedRecord?.branchName);
+
+    return {
+      requestDate: loadedRecord?.requestDate || "",
+      studentName: loadedRecord?.studentName || "",
+      nic: loadedRecord?.nic || "",
+      bcNo: loadedRecord?.birthCertificateNumber || "",
+      address: loadedRecord?.address || "",
+      mobile: loadedRecord?.mobile || "",
+      isSchoolApplicant: loadedRecord?.applicantType === "SCHOOL_APPICANT",
+      examYear: loadedRecord?.examYear || "",
+      examNo: loadedRecord?.examNumber || "",
+      zscore: loadedRecord?.zscore || "",
+      university: university ? String(university.id) : "",
+      program: program ? String(program.programId) : "",
+      academicYearStart: loadedRecord?.academicYearStartDate || "",
+      accountNo: loadedRecord?.accountNumber || "",
+      bank: bank ? String(bank.id) : "",
+      branch: branch ? String(branch.id) : "",
+      hasMinorAccount: loadedRecord?.hasMinorAccount || "",
+      minorAccountMonths: loadedRecord?.minorAccountMonths || "",
+      specialDegree: Boolean(loadedRecord?.specialDegree),
+    } as Partial<FormData>;
+  }, [loadedRecord, universities, programs, banks, branches]);
+
+  const baselineValues: Partial<FormData> = savedSnapshot ?? recordBaseline;
+  const currentValues = watch();
+
+  const isFieldChanged = (field: keyof FormData) => {
+    const baseline = baselineValues[field];
+    const current = currentValues[field];
+
+    if (BOOLEAN_FIELDS.includes(field)) {
+      return Boolean(current) !== Boolean(baseline);
+    }
+
+    const baselineText = baseline == null ? "" : String(baseline);
+    const currentText = current == null ? "" : String(current);
+
+    if (!currentText && baselineText && LOOKUP_FIELDS.includes(field)) {
+      return false;
+    }
+
+    return currentText !== baselineText;
+  };
+
+  const hasFormChanges = CHANGE_TRACKED_FIELDS.some(isFieldChanged);
+  const hasApprovedDetailChanges = APPROVED_DETAIL_FIELDS.some(isFieldChanged);
 
   const [requiredDocumentTypes, setRequiredDocumentTypes] = useState<RequiredDocType[]>([]);
 
@@ -342,6 +445,7 @@ export default function StudentExamSection() {
     setScholarshipRequestNo(loadedRecord.requestId || "");
     setStatus((loadedRecord.status as any) || "NEW");
     setIsSaved(true);
+    setSavedSnapshot(null);
   }, [loadedRecord, reset]);
 
   // Load uploaded documents when request is loaded
@@ -454,6 +558,7 @@ export default function StudentExamSection() {
         setBanks(bankData);
       } catch (error: any) {
         console.error("Failed to load universities or banks:", error.message);
+        setPopupIsError(true);
         setExamNoPopupMessage(error.message);
         setShowExamNoPopup(true);
       }
@@ -542,6 +647,7 @@ export default function StudentExamSection() {
   // Validate exam number when it changes
   const handleValidateExamNo = async () => {
     if (!selectedExamNo) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Examination Number first");
       setShowExamNoPopup(true);
       return;
@@ -564,17 +670,20 @@ export default function StudentExamSection() {
 
       if (result.duplicate) {
         setIsExamNoDuplicate(true);
+        setPopupIsError(true);
         setExamNoPopupMessage(
           "Entered Examination Number is duplicating with another Scholarship Request"
         );
         setShowExamNoPopup(true);
       } else {
         setIsExamNoDuplicate(false);
+        setPopupIsError(false);
         setExamNoPopupMessage("Examination Number is valid");
         setShowExamNoPopup(true);
       }
     } catch (error) {
       console.error(error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to validate Examination Number");
       setShowExamNoPopup(true);
     } finally {
@@ -626,6 +735,7 @@ export default function StudentExamSection() {
           const text = await res.text();
           console.error("Update failed:", res.status, text);
           if (showPopup) {
+            setPopupIsError(true);
             setExamNoPopupMessage("Failed to update request");
             setShowExamNoPopup(true);
           }
@@ -655,6 +765,7 @@ export default function StudentExamSection() {
           } catch { }
 
           if (showPopup) {
+            setPopupIsError(true);
             setExamNoPopupMessage(message);
             setShowExamNoPopup(true);
           }
@@ -677,12 +788,14 @@ export default function StudentExamSection() {
 
       setIsExamNoDuplicate(false);
       if (showPopup) {
+        setPopupIsError(false);
         setExamNoPopupMessage("Request is saved successfully");
         setShowExamNoPopup(true);
       }
 
-      // Reset form default values to clear isDirty state
+      // Saved values become the new baseline for change tracking
       reset(currentData);
+      setSavedSnapshot(currentData);
 
       if (!requestKey && savedRequest.universityScholarshipRequestID) {
         const params = new URLSearchParams(searchParams.toString());
@@ -695,6 +808,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Save failed:", error);
       if (showPopup) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to save request");
         setShowExamNoPopup(true);
       }
@@ -704,8 +818,6 @@ export default function StudentExamSection() {
 
   //Handle form submission
   const onSubmit = async () => {
-    // Only NEW and INCOMPLETE requests may be submitted. The button is disabled for
-    // every other status, but pressing Enter in a field still fires the form submit.
     if (!isEditableStatus) return;
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
@@ -716,6 +828,7 @@ export default function StudentExamSection() {
       if (!isInputsDisabled) {
         const saved = await performSave(false);
         if (!saved) {
+          setPopupIsError(true);
           setExamNoPopupMessage("Failed to save request before submitting");
           setShowExamNoPopup(true);
           return;
@@ -724,6 +837,7 @@ export default function StudentExamSection() {
       }
 
       if (!actionId) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Please save the request before submitting");
         setShowExamNoPopup(true);
         return;
@@ -748,6 +862,7 @@ export default function StudentExamSection() {
     }
 
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please save the request before submitting");
       setShowExamNoPopup(true);
       isSubmittingRef.current = false;
@@ -766,6 +881,7 @@ export default function StudentExamSection() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Submit failed:", response.status, errorText);
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to submit request");
         setShowExamNoPopup(true);
         return;
@@ -775,10 +891,12 @@ export default function StudentExamSection() {
 
       setStatus(submittedRequest.status);
       setLoadedRecord((prev) => (prev ? { ...prev, status: submittedRequest.status } : prev));
+      setPopupIsError(false);
       setExamNoPopupMessage("Request submitted for committee approval");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Submit failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to submit request");
       setShowExamNoPopup(true);
     } finally {
@@ -787,12 +905,13 @@ export default function StudentExamSection() {
     }
   };
 
-  // MMS25 — apply a View Mode status change.
+  //apply a View Mode status change.
   const executeStatusChange = async () => {
     if (!statusChangeTarget || isChangingStatus) return;
 
     const actionId = requestId || loadedRecord?.requestId;
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Request must be saved before its status can be changed");
       setShowExamNoPopup(true);
       return;
@@ -815,6 +934,7 @@ export default function StudentExamSection() {
         try {
           message = JSON.parse(errorText).message || message;
         } catch { }
+        setPopupIsError(true);
         setExamNoPopupMessage(message);
         setShowExamNoPopup(true);
         return;
@@ -826,10 +946,12 @@ export default function StudentExamSection() {
       setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
       setShowStatusChangeModal(false);
       setStatusChangeTarget("");
+      setPopupIsError(false);
       setExamNoPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Status change failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to change status");
       setShowExamNoPopup(true);
     } finally {
@@ -841,6 +963,7 @@ export default function StudentExamSection() {
   const validateExamNoBeforeSave = async (examNo: string) => {
     if (!examNo) {
       setIsExamNoDuplicate(false);
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Examination Number first");
       setShowExamNoPopup(true);
       return false;
@@ -856,6 +979,7 @@ export default function StudentExamSection() {
       if (!response.ok) {
         console.error("Validate API failed:", response.status, await response.text());
         setIsExamNoDuplicate(false);
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to validate Examination Number");
         setShowExamNoPopup(true);
         return false;
@@ -865,6 +989,7 @@ export default function StudentExamSection() {
 
       if (result.duplicate) {
         setIsExamNoDuplicate(true);
+        setPopupIsError(true);
         setExamNoPopupMessage(
           "Entered Examination Number is duplicating with another Scholarship Request"
         );
@@ -877,6 +1002,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Validate request failed:", error);
       setIsExamNoDuplicate(false);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to validate Examination Number");
       setShowExamNoPopup(true);
       return false;
@@ -888,6 +1014,7 @@ export default function StudentExamSection() {
     const bcNo = getValues("bcNo");
 
     if (!bcNo) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please enter Birth Certificate Number first");
       setShowExamNoPopup(true);
       return;
@@ -970,6 +1097,7 @@ export default function StudentExamSection() {
 
       if (!res.ok) {
         updateScholarshipStatus(nextStatus);
+        setPopupIsError(true);
         setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
         setShowExamNoPopup(true);
         console.error("Approve (save) API failed:", res.status, await res.text());
@@ -979,6 +1107,7 @@ export default function StudentExamSection() {
       const updated = await res.json();
       const serverStatus = (updated && updated.status) || nextStatus;
       updateScholarshipStatus(serverStatus as any);
+      setPopupIsError(false);
       setExamNoPopupMessage(
         deviationFlag
           ? "Submitted for Deviation Board Approval"
@@ -988,6 +1117,7 @@ export default function StudentExamSection() {
     } catch (error) {
       console.error("Approve failed:", error);
       updateScholarshipStatus(nextStatus);
+      setPopupIsError(true);
       setExamNoPopupMessage("Approval recorded locally but failed to persist to server");
       setShowExamNoPopup(true);
     }
@@ -1014,6 +1144,7 @@ export default function StudentExamSection() {
         if (!res.ok) {
           updateScholarshipStatus("REJECTED", rejectReason.trim());
           setShowRejectModal(false);
+          setPopupIsError(true);
           setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
           setShowExamNoPopup(true);
           console.error("Reject (save) API failed:", res.status, await res.text());
@@ -1024,12 +1155,14 @@ export default function StudentExamSection() {
         const serverStatus = (updated && updated.status) || "REJECTED";
         updateScholarshipStatus(serverStatus as any, rejectReason.trim());
         setShowRejectModal(false);
+        setPopupIsError(false);
         setExamNoPopupMessage("Scholarship Request Rejected Successfully");
         setShowExamNoPopup(true);
       } catch (error) {
         console.error("Reject failed:", error);
         updateScholarshipStatus("REJECTED", rejectReason.trim());
         setShowRejectModal(false);
+        setPopupIsError(true);
         setExamNoPopupMessage("Rejection recorded locally but failed to persist to server");
         setShowExamNoPopup(true);
       }
@@ -1125,6 +1258,7 @@ export default function StudentExamSection() {
     if (!isInputsDisabled) {
       const saved = await performSave(false);
       if (!saved) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to save request before marking incomplete");
         setShowExamNoPopup(true);
         return;
@@ -1133,6 +1267,7 @@ export default function StudentExamSection() {
     }
 
     if (!actionId) {
+      setPopupIsError(true);
       setExamNoPopupMessage("Please save request first");
       setShowExamNoPopup(true);
       return;
@@ -1160,10 +1295,12 @@ export default function StudentExamSection() {
       setLoadedRecord((prev) => (prev ? { ...prev, status: updated.status, incompleteReason: reason } : prev));
       setShowIncompleteModal(false);
 
+      setPopupIsError(false);
       setExamNoPopupMessage("Request marked as INCOMPLETE");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error(error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to mark incomplete");
       setShowExamNoPopup(true);
     }
@@ -1189,16 +1326,19 @@ export default function StudentExamSection() {
       );
 
       if (!res.ok) {
+        setPopupIsError(true);
         setExamNoPopupMessage("Failed to delete uploaded document");
         setShowExamNoPopup(true);
         return;
       }
 
       setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setPopupIsError(false);
       setExamNoPopupMessage("Document deleted successfully");
       setShowExamNoPopup(true);
     } catch (error) {
       console.error("Delete uploaded document failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to delete uploaded document");
       setShowExamNoPopup(true);
     }
@@ -1224,7 +1364,7 @@ export default function StudentExamSection() {
   };
 
   const handleUpdateApprovedDetails = async () => {
-    if (!requestId || !isApprovedDetailsEditMode) return;
+    if (!requestId || !isApprovedDetailsEditMode || !hasApprovedDetailChanges) return;
 
     const currentData = getValues();
     const updateData = {
@@ -1256,6 +1396,7 @@ export default function StudentExamSection() {
           message = errorJson.message || message;
         } catch { }
 
+        setPopupIsError(true);
         setExamNoPopupMessage(message);
         setShowExamNoPopup(true);
         return;
@@ -1263,6 +1404,7 @@ export default function StudentExamSection() {
 
       const updatedRecord: ScholarshipRecord = await res.json();
       setLoadedRecord(updatedRecord);
+      setPopupIsError(false);
       setExamNoPopupMessage("Scholarship details updated successfully");
       setShowExamNoPopup(true);
 
@@ -1272,6 +1414,7 @@ export default function StudentExamSection() {
       router.replace(`?${params.toString()}`);
     } catch (error) {
       console.error("Approved details update failed:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to update scholarship details");
       setShowExamNoPopup(true);
     }
@@ -1293,8 +1436,7 @@ export default function StudentExamSection() {
     : isExistingRequest
       ? "University Scholarship"
       : "New University Scholarship";
-  // MMS26 — only the University Scholarship Committee decides at this gate. Being
-  // able to view a submitted request is not the same as being able to clear it.
+
   const canReviewSubmission =
     isViewMode
     && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL"
@@ -1303,8 +1445,7 @@ export default function StudentExamSection() {
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =
     (loadedRecord?.totalScholarshipAmount || 0) - (loadedRecord?.totalDisbursedAmount || 0);
-  // District Office holds no fund request rights at all, so it can neither open the
-  // Fund Requests tab nor raise one from an approved scholarship it can otherwise see.
+
   const canViewFundRequests = hasPermission(user?.role, "US_FUND_VIEW");
   const canCreateFundRequest = hasPermission(user?.role, "US_FUND_CREATE");
   const canAddFundRequest =
@@ -1377,6 +1518,7 @@ export default function StudentExamSection() {
     }
   };
 
+  // Handle new fund request
   const handleNewFundRequest = () => {
     if (!requestId) return;
 
@@ -1389,6 +1531,7 @@ export default function StudentExamSection() {
     );
 
     if (!hasAcademicStartDate || !hasBankDetails) {
+      setPopupIsError(true);
       setExamNoPopupMessage(
         "Academic Start Date or the Student Bank Details are not updated. This information are required to be entered before creating a Fund Requests"
       );
@@ -1409,6 +1552,7 @@ export default function StudentExamSection() {
     );
   };
 
+  // Handle view member scholarships
   const handleViewMemberScholarships = async () => {
     const targetMemberId = member?.memberId || loadedRecord?.memberId;
     if (!targetMemberId) return;
@@ -1432,6 +1576,7 @@ export default function StudentExamSection() {
       setShowScholarshipHistory(true);
     } catch (error) {
       console.error("Failed to load member scholarship history:", error);
+      setPopupIsError(true);
       setExamNoPopupMessage("Failed to load member scholarship history");
       setShowExamNoPopup(true);
     }
@@ -1516,38 +1661,43 @@ export default function StudentExamSection() {
             {isApprovedDetailsEditMode && (
               <Button
                 type="button"
-                className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleUpdateApprovedDetails}
+                disabled={!hasApprovedDetailChanges}
               >
                 Update
               </Button>
             )}
 
-            <Button
-              type="button"
-              className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
-              onClick={() => setShowIncompleteModal(true)}
-              disabled={!requestId || !isSaved || isSubmitted || isViewMode || incomplete || isApprovedDetailsEditMode}
-            >
-              Incomplete
-            </Button>
+            {showEditActions && (
+              <>
+                <Button
+                  type="button"
+                  className="bg-[#D4183D] text-white hover:bg-[#a3152f]"
+                  onClick={() => setShowIncompleteModal(true)}
+                  disabled={!requestId || !isSaved || isSubmitted || incomplete}
+                >
+                  Incomplete
+                </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSave}
-              disabled={isInputsDisabled || (!isSaved && !isValid) || (!isDirty && documentFiles.length === 0 && isSaved) || isApprovedDetailsEditMode}
-            >
-              Save
-            </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSave}
+                  disabled={isInputsDisabled || (!isSaved && !isValid) || (isSaved && !hasFormChanges && documentFiles.length === 0)}
+                >
+                  Save
+                </Button>
 
-            <Button
-              type="submit"
-              disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
-              className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
-            >
-              {isSubmitting ? "Submitting..." : "Submit"}
-            </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
+                  className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                >
+                  {isSubmitting ? "Submitting..." : "Submit"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
         <div>
@@ -2164,21 +2314,25 @@ export default function StudentExamSection() {
 
       {showExamNoPopup && (() => {
         const msgLower = examNoPopupMessage.toLowerCase();
-        const isError =
-          msgLower.includes("failed") ||
-          msgLower.includes("error") ||
-          msgLower.includes("duplicat") ||
-          msgLower.includes("please") ||
-          isExamNoDuplicate;
+        const isError = popupIsError !== null
+          ? popupIsError
+          : (msgLower.includes("failed")
+            || msgLower.includes("error")
+            || msgLower.includes("cannot")
+            || msgLower.includes("duplicat")
+            || msgLower.includes("please")
+            || isExamNoDuplicate);
 
-        let popupTitle = "Notification";
-        if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
-        else if (msgLower.includes("saved")) popupTitle = "Request Saved";
-        else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
-        else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
-        else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
-        else if (msgLower.includes("duplicat") || isExamNoDuplicate) popupTitle = "Notification";
-        else if (isError) popupTitle = "Notice";
+        // The success titles are only reachable once the message is known not to be a
+        // failure, so a rejection that happens to mention "approved" cannot borrow one
+        let popupTitle = isError ? "Notice" : "Notification";
+        if (!isError) {
+          if (msgLower.includes("submitted")) popupTitle = "Submitted for Approval";
+          else if (msgLower.includes("saved")) popupTitle = "Request Saved";
+          else if (msgLower.includes("approved")) popupTitle = "Scholarship Approved";
+          else if (msgLower.includes("rejected")) popupTitle = "Scholarship Rejected";
+          else if (msgLower.includes("incomplete")) popupTitle = "Marked as Incomplete";
+        }
 
         const currentReqId = scholarshipRequestNo || requestId || loadedRecord?.requestId;
 
