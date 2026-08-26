@@ -176,7 +176,8 @@ export interface MemberSearchParams {
   sortDirection?: "asc" | "desc";
 }
 
-export async function searchMembers(params: MemberSearchParams) {
+/** Flattens the filter into repeated-key query params Spring binds to List<T>. */
+function toSearchParams(params: MemberSearchParams): Record<string, string | string[]> {
   const searchParams: Record<string, string | string[]> = {};
   if (params.query) searchParams.query = params.query;
   if (params.statuses && params.statuses.length > 0) searchParams.statuses = params.statuses;
@@ -191,10 +192,57 @@ export async function searchMembers(params: MemberSearchParams) {
   if (params.boardMeetingTo) searchParams.boardMeetingTo = params.boardMeetingTo;
   if (params.sortBy) searchParams.sortBy = params.sortBy;
   if (params.sortDirection) searchParams.sortDirection = params.sortDirection;
+  return searchParams;
+}
 
+/** serialize arrays as ?statuses=A&statuses=B */
+const repeatArrayKeys = { indexes: null } as const;
+
+/**
+ * Every matching member, unpaged. For the callers that genuinely need the whole
+ * result — the printable report, the account-linking picker, a lookup by id, the
+ * dashboard counter and the document print screens. Filtering and sorting happen in
+ * the database either way; use searchMembersPage for screens that show a page.
+ */
+export async function searchMembers(params: MemberSearchParams) {
   const { data } = await apiClient.get<MemberDTO[]>(`${BASE_PATH}/search`, {
-    params: searchParams,
-    paramsSerializer: { indexes: null }, // serialize arrays as ?statuses=A&statuses=B
+    params: toSearchParams(params),
+    paramsSerializer: repeatArrayKeys,
+  });
+  return data;
+}
+
+export interface MemberSearchPageParams extends MemberSearchParams {
+  /** Zero-based. */
+  page?: number;
+  size?: number;
+}
+
+export interface MemberSearchPage {
+  content: MemberDTO[];
+  /** Zero-based, and not necessarily the page asked for: the server clamps a page
+   *  that has fallen past the end of a shrunken result set. */
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/**
+ * One page of members, sliced by the database.
+ *
+ * The rest of the result never reaches the browser, and the footer's total comes
+ * from the envelope rather than from counting rows that were downloaded only to be
+ * hidden.
+ */
+export async function searchMembersPage(params: MemberSearchPageParams) {
+  const { data } = await apiClient.get<MemberSearchPage>(`${BASE_PATH}/search/page`, {
+    params: {
+      ...toSearchParams(params),
+      ...(params.page !== undefined ? { page: String(params.page) } : {}),
+      ...(params.size !== undefined ? { size: String(params.size) } : {}),
+    },
+    paramsSerializer: repeatArrayKeys,
   });
   return data;
 }

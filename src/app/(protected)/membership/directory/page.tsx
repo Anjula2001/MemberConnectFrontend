@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -36,11 +36,15 @@ import {
 } from "@/src/components/ui/table";
 import {
 	TablePagination,
-	clampPage,
-	pageSlice,
+	DEFAULT_PAGE_SIZE,
 } from "@/src/components/ui/table-pagination";
 
-import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
+import {
+	type MemberDTO,
+	type MemberSearchPageParams,
+	type MemberStatus,
+	searchMembersPage,
+} from "@/lib/api/member";
 import { StatusBadge } from "@/src/components/ui/status-badge";
 import {
 	getEducationalDistricts,
@@ -247,11 +251,17 @@ export default function MemberDirectoryPage() {
 	}, [isDistrictOfficer, user?.assignedDistrict]);
 
 	// ---- data state ----
+	// One page of members, not the whole result set — see loadPage().
 	const [members, setMembers] = useState<MemberDTO[]>([]);
+	const [totalCount, setTotalCount] = useState(0);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasFetched, setHasFetched] = useState(false);
 	const [page, setPage] = useState(1);
+	// The filter the visible rows were fetched with, frozen at Retrieve. Paging reuses
+	// it so that edits made to the criteria fields since — which are not meant to take
+	// effect until Retrieve is pressed — cannot silently change what page 2 contains.
+	const [activeSearch, setActiveSearch] = useState<MemberSearchPageParams | null>(null);
 
 	// ---------------------------------------------------------------------------
 	// Fetch helpers
@@ -274,47 +284,71 @@ export default function MemberDirectoryPage() {
 		return `/membership/directory/report?${p.toString()}`;
 	};
 
-	const fetchMembers = useCallback(async () => {
+	/** The criteria fields as the backend wants them, read when Retrieve runs. */
+	const buildSearchParams = useCallback((): MemberSearchPageParams => ({
+		query: searchQuery || undefined,
+		statuses: selectedStatuses.length > 0 ? selectedStatuses : undefined,
+		locations: selectedLocations.length > 0 ? selectedLocations : undefined,
+		workingLocationType:
+			workingLocationType !== "all-types" ? workingLocationType : undefined,
+		educationalZone:
+			educationalZone !== "all-zones" ? educationalZone : undefined,
+		educationalDistrict:
+			educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
+		membershipStartFrom: membershipStartFrom || undefined,
+		membershipStartTo: membershipStartTo || undefined,
+		// Sorting moves to the server with the paging. A page cannot be ordered in the
+		// browser and still be right: sorting ten of a hundred rows only reorders the
+		// ten already chosen. It also gains the District option, which the local sort
+		// silently ignored even though the dropdown offered it.
+		sortBy,
+		sortDirection: sortAsc ? "asc" : "desc",
+	}), [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
+		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
+
+	/**
+	 * Fetches one page. Filtering, sorting, paging and the total are the database's
+	 * work — the browser receives ten rows and the number needed to describe them,
+	 * rather than the whole membership to slice ten rows out of.
+	 */
+	const loadPage = useCallback(async (
+		search: MemberSearchPageParams,
+		requestedPage: number,
+	) => {
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await searchMembers({
-				query: searchQuery || undefined,
-				statuses: selectedStatuses.length > 0 ? selectedStatuses : undefined,
-				locations: selectedLocations.length > 0 ? selectedLocations : undefined,
-				workingLocationType:
-					workingLocationType !== "all-types" ? workingLocationType : undefined,
-				educationalZone:
-					educationalZone !== "all-zones" ? educationalZone : undefined,
-				educationalDistrict:
-					educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
-				membershipStartFrom: membershipStartFrom || undefined,
-				membershipStartTo: membershipStartTo || undefined,
+			const result = await searchMembersPage({
+				...search,
+				page: requestedPage - 1,
+				size: DEFAULT_PAGE_SIZE,
 			});
-
-			// Client-side sort, honouring the ascending/descending toggle.
-			const sorted = [...data].sort((a, b) => {
-				let cmp = 0;
-				if (sortBy === "membership-date") {
-					cmp = (a.membershipStartDate ?? "").localeCompare(b.membershipStartDate ?? "");
-				} else if (sortBy === "memberID") {
-					cmp = (a.memberId ?? "").localeCompare(b.memberId ?? "");
-				} else if (sortBy === "status") {
-					cmp = (a.status ?? "").localeCompare(b.status ?? "");
-				}
-				return sortAsc ? cmp : -cmp;
-			});
-
-			setMembers(sorted);
-			setPage(1);
-			setHasFetched(true);
+			setMembers(result.content);
+			setTotalCount(result.totalElements);
+			// Trust the server's page number over the requested one: it answers with the
+			// last page that exists when the request points past the end.
+			setPage(result.page + 1);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : "Failed to fetch members.");
+			setMembers([]);
+			setTotalCount(0);
+			setPage(1);
 		} finally {
+			setHasFetched(true);
 			setLoading(false);
 		}
-	}, [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
-		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
+	}, []);
+
+	const fetchMembers = useCallback(async () => {
+		const search = buildSearchParams();
+		setActiveSearch(search);
+		await loadPage(search, 1);
+	}, [buildSearchParams, loadPage]);
+
+	const handlePageChange = useCallback((nextPage: number) => {
+		if (!activeSearch || nextPage === page) return;
+		void loadPage(activeSearch, nextPage);
+	}, [activeSearch, page, loadPage]);
 
 	// Deliberately no fetch on mount. Opening the Directory shows the filters and an
 	// empty table until the user clicks Retrieve — the same pattern the other list
@@ -326,8 +360,8 @@ export default function MemberDirectoryPage() {
 	// Paging
 	// ---------------------------------------------------------------------------
 
-	const safePage = clampPage(page, members.length);
-	const pagedMembers = useMemo(() => pageSlice(members, page), [members, page]);
+	// `members` is already the page the server returned, and `page` is the number it
+	// reported, so there is nothing left to slice or clamp here.
 
 	// ---------------------------------------------------------------------------
 	// Options
@@ -407,7 +441,7 @@ export default function MemberDirectoryPage() {
 						size="icon"
 						title="Print the retrieved membership records"
 						onClick={() => window.open(buildReportUrl(), "_blank")}
-						disabled={members.length === 0}
+						disabled={totalCount === 0}
 						className="h-9 w-9 border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
 					>
 						<Printer className="h-4 w-4" />
@@ -645,7 +679,7 @@ export default function MemberDirectoryPage() {
 										{error}
 									</TableCell>
 								</TableRow>
-							) : !hasFetched || members.length === 0 ? (
+							) : !hasFetched || totalCount === 0 ? (
 								<TableRow>
 									<TableCell colSpan={6} className="py-10 text-center text-neutral-500">
 										{hasFetched
@@ -654,7 +688,7 @@ export default function MemberDirectoryPage() {
 									</TableCell>
 								</TableRow>
 							) : (
-								pagedMembers.map((member) => (
+								members.map((member) => (
 									<TableRow
 										key={member.id ?? member.memberId}
 										className="hover:bg-neutral-50"
@@ -695,9 +729,9 @@ export default function MemberDirectoryPage() {
 					{/* Result count + paging footer */}
 					{hasFetched && !loading && !error && (
 						<TablePagination
-							page={safePage}
-							total={members.length}
-							onPageChange={setPage}
+							page={page}
+							total={totalCount}
+							onPageChange={handlePageChange}
 						/>
 					)}
 				</CardContent>

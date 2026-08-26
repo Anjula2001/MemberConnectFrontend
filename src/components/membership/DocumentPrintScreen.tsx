@@ -36,11 +36,14 @@ import {
 } from "@/src/components/ui/table";
 import {
   TablePagination,
-  clampPage,
-  pageSlice,
+  DEFAULT_PAGE_SIZE,
 } from "@/src/components/ui/table-pagination";
 
-import { searchMembers, type MemberDTO } from "@/lib/api/member";
+import {
+  searchMembersPage,
+  type MemberDTO,
+  type MemberSearchPageParams,
+} from "@/lib/api/member";
 import {
   markDocumentPrinted,
   type MembershipDocumentType,
@@ -105,7 +108,13 @@ export default function DocumentPrintScreen({
   // label and read "Print print membership cards for 1 member?".
   const documentLabel = title.replace(/^print\s+/i, "").toLowerCase();
 
+  // One page of members, not the whole result set — see loadPage().
   const [members, setMembers] = useState<MemberDTO[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  // The filter the visible rows were fetched with, frozen at Retrieve. Paging reuses
+  // it so that criteria edited since — which are not meant to apply until Retrieve is
+  // pressed — cannot change what page 2 contains.
+  const [activeSearch, setActiveSearch] = useState<MemberSearchPageParams | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -178,47 +187,32 @@ export default function DocumentPrintScreen({
     };
   }, [educationalDistrict]);
 
-  const retrieve = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Every criterion is applied by the server. The printed filter in particular
-      // used to run here, which meant the whole active membership was fetched and the
-      // already-printed rows thrown away - and since "without" is the default, that
-      // happened on every load, discarding a larger share the more documents got
-      // printed. Sorting moved with it so a paged result is ordered across the whole
-      // result rather than just the page in hand.
-      const data = await searchMembers({
-        query: searchQuery.trim() || undefined,
-        // Documentation is only ever printed for active memberships.
-        statuses: ["ACTIVE"],
-        locations: locations.length > 0 ? locations : undefined,
-        boardMeetingFrom: meetingFilter === "period" ? meetingFrom || undefined : undefined,
-        boardMeetingTo: meetingFilter === "period" ? meetingTo || undefined : undefined,
-        withoutDocument: printedFilter === "without" ? documentType : undefined,
-        workingLocationType:
-          workingLocationType !== "all-types" ? workingLocationType : undefined,
-        educationalDistrict:
-          educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
-        educationalZone: educationalZone !== "all-zones" ? educationalZone : undefined,
-        membershipStartFrom: startFrom || undefined,
-        membershipStartTo: startTo || undefined,
-        sortBy,
-        sortDirection,
-      });
-
-      setMembers(data);
-      setSelected([]);
-      setPage(1);
-      setHasRetrieved(true);
-    } catch (error) {
-      addToast(
-        error instanceof Error ? error.message : "Failed to retrieve members",
-        "destructive"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [
+  /**
+   * The criteria fields as the backend wants them, read when Retrieve runs.
+   *
+   * Every criterion is applied by the server. The printed filter in particular used
+   * to run in the browser, which meant the whole active membership was fetched and
+   * the already-printed rows thrown away — and since "without" is the default, that
+   * happened on every load, discarding a larger share the more documents got printed.
+   */
+  const buildSearchParams = useCallback((): MemberSearchPageParams => ({
+    query: searchQuery.trim() || undefined,
+    // Documentation is only ever printed for active memberships.
+    statuses: ["ACTIVE"],
+    locations: locations.length > 0 ? locations : undefined,
+    boardMeetingFrom: meetingFilter === "period" ? meetingFrom || undefined : undefined,
+    boardMeetingTo: meetingFilter === "period" ? meetingTo || undefined : undefined,
+    withoutDocument: printedFilter === "without" ? documentType : undefined,
+    workingLocationType:
+      workingLocationType !== "all-types" ? workingLocationType : undefined,
+    educationalDistrict:
+      educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
+    educationalZone: educationalZone !== "all-zones" ? educationalZone : undefined,
+    membershipStartFrom: startFrom || undefined,
+    membershipStartTo: startTo || undefined,
+    sortBy,
+    sortDirection,
+  }), [
     searchQuery,
     locations,
     meetingFilter,
@@ -233,8 +227,55 @@ export default function DocumentPrintScreen({
     educationalZone,
     startFrom,
     startTo,
-    addToast,
   ]);
+
+  /**
+   * Fetches one page. Deliberately does NOT touch `selected`: selections survive
+   * paging so a print can be assembled across pages, which is the whole reason the
+   * Print button counts `selected` rather than this page's share of it.
+   */
+  const loadPage = useCallback(async (
+    search: MemberSearchPageParams,
+    requestedPage: number,
+  ) => {
+    setLoading(true);
+    try {
+      const result = await searchMembersPage({
+        ...search,
+        page: requestedPage - 1,
+        size: DEFAULT_PAGE_SIZE,
+      });
+      setMembers(result.content);
+      setTotalCount(result.totalElements);
+      // Trust the server's page number: printing under the "without" filter removes
+      // the rows just printed, which can leave the request past the end of what is
+      // left, and it answers with the last page that still exists.
+      setPage(result.page + 1);
+    } catch (error) {
+      addToast(
+        error instanceof Error ? error.message : "Failed to retrieve members",
+        "destructive"
+      );
+      setMembers([]);
+      setTotalCount(0);
+      setPage(1);
+    } finally {
+      setHasRetrieved(true);
+      setLoading(false);
+    }
+  }, [addToast]);
+
+  const retrieve = useCallback(async () => {
+    const search = buildSearchParams();
+    setActiveSearch(search);
+    setSelected([]);
+    await loadPage(search, 1);
+  }, [buildSearchParams, loadPage]);
+
+  const handlePageChange = useCallback((nextPage: number) => {
+    if (nextPage === page) return;
+    void loadPage(activeSearch ?? buildSearchParams(), nextPage);
+  }, [activeSearch, page, loadPage, buildSearchParams]);
 
   useEffect(() => {
     void retrieve();
@@ -242,15 +283,13 @@ export default function DocumentPrintScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Guarded rather than trusted: a print marks rows and re-retrieves, which can
-  // shrink the result under whatever page was showing.
-  const safePage = clampPage(page, members.length);
-  const pagedMembers = useMemo(() => pageSlice(members, page), [members, page]);
+  // `members` is already the page the server returned and `page` is the number it
+  // reported, so there is nothing left to slice or clamp here.
 
   // Rows already printed can never be selected — not individually, not by Select All.
   const pageSelectableIds = useMemo(
-    () => pagedMembers.filter((m) => !printedAt(m) && m.id).map((m) => m.id as number),
-    [pagedMembers, printedAt]
+    () => members.filter((m) => !printedAt(m) && m.id).map((m) => m.id as number),
+    [members, printedAt]
   );
 
   /**
@@ -307,7 +346,12 @@ export default function DocumentPrintScreen({
         `/membership/print/${printRoute}?ids=${ids.join(",")}`,
         "_blank"
       );
-      await retrieve();
+      // Re-read the page in place. Under the default "without" filter the rows just
+      // printed drop out of the result, so this both refreshes the Printed column and
+      // clears the batch that has now been dealt with — without throwing an operator
+      // working through page 3 back to page 1.
+      setSelected([]);
+      await loadPage(activeSearch ?? buildSearchParams(), page);
     } catch (error) {
       addToast(
         error instanceof Error ? error.message : `Failed to ${label.toLowerCase()}`,
@@ -594,7 +638,7 @@ export default function DocumentPrintScreen({
         <Card className="rounded-xl py-0">
           <CardHeader className="flex flex-row items-center justify-between gap-2 px-5 pt-5 pb-3">
             <CardTitle className="text-base text-[#953002]">
-              Members {hasRetrieved ? `(${members.length})` : ""}
+              Members {hasRetrieved ? `(${totalCount})` : ""}
             </CardTitle>
             <div className="flex items-center gap-2">
             <Button
@@ -641,7 +685,7 @@ export default function DocumentPrintScreen({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pagedMembers.map((m) => {
+                  {members.map((m) => {
                     const printed = printedAt(m);
                     return (
                       <TableRow key={m.id}>
@@ -696,7 +740,7 @@ export default function DocumentPrintScreen({
                       </TableRow>
                     );
                   })}
-                  {hasRetrieved && members.length === 0 && (
+                  {hasRetrieved && totalCount === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="py-8 text-center text-sm text-neutral-500">
                         No active members match these filters.
@@ -707,9 +751,9 @@ export default function DocumentPrintScreen({
               </Table>
             </div>
             <TablePagination
-              page={safePage}
-              total={members.length}
-              onPageChange={setPage}
+              page={page}
+              total={totalCount}
+              onPageChange={handlePageChange}
               className="-mx-5 mt-1 px-5"
             />
           </CardContent>

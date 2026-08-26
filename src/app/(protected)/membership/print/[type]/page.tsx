@@ -2,7 +2,7 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2, Printer } from "lucide-react";
+import { Loader2, Printer, X } from "lucide-react";
 
 import { getMemberById, type MemberDTO } from "@/lib/api/member";
 import { getDocumentsByApplication } from "@/lib/api/documents";
@@ -21,6 +21,13 @@ const TITLES: Record<PrintType, string> = {
   "membership-card": "Membership Cards",
   "signature-card": "Signature Cards",
   passbook: "Passbooks",
+};
+
+/** The list screen each preview was opened from, for the Close fallback below. */
+const LIST_ROUTE: Record<PrintType, string> = {
+  "membership-card": "/membership/print-membership-cards",
+  "signature-card": "/membership/print-signature-cards",
+  passbook: "/membership/print-passbooks",
 };
 
 /** Persisted so the alignment only has to be dialled in once per installation. */
@@ -71,6 +78,29 @@ export default function MembershipDocumentPrintPage({
       /* keep defaults */
     }
   }, []);
+
+  /**
+   * Closes the preview tab, or returns to its list screen if it cannot be closed.
+   *
+   * This used to call router.back(). The list opens each preview with
+   * window.open(url, "_blank"), so the tab starts with a single history entry and
+   * there is nothing behind it — history.back() could never do anything, whichever
+   * route it was on.
+   *
+   * Closing is the right action instead: the list tab is still open underneath with
+   * its filters, selection and page intact, so dropping this tab lands the operator
+   * exactly where they left off. The browser only permits close() on a
+   * script-opened window, which window.opener identifies (the list opens without
+   * noopener, so it is set). Reached any other way — a pasted URL, a bookmark — the
+   * call is refused, and the list route is the honest destination.
+   */
+  const handleClose = () => {
+    if (window.opener && !window.opener.closed) {
+      window.close();
+      return;
+    }
+    router.replace(LIST_ROUTE[printType] ?? "/membership/print-membership-cards");
+  };
 
   const updateOffset = (next: PassbookOffset) => {
     setOffset(next);
@@ -225,10 +255,10 @@ export default function MembershipDocumentPrintPage({
       <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3 px-4 pt-4 md:px-6">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={handleClose}
           className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#953002]"
         >
-          <ArrowLeft className="h-4 w-4" /> Back
+          <X className="h-4 w-4" /> Close
         </button>
 
         <div className="flex flex-wrap items-center gap-3">

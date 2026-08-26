@@ -98,6 +98,54 @@ export async function getBoardApprovalLists(range: MeetingDateRange = {}) {
   return data;
 }
 
+/** A row of the Board Approvals table, from either approval list table. */
+export interface ApprovalListRowDTO {
+  /** Which endpoint owns the list. */
+  kind: "membership" | "termination";
+  /** What the list holds — derived server-side so the order can run across both. */
+  content: "applications" | "name-change" | "nominee-change" | "termination";
+  listId: string;
+  status?: string | null;
+  boardMeetingId?: number | null;
+  boardMeetingDate?: string | null;
+  createdAt?: string | null;
+  itemCount: number;
+}
+
+export interface ApprovalListPage {
+  content: ApprovalListRowDTO[];
+  /** Zero-based, and not necessarily the page asked for: the server clamps a page
+   *  that has fallen past the end of a shrunken result set. */
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/**
+ * One page of the Board Approvals table, merged across membership and termination
+ * approval lists.
+ *
+ * Replaces fetching both listings in full and merging them in the browser. The merge
+ * has to happen before the slice — page 2 of the combined order is not page 2 of
+ * either source — so it happens on the server and only the page comes back.
+ */
+export async function getCombinedApprovalListsPage(
+  range: MeetingDateRange = {},
+  page = 0,
+  size = 10
+) {
+  const { data } = await apiClient.get<ApprovalListPage>(`${BASE_PATH}/combined/page`, {
+    params: {
+      ...(range.from ? { from: range.from } : {}),
+      ...(range.to ? { to: range.to } : {}),
+      page,
+      size,
+    },
+  });
+  return data;
+}
+
 export async function getBoardApprovalListByListId(listId: string) {
   const { data } = await apiClient.get<BoardApprovalListDTO>(
     `${BASE_PATH}/getBoardApprovalListByListId/${encodeURIComponent(listId)}`

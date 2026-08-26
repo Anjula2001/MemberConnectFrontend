@@ -28,8 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/ca
 import { Input } from "@/src/components/ui/input";
 import {
   TablePagination,
-  clampPage,
-  pageSlice,
+  DEFAULT_PAGE_SIZE,
 } from "@/src/components/ui/table-pagination";
 import { useRouter } from "next/navigation";
 import {
@@ -41,7 +40,7 @@ import {
 } from "@/src/components/ui/select";
 import { createBoardMeeting, getBoardMeetings, updateBoardMeeting, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
-  getBoardApprovalLists,
+  getCombinedApprovalListsPage,
   getBoardApprovalListByListId,
   deleteBoardApprovalList,
   getBoardApprovalListApplications,
@@ -49,12 +48,10 @@ import {
   getNomineeChangeRequestsByListId,
   processBoardApprovalList,
   type ProcessBoardApprovalListPayload,
+  type ApprovalListRowDTO,
   type BoardApprovalListDTO,
+  type MeetingDateRange,
 } from "@/lib/api/boardApprovalLists";
-import {
-  getTerminationApprovalLists,
-  type TerminationApprovalListDTO,
-} from "@/lib/api/terminationApprovalLists";
 import {
   getMemberApplicationById,
   updateMemberApplicationPartial,
@@ -78,18 +75,6 @@ type ApprovalListKind = "membership" | "termination";
  * list is still a membership-side board approval list.
  */
 type ApprovalListContent = "applications" | "name-change" | "nominee-change" | "termination";
-
-type ApprovalListRow = {
-  kind: ApprovalListKind;
-  /** Drives the badge and the count's noun; derived from the list's contents. */
-  content: ApprovalListContent;
-  listId: string;
-  status?: string;
-  boardMeetingId?: number;
-  boardMeetingDate?: string;
-  createdAt?: string;
-  itemCount: number;
-};
 
 const CONTENT_BADGES: Record<
   ApprovalListContent,
@@ -165,10 +150,19 @@ export default function BoardApprovalsPage() {
   const [isRetrievingLists, setIsRetrievingLists] = useState(false);
   const [isRetrievingApplications, setIsRetrievingApplications] = useState(false);
   const [isDeletingSelectedList, setIsDeletingSelectedList] = useState(false);
-  const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
-  const [terminationApprovalLists, setTerminationApprovalLists] = useState<
-    TerminationApprovalListDTO[]
-  >([]);
+  // One page of the merged table, already ordered across both approval list tables
+  // by the server — the browser no longer holds either listing in full.
+  const [approvalRows, setApprovalRows] = useState<ApprovalListRowDTO[]>([]);
+  const [approvalTotal, setApprovalTotal] = useState(0);
+  // The full record behind the selected row. The page rows are a summary — enough to
+  // render the table, not enough for the process/delete panels, which read
+  // processedBy, actualMeetingDate, decision, rejectReason and boardRemarks. Fetched
+  // when the selection changes so it stays available whichever page it came from.
+  const [selectedApprovalList, setSelectedApprovalList] =
+    useState<BoardApprovalListDTO | null>(null);
+  // The period the visible rows were fetched with, frozen at Retrieve, so paging
+  // reuses it rather than whatever the date fields have been edited to since.
+  const [activeRange, setActiveRange] = useState<MeetingDateRange | null>(null);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [selectedListKind, setSelectedListKind] = useState<ApprovalListKind>("membership");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
@@ -244,22 +238,20 @@ export default function BoardApprovalsPage() {
     };
 
     fetchMeetings();
-    // If a listId query param is present, auto-open it after lists are loaded
+    // A ?listId= param deep-links straight to one list. Ask for that list by id
+    // rather than downloading every list to find it — the effect that follows loads
+    // its detail, so this only has to confirm the id exists.
     const params = new URLSearchParams(window.location.search);
-    const listIdParam = params.get('listId');
+    const listIdParam = params.get("listId");
     if (listIdParam) {
       (async () => {
         try {
-          const lists = await getBoardApprovalLists();
-          setApprovalLists(lists);
-          if (lists && lists.length > 0) {
-            const found = lists.find(l => l.listId === listIdParam);
-            if (found) {
-              setSelectedApprovalListId(found.listId ?? '');
-            }
+          const found = await getBoardApprovalListByListId(listIdParam);
+          if (found?.listId) {
+            setSelectedApprovalListId(found.listId);
           }
-        } catch (e) {
-          // ignore
+        } catch {
+          // The link points at a list that no longer exists; leave nothing selected.
         }
       })();
     }
@@ -276,11 +268,25 @@ export default function BoardApprovalsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [showProcessToast]);
 
-  const selectedApprovalList = useMemo(
-    () =>
-      approvalLists.find((item) => item.listId === selectedApprovalListId) ?? null,
-    [approvalLists, selectedApprovalListId]
-  );
+  // Loads the selected membership list's full record. Termination lists have their
+  // own detail endpoint and their own panels, so they do not populate this.
+  useEffect(() => {
+    if (!selectedApprovalListId || selectedListKind !== "membership") {
+      setSelectedApprovalList(null);
+      return;
+    }
+    let cancelled = false;
+    getBoardApprovalListByListId(selectedApprovalListId)
+      .then((detail) => {
+        if (!cancelled) setSelectedApprovalList(detail);
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedApprovalList(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApprovalListId, selectedListKind]);
 
   const selectedProcessedState = useMemo<ProcessedListState | null>(() => {
     if (selectedApprovalListId && processedLists[selectedApprovalListId]) {
@@ -305,7 +311,7 @@ export default function BoardApprovalsPage() {
       rejectReason: selectedApprovalList.rejectReason ?? "",
       boardRemarks: selectedApprovalList.boardRemarks ?? "",
     };
-  }, [approvalLists, processedLists, selectedApprovalList, selectedApprovalListId]);
+  }, [processedLists, selectedApprovalList, selectedApprovalListId]);
 
   const isSelectedListProcessed =
     selectedApprovalList?.status === "PROCESSED" || Boolean(selectedProcessedState);
@@ -448,54 +454,10 @@ export default function BoardApprovalsPage() {
     }
   };
 
-  const combinedApprovalLists = useMemo<ApprovalListRow[]>(() => {
-    const membershipRows: ApprovalListRow[] = approvalLists
-      .filter((item) => Boolean(item.listId))
-      .map((item) => {
-        // A list holds one kind of record - MMC08 and MMC21 only allow a homogeneous
-        // selection - so the first non-empty collection identifies it. Counting the
-        // matching collection also fixes name and nominee lists showing no count at
-        // all, because only applicationIds was ever counted.
-        const names = item.nameChangeRequestIds?.length ?? 0;
-        const nominees = item.nomineeChangeRequestIds?.length ?? 0;
-        // applicationCount comes from the server; applicationIds is only populated
-        // when a single list is opened, so counting it here would read 0 for every row.
-        const applications = item.applicationCount ?? item.applicationIds?.length ?? 0;
-
-        const content: ApprovalListContent =
-          names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
-
-        return {
-          kind: "membership" as const,
-          content,
-          listId: item.listId as string,
-          status: item.status,
-          boardMeetingId: item.boardMeetingId,
-          boardMeetingDate: item.boardMeetingDate,
-          createdAt: item.createdAt,
-          itemCount: names > 0 ? names : nominees > 0 ? nominees : applications,
-        };
-      });
-
-    const terminationRows: ApprovalListRow[] = terminationApprovalLists
-      .filter((item) => Boolean(item.listId))
-      .map((item) => ({
-        kind: "termination" as const,
-        content: "termination" as const,
-        listId: item.listId as string,
-        status: item.status,
-        boardMeetingId: item.boardMeetingId,
-        boardMeetingDate: item.boardMeetingDate,
-        createdAt: item.createdAt,
-        itemCount: item.requestCount ?? item.requestNos?.length ?? 0,
-      }));
-
-    return [...membershipRows, ...terminationRows].sort((left, right) => {
-      const leftDate = left.createdAt ?? left.boardMeetingDate ?? "";
-      const rightDate = right.createdAt ?? right.boardMeetingDate ?? "";
-      return rightDate.localeCompare(leftDate);
-    });
-  }, [approvalLists, terminationApprovalLists]);
+  // The merge that used to live here — pairing membership and termination lists into
+  // one ordered table, and working out each row's kind and item count — now happens on
+  // the server. It has to: page 2 of the combined order is not page 2 of either source,
+  // so the two can only be sliced after they have been merged.
 
   /**
    * The Board Meeting date period the dropdown currently describes, in the form the
@@ -538,27 +500,10 @@ export default function BoardApprovalsPage() {
     return {};
   }, [dateFilter, listFromDate, listToDate]);
 
-  // The rows are already narrowed by the query that fetched them, so there is nothing
-  // left to filter here. Retrieve now genuinely retrieves a period rather than
-  // reloading the whole table and discarding most of it in the browser.
-  const filteredApprovalLists = combinedApprovalLists;
-
+  // `approvalRows` is already the page the server returned and `listPage` is the page
+  // number it reported, so there is nothing left to slice or clamp here. Retrieve
+  // resets to page 1 from inside loadApprovalPage.
   const [listPage, setListPage] = useState(1);
-
-  // Narrowing the filter, or retrieving a fresh set, can leave the stored page
-  // beyond the end of the new result - page 3 of a list that now has four rows
-  // renders as empty rather than as "no matches". Going back to the first page
-  // whenever the criteria change is what keeps the panel showing the top of the
-  // result the user just asked for.
-  useEffect(() => {
-    setListPage(1);
-  }, [combinedApprovalLists]);
-
-  const safeListPage = clampPage(listPage, filteredApprovalLists.length);
-  const pagedApprovalLists = useMemo(
-    () => pageSlice(filteredApprovalLists, listPage),
-    [filteredApprovalLists, listPage]
-  );
 
   const actualMeetingDateOptions = useMemo(() => {
     const unique = new Map<string, { value: string; label: string }>();
@@ -580,54 +525,63 @@ export default function BoardApprovalsPage() {
   const approvedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Approve").length;
   const rejectedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Reject").length;
 
-  const handleRetrieveApprovalLists = async () => {
+  /**
+   * Fetches one page of the merged table.
+   *
+   * Filtering, merging, ordering and slicing are the server's work now; the browser
+   * receives ten rows and the total to describe them, instead of both listings in
+   * full with every list's contents attached.
+   */
+  const loadApprovalPage = async (range: MeetingDateRange, requestedPage: number) => {
     try {
       setIsRetrievingLists(true);
-      const [membershipResult, terminationResult] = await Promise.allSettled([
-        getBoardApprovalLists(meetingDateRange),
-        getTerminationApprovalLists(meetingDateRange),
-      ]);
-
-      if (membershipResult.status === "fulfilled") {
-        setApprovalLists(membershipResult.value);
-      } else {
-        console.error("Error retrieving board approval lists:", membershipResult.reason);
-      }
-
-      if (terminationResult.status === "fulfilled") {
-        setTerminationApprovalLists(terminationResult.value);
-      } else {
-        console.error(
-          "Error retrieving termination approval lists:",
-          terminationResult.reason
-        );
-      }
-
-      const membershipFailed = membershipResult.status === "rejected";
-      const terminationFailed = terminationResult.status === "rejected";
-      if (membershipFailed || terminationFailed) {
-        setToastMessage(
-          membershipFailed && terminationFailed
-            ? "Failed to retrieve approval lists"
-            : membershipFailed
-              ? "Failed to retrieve membership approval lists"
-              : "Failed to retrieve termination approval lists"
-        );
-        setShowProcessToast(true);
-      }
-
-      setSelectedApprovalListId("");
-      setSelectedListKind("membership");
-      setApplicationsRetrieved(false);
-      setSelectedListApplications([]);
-      setSelectedListNameChangeRequests([]);
-      setSelectedListNomineeChangeRequests([]);
-      setSelectedListNameChangeDecisions({});
-      setSelectedListNomineeChangeDecisions({});
-      setApplicationDecisions({});
+      const result = await getCombinedApprovalListsPage(
+        range,
+        requestedPage - 1,
+        DEFAULT_PAGE_SIZE
+      );
+      setApprovalRows(result.content);
+      setApprovalTotal(result.totalElements);
+      // Trust the server's page number: it answers with the last page that exists
+      // when the request points past the end of a shrunken result.
+      setListPage(result.page + 1);
+    } catch (error) {
+      console.error("Error retrieving approval lists:", error);
+      setApprovalRows([]);
+      setApprovalTotal(0);
+      setListPage(1);
+      setToastMessage("Failed to retrieve approval lists");
+      setShowProcessToast(true);
     } finally {
       setIsRetrievingLists(false);
     }
+  };
+
+  const handleRetrieveApprovalLists = async () => {
+    const range = meetingDateRange;
+    setActiveRange(range);
+
+    setSelectedApprovalListId("");
+    setSelectedListKind("membership");
+    setApplicationsRetrieved(false);
+    setSelectedListApplications([]);
+    setSelectedListNameChangeRequests([]);
+    setSelectedListNomineeChangeRequests([]);
+    setSelectedListNameChangeDecisions({});
+    setSelectedListNomineeChangeDecisions({});
+    setApplicationDecisions({});
+
+    await loadApprovalPage(range, 1);
+  };
+
+  const handleListPageChange = (nextPage: number) => {
+    if (nextPage === listPage) return;
+    void loadApprovalPage(activeRange ?? meetingDateRange, nextPage);
+  };
+
+  /** Re-reads the page in place after a row changed underneath it. */
+  const refreshApprovalPage = async () => {
+    await loadApprovalPage(activeRange ?? meetingDateRange, listPage);
   };
 
   const handleRetrieveApplications = async () => {
@@ -716,9 +670,10 @@ export default function BoardApprovalsPage() {
       setIsDeletingSelectedList(true);
       await deleteBoardApprovalList(selectedApprovalListId);
 
-      setApprovalLists((prev) =>
-        prev.filter((item) => item.listId !== selectedApprovalListId)
-      );
+      // The row is gone from the middle of a page, so the rows after it shift up and
+      // the total moves. Refetch rather than patch a local copy that is now one page
+      // of a larger result.
+      await refreshApprovalPage();
       setProcessedLists((prev) => {
         const next = { ...prev };
         delete next[selectedApprovalListId];
@@ -1044,13 +999,9 @@ export default function BoardApprovalsPage() {
         },
       }));
 
-      setApprovalLists((prev) =>
-        prev.map((item) =>
-          item.listId === selectedApprovalListId
-            ? { ...item, status: "PROCESSED", ...processedList }
-            : item
-        )
-      );
+      // The row's status changed; re-read the page so the table and its total agree
+      // with the server rather than with a patched local copy.
+      await refreshApprovalPage();
 
       setIsEditingProcessedList(false);
       setShowConfirmModal(false);
@@ -1331,12 +1282,12 @@ export default function BoardApprovalsPage() {
                     <span>Status</span>
                   </div>
 
-                  {filteredApprovalLists.length === 0 ? (
+                  {approvalRows.length === 0 ? (
                     <div className="px-5 py-8 text-center text-sm text-muted-foreground">
                       No approval lists found.
                     </div>
                   ) : (
-                    pagedApprovalLists.map((item) => (
+                    approvalRows.map((item) => (
                       <button
                         key={`${item.kind}-${item.listId}`}
                         type="button"
@@ -1379,9 +1330,9 @@ export default function BoardApprovalsPage() {
                 </div>
 
                 <TablePagination
-                  page={safeListPage}
-                  total={filteredApprovalLists.length}
-                  onPageChange={setListPage}
+                  page={listPage}
+                  total={approvalTotal}
+                  onPageChange={handleListPageChange}
                   itemLabel="list"
                 />
 
