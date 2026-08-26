@@ -1,28 +1,22 @@
 import type { UserRole } from "@/lib/auth-context";
 
 /**
- * Single source of truth for who can do what, for the modules that have been
+ * Single source of truth for who can do what, for the three modules that have been
  * access-controlled so far:
  *
  *   1. Member Registration (MR01–MR18) — expressed as role lists, below.
- *   2. Member Terminations (MMT01–MMT11) — role lists, the TERMINATION_* constants.
- *   3. Record Member Death (MMT18–MMT25) — role lists, the MEMBER_DEATH_* constants.
- *   4. Death Donations for Members (MMD01–MMD08) — the DEATH_DONATION_* constants.
- *   5. Inactivating Dormant Membership Profiles (MMD10–MMD18) — the DORMANT_* constants.
- *   6. Member Profile Changes (Requirement 02) — the PROFILE_CHANGE_* constants.
- *   7. Grade 5 Scholarships (MMS01–MMS20)   — named permissions, further down.
- *   8. University Scholarships (MMS21–MMS48) — named permissions, same map.
+ *   2. Grade 5 Scholarships (MMS01–MMS20) — expressed as named permissions, further down.
+ *   3. Member Retirement (MMT12–MMT17) — named permissions, at the bottom.
  *
- * The two shapes coexist on purpose. Member Registration shipped with role lists and
- * works; converting it would be a refactor of live code for no behavioural gain. The
- * scholarship modules need named permissions because their SRS keeps describing
- * rights held *in addition* to a role ("the user needs Inactive rights", "the
- * authorized user who has the delete privileges", MMS41's "special authorization"),
- * which a role list cannot express.
+ * They use different shapes on purpose. Member Registration shipped with role lists
+ * and works; converting it would be a refactor of live code for no behavioural gain.
+ * Grade 5 and Retirement need named permissions because their SRS documents keep
+ * describing rights held *in addition* to a role ("the user needs Inactive rights",
+ * "the authorized user who has the delete privileges", "if the logged in user has the
+ * rights to change the status"), which a role list cannot express.
  *
- * Used by: NavigationSideBar (menu visibility), board-approvals/new-registrations/
- * directory page guards, and button-level gating. Keeping it in one place is what
- * stops a role silently falling into a catch-all "default = full access" branch.
+ * Still out of scope and unrestricted: University Scholarships, Death Donation,
+ * Termination, Dormant Membership, Profile Changes.
  *
  * Everything here is UX only — it decides what is shown, never what is allowed. The
  * backend enforces the same matrix independently in RolePermissions.java, and that
@@ -496,7 +490,13 @@ export type Permission =
   // ---- University: masters + finance ----
   | "US_MASTER_VIEW"
   | "US_MASTER_MANAGE"
-  | "US_FINANCE_DISBURSE";
+  | "US_FINANCE_DISBURSE"
+  // Member Transfers (MMC27-MMC30). There is no MT_REQUEST_EDIT: a transfer is
+  // created already at "Submitted for Approval" and can never be edited.
+  | "MT_REQUEST_VIEW"
+  | "MT_REQUEST_CREATE"
+  | "MT_REQUEST_APPROVE"
+  | "MT_REQUEST_SET_INACTIVE";
 
 const GRADE5_DISTRICT: Permission[] = [
   "G5_REQUEST_VIEW",
@@ -564,6 +564,25 @@ const UNIVERSITY_BOARD: Permission[] = [
   "US_MASTER_VIEW",
 ];
 
+// --- Member Transfers (MMC27-MMC30) ---------------------------------------
+// Kept in step with RolePermissions.java on the server, which enforces the same
+// split independently; these arrays only decide what the UI offers.
+
+// The office that raises a transfer: it reads and creates, and decides nothing.
+const TRANSFER_DISTRICT: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_CREATE"];
+
+// MMC30 names the District Office as the approver, resolved in favour of Head
+// Office for the same reason as the scholarship modules: the office that raises a
+// request does not approve it.
+const TRANSFER_APPROVER: Permission[] = [
+  "MT_REQUEST_VIEW",
+  "MT_REQUEST_APPROVE",
+  "MT_REQUEST_SET_INACTIVE",
+];
+
+// Board Secretary reads and holds the Inactive right, but does not approve.
+const TRANSFER_SECRETARY: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_SET_INACTIVE"];
+
 const ALL_PERMISSIONS: Permission[] = [
   ...GRADE5_DISTRICT,
   ...GRADE5_BOARD,
@@ -574,6 +593,8 @@ const ALL_PERMISSIONS: Permission[] = [
   "US_COMMITTEE_APPROVE",
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
+  ...TRANSFER_APPROVER,
+  "MT_REQUEST_CREATE",
 ];
 
 /**
@@ -592,15 +613,20 @@ const ALL_PERMISSIONS: Permission[] = [
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
 
-  DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT],
+  DISTRICT_OFFICE: [...GRADE5_DISTRICT, ...UNIVERSITY_DISTRICT, ...TRANSFER_DISTRICT],
 
   // US_FINANCE_DISBURSE is listed here rather than in UNIVERSITY_BOARD because that
   // array is shared with BOARD_SECRETARY, which does not hold the finance hand-over.
-  HEAD_OFFICE: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, "US_FINANCE_DISBURSE"],
+  HEAD_OFFICE: [
+    ...GRADE5_BOARD,
+    ...UNIVERSITY_BOARD,
+    "US_FINANCE_DISBURSE",
+    ...TRANSFER_APPROVER,
+  ],
 
   // The same approval track as Head Office, plus the Grade 5 / University delete
   // privileges that DELETE_RIGHTS_ROLES also grants.
-  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD],
+  BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, ...TRANSFER_SECRETARY],
 
   // Seat of the University Scholarship Committee (MMS26), and owner of the university
   // master. The Exam Master is NOT its to maintain: exam dates and district cut-off
@@ -684,6 +710,171 @@ export const ALL_LOCATION_ROLES: UserRole[] = [
   "SCHOLARSHIP_OFFICER",
 ];
 
+/**
+ * True when the role may pick any District Office in a Location filter.
+ *
+ * The national/district split is a property of the role, not of a module, so every
+ * module asks this same question — Grade 5, University Scholarships, Termination &
+ * Retirement. One function reading one array, because two copies would drift.
+ */
 export function canSelectAllLocations(role: UserRole | undefined | null): boolean {
   return hasRole(role, ALL_LOCATION_ROLES);
+}
+
+/** True when the role sees only its own District Office's records (SRS 3.2.2). */
+export function isLocationRestricted(role: UserRole | undefined | null): boolean {
+  return !!role && !canSelectAllLocations(role);
+}
+
+// ─── Member Retirement (MMT12–MMT17) ─────────────────────────────────────────
+//
+// Mirror of backend enums/Permission.java + config/RolePermissions.java. If you change
+// a grant here, change it there too — this copy only hides buttons, the backend copy is
+// what actually stops the request.
+
+export type RetPermission =
+  | "RET_REQUEST_VIEW"
+  | "RET_REQUEST_CREATE"
+  | "RET_REQUEST_EDIT"
+  | "RET_REQUEST_SUBMIT"
+  | "RET_REQUEST_INCOMPLETE"
+  | "RET_REQUEST_SET_INACTIVE"
+  | "RET_REQUEST_RETURN_TO_NEW"
+  | "RET_REQUEST_APPROVE";
+
+/**
+ * The District Office owns a retirement request end to end — it raises, submits and
+ * approves. Unlike the Grade 5 matrix above, retirement is not split across two
+ * offices: MMT16's actor table and §3.1.1 both place the approver at the District
+ * Office ("District Office System User" / "the Authorized User from the District
+ * Office"). HEAD_OFFICE keeps approval too, so requests can still be handled centrally.
+ *
+ * BOARD_SECRETARY gets the housekeeping rights it already holds elsewhere via
+ * INACTIVE_RIGHTS_ROLES, but not approval — MMT16 runs no Board Meeting.
+ * SCHOLARSHIP_OFFICER and DEATH_DONATION_OFFICER are not actors in MMT12–MMT17 at all.
+ */
+const RET_ROLE_PERMISSIONS: Record<UserRole, RetPermission[]> = {
+  SUPER_ADMIN: [
+    "RET_REQUEST_VIEW",
+    "RET_REQUEST_CREATE",
+    "RET_REQUEST_EDIT",
+    "RET_REQUEST_SUBMIT",
+    "RET_REQUEST_INCOMPLETE",
+    "RET_REQUEST_SET_INACTIVE",
+    "RET_REQUEST_RETURN_TO_NEW",
+    "RET_REQUEST_APPROVE",
+  ],
+
+  // MMT16 names "District Office System User" as the approver, so the District Office
+  // owns a retirement request end to end — raise, submit, approve or reject, pull back
+  // to New, deactivate. Mirrors RolePermissions.java, which is the copy that counts.
+  DISTRICT_OFFICE: [
+    "RET_REQUEST_VIEW",
+    "RET_REQUEST_CREATE",
+    "RET_REQUEST_EDIT",
+    "RET_REQUEST_SUBMIT",
+    "RET_REQUEST_INCOMPLETE",
+    "RET_REQUEST_APPROVE",
+    "RET_REQUEST_RETURN_TO_NEW",
+    "RET_REQUEST_SET_INACTIVE",
+  ],
+
+  HEAD_OFFICE: [
+    "RET_REQUEST_VIEW",
+    "RET_REQUEST_APPROVE",
+    "RET_REQUEST_SET_INACTIVE",
+    "RET_REQUEST_RETURN_TO_NEW",
+  ],
+
+  BOARD_SECRETARY: [
+    "RET_REQUEST_VIEW",
+    "RET_REQUEST_SET_INACTIVE",
+    "RET_REQUEST_RETURN_TO_NEW",
+  ],
+
+  // "Head Office – Finance Department" in §3.1.1. Read-only: MMT17 hands approved
+  // retirements to the Finance Module over an API that does not exist yet.
+  ACCOUNTS: ["RET_REQUEST_VIEW"],
+
+  SCHOLARSHIP_OFFICER: [],
+  DEATH_DONATION_OFFICER: [],
+
+  // Committee roles decide Member Deaths (MMT23/MMT24), not retirements. Listed only
+  // because Record<UserRole, …> demands every role.
+  DISTRICT_COMMITTEE: [],
+  PD_COMMITTEE: [],
+};
+
+export function hasRetPermission(
+  role: UserRole | undefined | null,
+  permission: RetPermission
+): boolean {
+  return !!role && RET_ROLE_PERMISSIONS[role].includes(permission);
+}
+
+/** True when the role may reach the Retirement module at all — used for page guards. */
+export function canAccessRetirement(role: UserRole | undefined | null): boolean {
+  return hasRetPermission(role, "RET_REQUEST_VIEW");
+}
+
+// ─── Authorising power (the per-account "authority" flag) ────────────────────
+//
+// A right held *in addition* to a role, set per account by the Super Admin and
+// stored on Users.authority. The SRS keeps describing the status-change actor as
+// "the Authorized User from the District Office" (MMT16 / §3.1.1) rather than as the
+// District Office generally: an office holds both clerks who prepare a request and
+// officers who sign it off, and the role alone cannot tell the two apart.
+//
+// Only DISTRICT_OFFICE and HEAD_OFFICE accounts can carry it — UserAdminService
+// forces it false for every other role, so this file never has to special-case them.
+
+/** True when this account carries authorising power on top of its role. */
+export function isAuthorizedOfficer(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return !!user?.authorized;
+}
+
+/**
+ * Gate for the view-mode "Change status" dropdown.
+ *
+ * District Office is the only role split by the authority flag: an unauthorised
+ * District Office account may still raise, edit and submit a request, but may not
+ * move its status, so the dropdown is hidden from it entirely. Every other role keeps
+ * whatever its permission matrix already grants — this narrows District Office, it
+ * does not widen anyone.
+ *
+ * UX only, and — unlike the permission matrices above — it has NO backend twin yet:
+ * RetirementRequestController still authorises status changes on the role alone, so an
+ * unauthorised District Office account can still make the change by calling the
+ * endpoint directly. Closing that gap means checking the flag in
+ * requiredPermissionForStatusChange() as well.
+ */
+/**
+ * Gate for the Grade 5 "Delete List" button (MMS09 / MMS16).
+ *
+ * The SRS calls delete out as a separate "delete privilege" rather than as something
+ * the whole office holds, so at Head Office it belongs to the authorised officer and
+ * not to every account with a Head Office login. Head Office is the only role narrowed
+ * here - SUPER_ADMIN and BOARD_SECRETARY keep the right through the role matrix, and a
+ * role without G5_LIST_DELETE gains nothing from being authorised.
+ *
+ * UI only. Grade5ScholarshipApprovalListController still authorises delete on
+ * @PreAuthorize("hasAuthority('G5_LIST_DELETE')"), which the authority flag does not
+ * narrow, so an unauthorised Head Office account could still call the endpoint directly.
+ */
+export function canDeleteGrade5List(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  if (!hasPermission(user?.role, "G5_LIST_DELETE")) return false;
+  if (user?.role === "HEAD_OFFICE") return isAuthorizedOfficer(user);
+  return true;
+}
+
+export function canChangeRequestStatus(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  if (!user?.role) return false;
+  if (user.role === "DISTRICT_OFFICE") return isAuthorizedOfficer(user);
+  return true;
 }

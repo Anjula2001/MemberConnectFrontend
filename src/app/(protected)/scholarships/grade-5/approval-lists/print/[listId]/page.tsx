@@ -71,7 +71,9 @@ export default function Grade5ApprovalListPrintPage({
     const load = async () => {
       try {
         const [listsRes, requestsRes] = await Promise.all([
-          authFetch(`${API_BASE_URL}/api/grade5/approval-lists`),
+          // The controller maps the collection at /all — a bare /approval-lists is a 404.
+          // Corrected against the route origin/dev's print page used.
+          authFetch(`${API_BASE_URL}/api/grade5/approval-lists/all`),
           authFetch(`${API_BASE_URL}/api/grade5/approval-lists/${listId}/requests`),
         ]);
 

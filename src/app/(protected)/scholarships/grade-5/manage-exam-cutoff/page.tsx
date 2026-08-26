@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { z } from "zod";
 import { Button } from "@/src/components/ui/button";
 import {
   Table,
@@ -50,8 +51,103 @@ const DISTRICTS = [
 
 interface CutoffDetail {
   district: string;
-  cutoffMarks: string; // Keep as string for editable inputs to handle empty/partially typed values easily
+  cutoffMarks: string; 
 }
+
+// Cutoff issues are raised against ["cutoffs", <district name>] so each message maps
+// straight back onto its own table row.
+const examMasterSchema = z
+  .object({
+    examYear: z.number(),
+    examDate: z.string(),
+    cutoffs: z.array(
+      z.object({
+        district: z.string(),
+        cutoffMarks: z.string(),
+      })
+    ),
+  })
+  .superRefine((data, ctx) => {
+    const currentYear = new Date().getFullYear();
+
+    // 1. Validate exam year
+    if (!data.examYear) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["examYear"],
+        message: "Exam year is required.",
+      });
+    } else if (data.examYear > currentYear) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["examYear"],
+        message: "Exam year cannot be a future year.",
+      });
+    } else if (data.examYear < currentYear) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["examYear"],
+        message: "Exam year cannot be a past year.",
+      });
+    }
+
+    // 2. Validate exam date
+    if (!data.examDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["examDate"],
+        message: "Exam date is required.",
+      });
+    } else {
+      const selectedDate = new Date(data.examDate);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // Allow today's date
+
+      if (selectedDate.getFullYear() !== data.examYear) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["examDate"],
+          message: `Exam date must belong to the selected exam year (${data.examYear}).`,
+        });
+      } else if (selectedDate > today) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["examDate"],
+          message: "Exam date cannot be a future date.",
+        });
+      }
+    }
+
+    // 3. Validate district cutoff marks
+    data.cutoffs.forEach((item) => {
+      const valStr = item.cutoffMarks.trim();
+
+      if (!valStr) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cutoffs", item.district],
+          message: "Cutoff is required.",
+        });
+        return;
+      }
+
+      const valNum = Number(valStr);
+
+      if (isNaN(valNum) || !Number.isInteger(valNum)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cutoffs", item.district],
+          message: "Must be a valid integer.",
+        });
+      } else if (valNum < 0 || valNum > 200) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cutoffs", item.district],
+          message: "Must be between 0 and 200.",
+        });
+      }
+    });
+  });
 
 export default function Grade5ExamCutoffManagementPage() {
   const { addToast } = useToast();
@@ -76,11 +172,10 @@ export default function Grade5ExamCutoffManagementPage() {
   const [errors, setErrors] = useState<{
     examYear?: string;
     examDate?: string;
-    cutoffs?: Record<string, string>; // Maps district name to error message
+    cutoffs?: Record<string, string>; 
   }>({});
 
-  // Build the cutoff rows from the static DISTRICTS list,
-  // overlaying any saved marks from the API response
+
   const buildCutoffs = (
     apiCutoffs: { district: string; cutoffMarks: number | null }[]
   ): CutoffDetail[] => {
@@ -157,65 +252,35 @@ export default function Grade5ExamCutoffManagementPage() {
 
   // Perform client-side validations
   const validateForm = (): boolean => {
+    const result = examMasterSchema.safeParse({ examYear, examDate, cutoffs });
+
+    if (result.success) {
+      setErrors({});
+      return true;
+    }
+
     const newErrors: typeof errors = {};
-    let isValid = true;
-
-    // 1. Validate exam year
-    if (!examYear) {
-      newErrors.examYear = "Exam year is required.";
-      isValid = false;
-    } else if (examYear > currentYear) {
-      newErrors.examYear = "Exam year cannot be a future year.";
-      isValid = false;
-    } else if (examYear < currentYear) {
-      newErrors.examYear = "Exam year cannot be a past year.";
-      isValid = false;
-    }
-
-    // 2. Validate exam date
-    if (!examDate) {
-      newErrors.examDate = "Exam date is required.";
-      isValid = false;
-    } else {
-      const selectedDate = new Date(examDate);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999); // Allow today's date
-
-      if (selectedDate.getFullYear() !== examYear) {
-        newErrors.examDate = `Exam date must belong to the selected exam year (${examYear}).`;
-        isValid = false;
-      } else if (selectedDate > today) {
-        newErrors.examDate = "Exam date cannot be a future date.";
-        isValid = false;
-      }
-    }
-
-    // 3. Validate district cutoff marks
     const cutoffErrors: Record<string, string> = {};
-    cutoffs.forEach((item) => {
-      const valStr = item.cutoffMarks.trim();
-      if (!valStr) {
-        cutoffErrors[item.district] = "Cutoff is required.";
-        isValid = false;
-      } else {
-        const valNum = Number(valStr);
-        if (isNaN(valNum) || !Number.isInteger(valNum)) {
-          cutoffErrors[item.district] = "Must be a valid integer.";
-          isValid = false;
-        } else if (valNum < 0 || valNum > 200) {
-          cutoffErrors[item.district] = "Must be between 0 and 200.";
-          isValid = false;
-        }
+
+    result.error.issues.forEach((issue) => {
+      const [field, district] = issue.path;
+
+      if (field === "cutoffs" && typeof district === "string") {
+        cutoffErrors[district] = cutoffErrors[district] ?? issue.message;
+        return;
+      }
+
+      if (field === "examYear" || field === "examDate") {
+        newErrors[field] = newErrors[field] ?? issue.message;
       }
     });
 
     if (Object.keys(cutoffErrors).length > 0) {
       newErrors.cutoffs = cutoffErrors;
-      isValid = false;
     }
 
     setErrors(newErrors);
-    return isValid;
+    return false;
   };
 
   // Trigger Save action

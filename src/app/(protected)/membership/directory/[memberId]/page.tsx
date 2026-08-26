@@ -37,10 +37,10 @@ import { useAuth } from "@/lib/auth-context";
 import {
 	DEATH_DONATION_ENTRY_ROLES,
 	MEMBER_DEATH_ENTRY_ROLES,
-	MEMBER_TRANSFER_ROLES,
 	PROFILE_CHANGE_CREATE_ROLES,
 	TESTING_ACTIVATE_ROLES,
 	hasPermission,
+	hasRetPermission,
 	hasRole,
 } from "@/lib/permissions";
 
@@ -51,6 +51,12 @@ const detailTabs = [
 	"Scholarships",
 	"Progress",
 ];
+
+const NO_RAISE_HINT =
+	"Your role approves requests, it does not raise them.";
+
+const INACTIVE_MEMBER_HINT =
+	"This member is not Active, so a Grade 5 request cannot be raised for them.";
 
 const actionGroups = {
 	profileRequests: [
@@ -68,16 +74,15 @@ const actionGroups = {
 };
 
 /**
- * Actions that an INACTIVE member may not start.
+ * Actions that only an ACTIVE member may start.
  *
  * Transferring a member who holds no active membership moves nothing, and a new
  * University Scholarship would be raised against a membership that cannot fund it.
  *
- * Scoped to INACTIVE specifically, per the requirement. Other non-active statuses
- * (INACTIVE_DORMANT, RETIRED, TERMINATED, DECEASED, RESIGNED) are deliberately NOT
- * covered here — widen this list if they should be.
+ * Any status other than ACTIVE blocks these — INACTIVE, INACTIVE_DORMANT, RETIRED,
+ * TERMINATED, DECEASED, RESIGNED, MEMBER_DEATH_RECORDED, TERMINATION_REQUESTED alike.
  */
-const BLOCKED_WHILE_INACTIVE = ["Member Transfer", "University Scholarship"];
+const ACTIVE_MEMBER_ONLY_ACTIONS = ["Member Transfer", "University Scholarship"];
 
 function Field({ label, value }: { label: string; value: string | undefined | null }) {
 	return (
@@ -113,6 +118,9 @@ export default function MemberProfilePage({
 	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
 	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
 	const [isActivating, setIsActivating] = useState(false);
+	// Request id of the member's transfer request awaiting approval, if any. A
+	// second one would compete with it, so the action is offered but disabled.
+	const [inFlightTransferId, setInFlightTransferId] = useState<string | null>(null);
 	const { addToast } = useToast();
 	const { user } = useAuth();
 	// MMC01/05/14/18 name the District Office System User as the one who raises a
@@ -131,7 +139,9 @@ export default function MemberProfilePage({
 	// Raising a request is the originating office's job. Head Office holds neither
 	// right, so it reviews these rather than creating them.
 	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
-	const canCreateMemberTransfer = hasRole(user?.role, MEMBER_TRANSFER_ROLES);
+	// Now a named permission rather than a role list, so this agrees with the
+	// MT_REQUEST_CREATE check the server applies to POST /api/member-transfers/submit.
+	const canCreateMemberTransfer = hasPermission(user?.role, "MT_REQUEST_CREATE");
 
 	// Real activation is supposed to come from the Finance Module once the member's
 	// accounts are created there (out of scope for this build). This button is a
@@ -154,7 +164,7 @@ export default function MemberProfilePage({
 		}
 	};
 
-	const [scholarship, setScholarship] = useState<any | null>(null);
+	const [scholarships, setScholarships] = useState<any[]>([]);
 
 	// Filter out orphaned old local files ("uploads/...") for ALL documents
 	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
@@ -196,7 +206,151 @@ export default function MemberProfilePage({
 		}
 	};
 
-	const isRetirementAvailable = profile?.status === "ACTIVE";
+	// MMT12 needs both: the member must be Active, and the user must hold the right to
+	// raise a retirement request in the first place.
+	const isRetirementAvailable =
+		profile?.status === "ACTIVE" &&
+		hasRetPermission(user?.role, "RET_REQUEST_CREATE");
+
+	// Head Office approves requests, it does not raise them — the SRS actor tables and
+	// G5_ROLE_PERMISSIONS both put creation at District Office. Reaching a member's
+	// profile is not permission to start a request from it, so every request-raising
+	// entry in the Actions menu is disabled for Head Office. "Add Documents" is not a
+	// request, so it stays available.
+	const canRaiseRequests = user?.role !== "HEAD_OFFICE";
+
+	// Grade 5 is the one entry with a real permission behind it, so it answers to that
+	// rather than to the role name.
+	const canRaiseGrade5 =
+		canRaiseRequests && hasPermission(user?.role, "G5_REQUEST_CREATE");
+
+	const NON_REQUEST_ACTIONS = ["Add Documents"];
+
+	const isGrade5Action = (action: string) =>
+		action === "Grade 5 Scholarship" || action === "Grade 5 Scholarships";
+
+	const isUniversityScholarshipAction = (action: string) =>
+		action === "University Scholarship" || action === "University Scholarships";
+
+	// The single answer to "may this Actions entry be used, and if not, why not".
+	// The menu reads it to disable and explain an entry, handleActionClick reads it to
+	// stop a stale page acting on one, so the two cannot drift apart. null means the
+	// action is allowed.
+	const actionDisabledReason = (action: string): string | null => {
+		if (isGrade5Action(action)) {
+			// saveRequest rejects a member who is not Active on the exam's last date, so
+			// an inactive member cannot hold a Grade 5 request at all — the entry is
+			// disabled rather than leading to a form that cannot be saved.
+			if (!canRaiseGrade5) {
+				return canRaiseRequests
+					? "Your role cannot raise a Grade 5 Scholarship request"
+					: NO_RAISE_HINT;
+			}
+			return profile?.status !== "ACTIVE" ? INACTIVE_MEMBER_HINT : null;
+		}
+
+		if (!canRaiseRequests && !NON_REQUEST_ACTIONS.includes(action)) {
+			return NO_RAISE_HINT;
+		}
+
+		if (ACTIVE_MEMBER_ONLY_ACTIONS.includes(action) && profile?.status !== "ACTIVE") {
+			return "Available only while the member is active";
+		}
+
+		// Every request in this menu is raised against a live membership, so a member who
+		// is not ACTIVE - retired, terminated, deceased, dormant, awaiting activation -
+		// can have none of them raised. Previously only a handful of actions checked the
+		// status individually, which left Basic Profile Changes, Change Name, Change
+		// Remittance and Change Nominee openable against, say, a RETIRED member.
+		//
+		// Add Documents is the sole exception, and NON_REQUEST_ACTIONS is what says so:
+		// paperwork is usually the reason the member is in a non-active state, and
+		// blocking uploads would remove the only way to resolve it.
+		//
+		// The two carve-outs below are deliberate and predate this rule: each keeps an
+		// EXISTING request reachable so it can be reopened, rather than opening a new one.
+		if (
+			profile?.status !== "ACTIVE" &&
+			!NON_REQUEST_ACTIONS.includes(action) &&
+			!(action === "Record Member Death" && profile?.status === "MEMBER_DEATH_RECORDED") &&
+			!(action === "Member Termination" && profile?.status === "TERMINATION_REQUESTED")
+		) {
+			return `Not available while the member is ${(profile?.status ?? "not Active").replace(/_/g, " ")}`;
+		}
+
+		if (action === "Member Transfer") {
+			if (!canCreateMemberTransfer) {
+				return "Your role cannot raise a Member Transfer request";
+			}
+			// Only one transfer request may be awaiting approval at a time; a second
+			// would compete with it.
+			if (inFlightTransferId !== null) {
+				return inFlightTransferId
+					? `Transfer request ${inFlightTransferId} is already awaiting approval`
+					: "A transfer request is already awaiting approval";
+			}
+		}
+
+		if (isUniversityScholarshipAction(action) && !canCreateUniversityScholarship) {
+			return "Your role cannot raise a University Scholarship request";
+		}
+
+		if (action === "Death Donation Request") {
+			if (!canRaiseDeathDonation) {
+				return "Your role cannot raise a Death Donation request";
+			}
+			// MMD01: "The Member states need to be Active to have the Death Donation
+			// option available."
+			if (profile?.status !== "ACTIVE") {
+				return "Not available for an inactive member";
+			}
+		}
+
+		if (action === "Record Member Death") {
+			// MMT18 puts raising the record at District Office; the approval levels reach
+			// an existing one through the requests list instead.
+			if (!canRecordMemberDeath) {
+				return "Your role cannot record a Member Death";
+			}
+			if (
+				profile?.status !== "ACTIVE" &&
+				profile?.status !== "MEMBER_DEATH_RECORDED"
+			) {
+				return "Not available for this member's status";
+			}
+		}
+
+		// MMT01: "The Member states need to be 'Active' to have the Termination option
+		// available." An existing request leaves the member at TERMINATION_REQUESTED,
+		// which must stay reachable so the request can be reopened.
+		if (
+			action === "Member Termination" &&
+			profile?.status !== "ACTIVE" &&
+			profile?.status !== "TERMINATION_REQUESTED"
+		) {
+			return "Not available for this member's status";
+		}
+
+		if (action === "Retirement" && !isRetirementAvailable) {
+			return "Not available for this member's status or your role";
+		}
+
+		return null;
+	};
+
+	const isActionDisabled = (action: string) => actionDisabledReason(action) !== null;
+
+	// A note printed under the entry name. Only the pending transfer request gets
+	// one: it is a temporary state the user can clear by deciding that request,
+	// unlike a role or member-status block, which the tooltip alone explains.
+	const actionNote = (action: string): string | null => {
+		if (action === "Member Transfer" && inFlightTransferId !== null) {
+			return inFlightTransferId
+				? `Already has a pending request (${inFlightTransferId})`
+				: "Already has a pending request";
+		}
+		return null;
+	};
 
 	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
 		if (!profile?.applicationId) {
@@ -280,19 +434,8 @@ export default function MemberProfilePage({
 				}
 
 				if (data.memberId) {
-					/*
-					 * Ad-hoc documents. The endpoint is District Office and Head Office
-					 * only, so any other role simply sees no Ad-hoc folder rather than an
-					 * error - the tab's other contents are unaffected either way.
-					 */
-					getAdHocDocuments(data.memberId)
-						.then(setAdHocDocuments)
-						.catch(() => setAdHocDocuments([]));
-				}
-
-				if (data.memberId) {
-					// Load Grade 5 Scholarship request
-					authFetch(`http://localhost:8080/api/grade5/${data.memberId}/request`)
+					// Load every Grade 5 Scholarship request this member holds
+					fetch(`http://localhost:8080/api/grade5/${data.memberId}/requests`)
 						.then(res => {
 							if (!res.ok) return null;
 							return res.text().then(text => {
@@ -304,9 +447,20 @@ export default function MemberProfilePage({
 							});
 						})
 						.then(scholData => {
-							if (scholData) setScholarship(scholData);
+							setScholarships(Array.isArray(scholData) ? scholData : scholData ? [scholData] : []);
 						})
-						.catch(e => console.error("Error loading scholarship request", e));
+						.catch(e => console.error("Error loading scholarship requests", e));
+
+					// Load any member transfer request awaiting approval
+					fetch(`http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(data.memberId)}`)
+						.then(res => (res.ok ? res.json() : null))
+						.then(transferVal => {
+							if (transferVal?.hasInFlight) {
+								setInFlightTransferId(transferVal.requestId || "");
+							}
+						})
+						.catch(e => console.error("Error loading member transfer status", e));
+
 				}
 			} catch (err) {
 				console.error("Failed to fetch member", err);
@@ -320,48 +474,10 @@ export default function MemberProfilePage({
 
 	const handleActionClick = (action: string) => {
 		if (!profile?.memberId) return;
-
-		if (action === "Death Donation Request") {
-			if (!canRaiseDeathDonation) {
-				return;
-			}
-			// MMD01: "The Member states need to be Active to have the Death
-			// Donation option available."
-			if (profile.status !== "ACTIVE") {
-				return;
-			}
-		}
-
-		// Two separate reasons an action can be unavailable: the member is inactive, or
-		// the signed-in role does not raise this kind of request. The buttons are
-		// disabled for both; this guard is what stops a stale page whose profile
-		// loaded while the member was still active.
-		if (BLOCKED_WHILE_INACTIVE.includes(action) && profile.status === "INACTIVE") {
-			return;
-		}
-
-		if (action === "Member Transfer" && !canCreateMemberTransfer) {
-			return;
-		}
-
-		if (
-			(action === "University Scholarship" || action === "University Scholarships") &&
-			!canCreateUniversityScholarship
-		) {
-			return;
-		}
-
-		if (action === "Record Member Death") {
-			if (!canRecordMemberDeath) {
-				return;
-			}
-			if (
-				profile.status !== "ACTIVE" &&
-				profile.status !== "MEMBER_DEATH_RECORDED"
-			) {
-				return;
-			}
-		}
+		// Role rights and member-status rules both live in actionDisabledReason, which
+		// is what disabled the button in the first place. Re-asking it here is what stops
+		// a stale page whose profile loaded while the member was still active.
+		if (isActionDisabled(action)) return;
 
 		// Requirement 02 gates every profile change request on an active membership.
 		const activeOnlyActions = [
@@ -410,21 +526,6 @@ export default function MemberProfilePage({
 	if (!profile) {
 		notFound();
 	}
-
-	// Returns the reason an action is unavailable, or null when it is allowed. A
-	// reason rather than a boolean so the disabled button can explain itself.
-	const actionDisabledReason = (item: string): string | null => {
-		if (item === "Member Transfer" && !canCreateMemberTransfer) {
-			return "Your role cannot raise a Member Transfer request";
-		}
-		if (item === "University Scholarship" && !canCreateUniversityScholarship) {
-			return "Your role cannot raise a University Scholarship request";
-		}
-		if (BLOCKED_WHILE_INACTIVE.includes(item) && profile.status === "INACTIVE") {
-			return "Not available for an inactive member";
-		}
-		return null;
-	};
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
@@ -553,24 +654,10 @@ export default function MemberProfilePage({
 										// shown and then refused by the server.
 										.filter((item) => item !== "Death Donation Request" || canRaiseDeathDonation)
 										.map((item) => {
-										const isRetirementItem = item === "Retirement";
-										const isDeathDonation = item === "Death Donation Request";
-										const isRecordMemberDeath = item === "Record Member Death";
-										// MMT01: "The Member states need to be 'Active' to have the
-										// Termination option available." An existing request leaves the
-										// member at TERMINATION_REQUESTED, which must stay reachable so
-										// the request can be reopened.
-										const isTermination = item === "Member Termination";
-										const isDisabled =
-											(isDeathDonation && profile.status !== "ACTIVE") ||
-											(isRecordMemberDeath &&
-												profile.status !== "ACTIVE" &&
-												profile.status !== "MEMBER_DEATH_RECORDED") ||
-											(isTermination &&
-												profile.status !== "ACTIVE" &&
-												profile.status !== "TERMINATION_REQUESTED") ||
-											(isRetirementItem && !isRetirementAvailable);
-										;
+										// Member status rules and the raise-a-request rule both live in
+										// actionDisabledReason, so the two cannot drift apart.
+										const disabledReason = actionDisabledReason(item);
+										const isDisabled = disabledReason !== null;
 
 										return (
 											<button
@@ -578,11 +665,12 @@ export default function MemberProfilePage({
 												onClick={() => handleActionClick(item)}
 												type="button"
 												disabled={isDisabled}
+												title={disabledReason ?? undefined}
 												className={
-													item === "Member Termination"
-														? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-														: isDisabled
-															? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+													isDisabled
+														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+														: item === "Member Termination"
+															? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
 															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
 												}
 											>
@@ -622,7 +710,7 @@ export default function MemberProfilePage({
 								}
 							>
 								<span>{tab}</span>
-								{tab === "Scholarships" && scholarship && (
+								{tab === "Scholarships" && scholarships.length > 0 && (
 									<span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200 leading-none">
 										Active
 									</span>
@@ -902,35 +990,52 @@ export default function MemberProfilePage({
 									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
 								</div>
 
-								{scholarship ? (
-									<div className="grid grid-cols-3 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200">
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Request ID</p>
-											{scholarship.requestNo ? (
-												<button
-													type="button"
-													onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
-													className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
-												>
-													{scholarship.requestNo}
-												</button>
-											) : (
-												<p className="text-sm font-medium text-neutral-800">—</p>
-											)}
-										</div>
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
-											<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
-										</div>
-										<div className="space-y-1 p-4">
-											<p className="text-[11px] text-neutral-500">Status</p>
-											<Badge className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
-												scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
-													'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
-												}`}>
-												{scholarship.status?.replace(/_/g, ' ')}
-											</Badge>
-										</div>
+								{scholarships.length > 0 ? (
+									<div className="space-y-3">
+										{scholarships.map((scholarship, i) => (
+											<div
+												key={scholarship.requestNo ?? scholarship.id ?? i}
+												className="grid grid-cols-4 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200"
+											>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Request ID</p>
+													{scholarship.requestNo ? (
+														<button
+															type="button"
+															onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
+															className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+														>
+															{scholarship.requestNo}
+														</button>
+													) : (
+														<p className="text-sm font-medium text-neutral-800">—</p>
+													)}
+												</div>
+												{/* Which child the request is for. With more than one on screen the
+												    request number alone does not identify them. */}
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Student</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.studentName || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Status</p>
+													{/* ADDED TO SCHOLARSHIP DEVIATION APPROVAL LIST is 45 characters and
+													    was running out past the card. Smaller text, and allowed to wrap
+													    inside the column rather than forcing the row wider - Badge sets
+													    whitespace-nowrap by default, so it has to be overridden. */}
+													<Badge className={`inline-block max-w-full rounded-full px-2 py-0.5 text-[10px] leading-tight font-semibold whitespace-normal break-words ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
+														scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
+															'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
+														}`}>
+														{scholarship.status?.replace(/_/g, ' ')}
+													</Badge>
+												</div>
+											</div>
+										))}
 									</div>
 								) : (
 									<div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">

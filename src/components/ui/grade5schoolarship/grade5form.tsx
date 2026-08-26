@@ -13,6 +13,8 @@ interface Grade5FormProps {
   initialData?: Grade5InitialData | null;
   requestNo?: string;
   readOnly?: boolean;
+  /** Fires whenever the form moves between pristine and edited. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export type Grade5InitialData = {
@@ -58,10 +60,16 @@ const grade5Schema = z.object({
 
   studentName: z.string().min(1, "Student name is required"),
 
+  // Birth certificate number must be at least 8 characters long and contain at least two digits
   birthCertificateNo: z
     .string()
+    .trim()
     .min(1, "Birth certificate number is required")
-    .min(8, "Birth Certificate number must be at least 8 characters"),
+    .min(8, "Birth certificate number must be at least 8 characters")
+    .refine(
+      (value) => (value.match(/[0-9]/g) ?? []).length >= 2,
+      "Birth certificate number must include at least 2 digits"
+    ),
 
   school: z.string().min(1, "School is required"),
 
@@ -86,8 +94,10 @@ const grade5Schema = z.object({
 
   examinationNumber: z
     .string()
+    .trim()
     .min(1, "Examination number is required")
-    .min(8, "Examination number must be at least 8 characters"),
+    .regex(/^[0-9]+$/, "Examination number must contain digits only")
+    .min(8, "Examination number must be at least 8 digits"),
 
   districtCutOff: z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -134,7 +144,7 @@ export interface Grade5FormRef {
 }
 
 const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
-  ({ memberId, initialData, readOnly = false }, ref) => {
+  ({ memberId, initialData, readOnly = false, onDirtyChange }, ref) => {
     const memberIdRef = useRef(memberId);
 
     useEffect(() => {
@@ -149,7 +159,8 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       setError,
       clearErrors,
       getValues,
-      formState: { errors },
+      reset,
+      formState: { errors, isDirty },
     } = useForm<Grade5FormValues>({
       resolver: zodResolver(grade5Schema),
       mode: "onChange",
@@ -192,25 +203,33 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
     useEffect(() => {
       if (initialData) {
-        setValue("requestedDate", initialData.requestedDate || "");
-        setValue("studentName", initialData.studentName || "");
-        setValue("birthCertificateNo", initialData.birthCertificateNumber || initialData.birthCertificateNo || "");
-        setValue("school", initialData.school || initialData.studentSchool || "");
-        setValue("schoolDistrict", initialData.district || initialData.schoolDistrict || "");
-        setValue("examYear", initialData.examYear || undefined);
-        setValue(
-          "districtCutOff",
-          initialData.districtCutOffMark != null
-            ? String(initialData.districtCutOffMark)
-            : ""
-        );
-        setValue("marksObtained", initialData.marksObtained ?? 0);
-        setValue("examinationNumber", initialData.examinationNumber || "");
+        reset({
+          requestedDate: initialData.requestedDate || "",
+          studentName: initialData.studentName || "",
+          birthCertificateNo:
+            initialData.birthCertificateNumber || initialData.birthCertificateNo || "",
+          school: initialData.school || initialData.studentSchool || "",
+          schoolDistrict: initialData.district || initialData.schoolDistrict || "",
+          examYear: initialData.examYear || undefined,
+          districtCutOff:
+            initialData.districtCutOffMark != null
+              ? String(initialData.districtCutOffMark)
+              : "",
+          marksObtained: initialData.marksObtained ?? 0,
+          examinationNumber: initialData.examinationNumber || "",
+        });
       }
-    }, [initialData, setValue]);
+    }, [initialData, reset]);
+
+    // Report the pristine/edited flip upward so the page can decide whether Save is
+    // worth offering. isDirty is only trustworthy because of the reset above.
+    useEffect(() => {
+      onDirtyChange?.(isDirty);
+    }, [isDirty, onDirtyChange]);
 
 
     const [checkingExamNo, setCheckingExamNo] = useState(false);
+    const [checkingBirthCertNo, setCheckingBirthCertNo] = useState(false);
     const [examValidated, setExamValidated] = useState(false);
     const [examYears, setExamYears] = useState<number[]>([]);
 
@@ -220,6 +239,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         return;
       }
 
+      // Fetch district cutoff marks when district and year are selected
       const timeout = setTimeout(() => {
         const fetchCutoff = async () => {
           try {
@@ -267,6 +287,17 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
         return false;
       }
 
+      // Shape first, duplicate check second: a number the schema would reject must
+      // not come back from this button marked validated.
+      if (!/^[0-9]{8,}$/.test(examNo.trim())) {
+        setError("examinationNumber", {
+          type: "manual",
+          message: "Examination number must be at least 8 digits",
+        });
+        setExamValidated(false);
+        return false;
+      }
+
       try {
         setCheckingExamNo(true);
 
@@ -308,6 +339,65 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       }
     };
 
+    // Validate birth certificate number duplication by calling backend
+    const validateBirthCertificateNumber = async () => {
+      const birthCertNo = getValues("birthCertificateNo")?.trim();
+
+      if (!birthCertNo) {
+        setError("birthCertificateNo", {
+          type: "manual",
+          message: "Birth certificate number is required",
+        });
+        return false;
+      }
+
+      const ownedAlready =
+        (initialData?.birthCertificateNumber ?? initialData?.birthCertificateNo)
+          ?.trim() === birthCertNo;
+      if (ownedAlready) {
+        return true;
+      }
+
+      try {
+        setCheckingBirthCertNo(true);
+
+        const res = await fetch(
+          `http://localhost:8080/api/grade5/exists-birth-certificate?birthCertificateNo=${encodeURIComponent(
+            birthCertNo
+          )}`
+        );
+
+        if (!res.ok) {
+          console.warn(
+            `[grade5] birth certificate duplicate check unavailable (HTTP ${res.status}) — deferring to the backend check on save`
+          );
+          return true;
+        }
+
+        const data: { exists: boolean } = await res.json();
+
+        if (data.exists) {
+          setError("birthCertificateNo", {
+            type: "manual",
+            message:
+              "Entered Birth Certificate Number is duplicating with another Scholarship Request",
+          });
+          return false;
+        }
+
+        clearErrors("birthCertificateNo");
+        return true;
+      } catch (error) {
+        console.warn(
+          "[grade5] birth certificate duplicate check failed — deferring to the backend check on save",
+          error
+        );
+        return true;
+      } finally {
+        setCheckingBirthCertNo(false);
+      }
+    };
+
 
     const buildPayload = (data: Grade5FormValues): Grade5RequestPayload => ({
       requestedDate: data.requestedDate,
@@ -323,7 +413,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
       marksObtained: data.marksObtained,
     });
 
-
+    
     const onValid = async (
       data: Grade5FormValues,
       extraData: Record<string, unknown> = {},
@@ -387,6 +477,11 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
         await handleSubmit(
           async (data) => {
+            // The backend rejects a duplicate too, but only as a popup message —
+            // checking here puts the error on the field the user has to fix.
+            const birthCertOk = await validateBirthCertificateNumber();
+            if (!birthCertOk) return;
+
             savedRequest = await onValid(data, extraData, requestNo);
           },
           onInvalid
@@ -404,6 +499,9 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               initialData?.examinationNumber === data.examinationNumber ||
               (await validateExamNumber());
             if (!examOk) return;
+
+            const birthCertOk = await validateBirthCertificateNumber();
+            if (!birthCertOk) return;
 
             payload = buildPayload(data);
           },
@@ -487,6 +585,11 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               Birth Certificate No
             </label>
             <Input {...register("birthCertificateNo")} disabled={readOnly} />
+            {checkingBirthCertNo && (
+              <p className="text-gray-500 text-sm">
+                Checking birth certificate number...
+              </p>
+            )}
             {errors.birthCertificateNo && (
               <p className="text-red-500 text-sm">
                 {errors.birthCertificateNo.message}
@@ -528,18 +631,18 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               <option>Hambantota</option>
               <option>Jaffna</option>
               <option>Kurunegala</option>
-              <option>Kaluthara</option>
+              <option>Kalutara</option>
               <option>Kegalle</option>
               <option>Kilinochchi</option>
-              <option>Mathale</option>
+              <option>Matale</option>
               <option>Mannar</option>
               <option>Polonnaruwa</option>
-              <option>Puttalama</option>
+              <option>Puttalam</option>
               <option>Mullaitivu</option>
               <option>Vavuniya</option>
-              <option>Rathnapura</option>
+              <option>Ratnapura</option>
               <option>Monaragala</option>
-              <option>NuvaraEliya</option>
+              <option>Nuwara Eliya</option>
               <option>Trincomalee</option>
             </select>
             {errors.schoolDistrict && (
@@ -578,17 +681,45 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
 
           <div>
             <label className="block font-medium mb-1">District Cut-Off</label>
+            {/*
+              Always read-only. The mark comes from the district cut-off master via
+              /api/cutoff and is the figure Marks Obtained is judged against, so letting
+              it be typed over would let an operator move the pass line for a single
+              request. It was only disabled until a district and exam year were chosen -
+              which is precisely when it was populated, so from that moment on it was
+              editable.
+
+              readOnly rather than disabled: a disabled input is skipped by the browser
+              on submit and reads as inactive, while this field always carries a value
+              the reviewer needs to see.
+            */}
             <Input
               {...register("districtCutOff")}
-              disabled={readOnly || !selectedDistrict || !selectedYear}
-
+              readOnly
+              tabIndex={-1}
+              placeholder={
+                !selectedDistrict || !selectedYear
+                  ? "Select a school district and exam year"
+                  : undefined
+              }
+              className="bg-gray-100 text-gray-700 cursor-not-allowed focus-visible:ring-0"
             />
           </div>
 
           <div>
             <label className="block font-medium mb-1">Marks Obtained</label>
+            {/* Marks are typed in, never nudged: the spinner buttons, the scroll
+                wheel and the arrow keys can all silently change a submitted mark by
+                one, which is exactly the kind of edit nobody notices on review. */}
             <Input
               type="number"
+              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-inner-spin-button]:m-0"
+              onWheel={(e) => e.currentTarget.blur()}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                }
+              }}
               {...register("marksObtained", {
                 setValueAs: (value) =>
                   value === "" ? undefined : Number(value),

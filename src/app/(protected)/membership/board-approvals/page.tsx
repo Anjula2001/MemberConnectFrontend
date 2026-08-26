@@ -310,10 +310,24 @@ export default function BoardApprovalsPage() {
   const isSelectedListProcessed =
     selectedApprovalList?.status === "PROCESSED" || Boolean(selectedProcessedState);
 
-  const todayDate = new Date().toISOString().split("T")[0];
+  const todayDate = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate()
+    ).padStart(2, "0")}`;
+  })();
 
   const handleAddMeeting = async () => {
     if (!selectedDate) return;
+
+    // A meeting is scheduled, so it cannot be scheduled for a day that has passed.
+    // Checked here as well as through the picker's min, because a date input still
+    // accepts a typed value that ignores min.
+    if (selectedDate < todayDate) {
+      setToastMessage("A board meeting cannot be scheduled for a past date");
+      setShowProcessToast(true);
+      return;
+    }
 
     const isDuplicateDate = createdMeetings.some(
       (meeting) => meeting.date === selectedDate
@@ -1047,6 +1061,7 @@ export default function BoardApprovalsPage() {
                   <Input
                     type="date"
                     value={selectedDate}
+                    min={todayDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     className="pl-9"
                   />

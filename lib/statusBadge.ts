@@ -39,6 +39,9 @@ const MEMBER: Record<string, string> = {
   INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
   RESIGNED: "bg-yellow-600 hover:bg-yellow-600 text-white",
   TERMINATED: "bg-red-600 hover:bg-red-600 text-white",
+  // Taken from the local map this module replaced: RETIRED is a real MemberStatus and
+  // was missing here, so a retired member fell through to the neutral grey fallback.
+  RETIRED: "bg-red-600 hover:bg-red-600 text-white",
   DECEASED: "bg-neutral-700 hover:bg-neutral-700 text-white",
 };
 

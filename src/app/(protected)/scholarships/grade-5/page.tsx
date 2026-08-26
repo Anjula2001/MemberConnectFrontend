@@ -19,6 +19,7 @@ import { authFetch } from "@/lib/api/authFetch";
 import { useAuth } from "@/lib/auth-context";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { getEducationalDistricts } from "@/lib/api/education";
+import { SRI_LANKAN_DISTRICTS } from "@/lib/districts";
 import {
   canAccessGrade5,
   canSelectAllLocations,
@@ -278,16 +279,30 @@ export default function Grade5ScholarshipRequestsListPage() {
   // selected here matches the value actually stored against a request.
   useEffect(() => {
     let cancelled = false;
+    /*
+     * Merged with the canonical district list rather than taken from the master alone.
+     * Brought over from origin/dev: a sparse or unreachable Educational Districts master
+     * used to leave the filter with no options at all, which reads as a broken screen.
+     */
+    const buildOptions = (districts: string[]) => {
+      const merged = Array.from(
+        new Set([...SRI_LANKAN_DISTRICTS, ...districts])
+      ).sort((a, b) => a.localeCompare(b));
+
+      setLocationOptions([
+        { value: "ALL", label: "All" },
+        ...merged.map((district) => ({ value: district, label: district })),
+      ]);
+    };
+
     getEducationalDistricts()
       .then((districts) => {
         if (cancelled) return;
-        setLocationOptions([
-          { value: "ALL", label: "All" },
-          ...districts.map((district) => ({ value: district, label: district })),
-        ]);
+        buildOptions(districts);
       })
       .catch(() => {
-        /* leave empty on failure — the filter simply offers no options */
+        if (cancelled) return;
+        buildOptions([]);
       });
     return () => {
       cancelled = true;
@@ -309,10 +324,31 @@ export default function Grade5ScholarshipRequestsListPage() {
       const res = await authFetch(`${API_BASE_URL}/api/board-meetings/getAllBoardMeetings`);
       if (res.ok) {
         const data = await res.json();
-        setBoardMeetings(data);
-        if (data.length > 0) {
-          setSelectedBoardMeetingId(String(data[0].id));
-        }
+
+        /*
+         * Today or later only, soonest first. Brought over from origin/dev — a list
+         * that offers last year's meetings invites attaching a request to one that
+         * has already happened. Built from local date parts rather than
+         * toISOString(), which in Asia/Colombo (UTC+5:30) returns yesterday for any
+         * moment before 05:30.
+         */
+        const now = new Date();
+        const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+          now.getDate()
+        ).padStart(2, "0")}`;
+
+        const upcoming = (Array.isArray(data) ? data : [])
+          .filter(
+            (bm: { scheduledDate?: string }) => bm?.scheduledDate && bm.scheduledDate >= todayIso
+          )
+          .sort((a: { scheduledDate?: string }, b: { scheduledDate?: string }) =>
+            String(a.scheduledDate).localeCompare(String(b.scheduledDate))
+          );
+
+        setBoardMeetings(upcoming);
+        setSelectedBoardMeetingId(
+          upcoming.length > 0 ? String(upcoming[0].id) : ""
+        );
       }
     } catch (error) {
       console.error("Failed to load board meetings", error);
@@ -739,7 +775,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                     className="h-4 w-4 rounded border-gray-300"
                   />
                 </TableHead>
-                {["Request ID", "Member ID", "Exam No", "Indicators", "Status"].map((h) => (
+                {["Request ID", "Requested Date", "Member ID", "Exam No", "Indicators", "Status"].map((h) => (
                   <TableHead
                     key={h}
                     className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
@@ -756,7 +792,7 @@ export default function Grade5ScholarshipRequestsListPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center">
+                  <TableCell colSpan={8} className="py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-neutral-500">
                       <Loader2 className="h-5 w-5 animate-spin" />
                       <span>Loading requests…</span>
@@ -765,7 +801,7 @@ export default function Grade5ScholarshipRequestsListPage() {
                 </TableRow>
               ) : requests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-neutral-500">
+                  <TableCell colSpan={8} className="py-10 text-center text-neutral-500">
                     No scholarship requests found.
                   </TableCell>
                 </TableRow>
@@ -794,6 +830,11 @@ export default function Grade5ScholarshipRequestsListPage() {
                         >
                           {row.requestNo}
                         </button>
+                      </TableCell>
+
+                      {/* Requested Date — column brought over from origin/dev. */}
+                      <TableCell className="px-4 py-4 whitespace-nowrap text-neutral-700 tabular-nums">
+                        {row.requestedDate || "-"}
                       </TableCell>
 
                       <TableCell className="px-4 py-4 whitespace-nowrap text-neutral-700">

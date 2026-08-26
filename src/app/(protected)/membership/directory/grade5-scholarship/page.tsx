@@ -8,14 +8,16 @@ import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/Mark
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { canAccessGrade5, hasPermission } from "@/lib/permissions";
+import {canAccessGrade5,canChangeRequestStatus,hasPermission,isAuthorizedOfficer,} from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
+import { AlertCircle } from "lucide-react";
 
 type Grade5Request = Grade5InitialData & {
   id?: number;
   requestNo?: string;
   status?: string;
   hasDeviation?: boolean;
+  deviationReason?: string;
   incompleteReason?: string;
   minorAccountExists?: boolean;
   minorAccountNumber?: string;
@@ -36,6 +38,11 @@ type RequiredDocument = {
 type UploadedDocument = {
   requiredDocumentId: number;
 };
+
+
+const DEVIATION_MESSAGE =
+  "This request follows the deviation process. Because The Scholarship Request Date " +
+  "is not within the defined eligibility period from the last exam date.";
 
 const SUBMITTED_FOR_NORMAL_APPROVAL = "SUBMITTED_FOR_NORMAL_APPROVAL";
 const SUBMITTED_FOR_DEVIATION_APPROVAL = "SUBMITTED_FOR_DEVIATION_APPROVAL";
@@ -73,7 +80,7 @@ export default function Grade5ScholarshipPage() {
 
   const currencyFormatter = new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0, });
 
-  const [member, setMember] = useState({ memberId: "", fullName: "", nameWithInitials: "", nic: "", });
+  const [member, setMember] = useState({ memberId: "", fullName: "", nameWithInitials: "", nic: "", status: "", });
 
   const [grade5Request, setGrade5Request] = useState<Grade5Request | null>(
     null
@@ -83,17 +90,24 @@ export default function Grade5ScholarshipPage() {
     ? LOCKED_STATUSES.includes(grade5Request.status)
     : false;
 
-  // This screen sits inside the Member Directory, which Head Office can also reach —
-  // so viewing a member is not on its own permission to raise or amend a scholarship
-  // request. Editing needs create rights on a new request, edit rights on a saved one.
+  const isRequestIncomplete = grade5Request?.status === "INCOMPLETE";
+
+  
   const canCreateRequest = hasPermission(user?.role, "G5_REQUEST_CREATE");
   const canEditRequest = hasPermission(user?.role, "G5_REQUEST_EDIT");
   const canSubmitRequest = hasPermission(user?.role, "G5_REQUEST_SUBMIT");
   const canMarkIncomplete = hasPermission(user?.role, "G5_REQUEST_INCOMPLETE");
+  
+  const canSendToFinance = hasPermission(user?.role, "G5_FINANCE_DISBURSE");
   const canModifyRequest = grade5Request?.id ? canEditRequest : canCreateRequest;
+
+  const isMemberBlocked = !!member.status && member.status !== "ACTIVE";
 
   const isEditMode = isEditing && !isRequestLocked && canModifyRequest;
   const fundReadOnly = !!grade5Request?.id && !isEditMode;
+
+
+  const incompleteActionsBlocked = isRequestIncomplete && !isEditMode;
 
   const [openModal, setOpenModal] = useState(false);
   const [fundRefreshed, setFundRefreshed] = useState(false);
@@ -103,8 +117,29 @@ export default function Grade5ScholarshipPage() {
   const [memberAmount, setMemberAmount] = useState(0);
   const [minorAmount, setMinorAmount] = useState(0);
   const [fundError, setFundError] = useState("");
+  const [isSendingToFinance, setIsSendingToFinance] = useState(false);
   const [eligibleMonths, setEligibleMonths] = useState(0);
   const [isDoubleAmount, setIsDoubleAmount] = useState(false);
+
+  
+  const [isFormDirty, setIsFormDirty] = useState(false);
+  const fundBaselineRef = useRef<string | null>(null);
+
+  const fundKey = JSON.stringify({
+    minorAccountExists,
+    minorAccountNumber,
+    eligibleMonths,
+    disbursementOption,
+    memberAmount,
+    minorAmount,
+    isDoubleAmount,
+  });
+
+  
+  const isFundDirty =
+    fundBaselineRef.current !== null && fundKey !== fundBaselineRef.current;
+
+  const hasUnsavedChanges = isFormDirty || isFundDirty;
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(SUBMITTED_FOR_NORMAL_APPROVAL);
   const [submitError, setSubmitError] = useState("");
@@ -140,21 +175,28 @@ export default function Grade5ScholarshipPage() {
     ],
   };
 
-  // Two of these transitions are privileged above ordinary editing, mirroring
-  // requiredPermissionForStatusChange() on the backend:
-  //   -> INACTIVE       SRS 2.3.4 attaches "the user needs Inactive rights" to it.
-  //   REJECTED -> NEW   reverses a Board decision, so it needs reopen rights.
-  // Every other move to New (INCOMPLETE -> NEW, SUBMITTED -> NEW) stays ordinary.
+  
+  const canMoveStatus = canChangeRequestStatus(user) && !isMemberBlocked;
+
+ 
   const viewModeStatusActions = (
     grade5Request?.status
       ? VIEW_MODE_STATUS_TRANSITIONS[grade5Request.status] || []
       : []
   ).filter((action) => {
+    if (!canMoveStatus) {
+      return false;
+    }
     if (action.status === "INACTIVE") {
-      return hasPermission(user?.role, "G5_REQUEST_SET_INACTIVE");
+      return (
+        hasPermission(user?.role, "G5_REQUEST_SET_INACTIVE") ||
+        isAuthorizedOfficer(user)
+      );
     }
     if (action.status === "NEW" && grade5Request?.status === "REJECTED") {
-      return hasPermission(user?.role, "G5_REQUEST_REOPEN");
+      return (
+        hasPermission(user?.role, "G5_REQUEST_REOPEN") || isAuthorizedOfficer(user)
+      );
     }
     return canEditRequest;
   });
@@ -163,6 +205,7 @@ export default function Grade5ScholarshipPage() {
     !!grade5Request?.id &&
     isViewRequestMode &&
     !isEditMode &&
+    canMoveStatus &&
     viewModeStatusActions.length > 0;
 
   useEffect(() => {
@@ -204,7 +247,6 @@ export default function Grade5ScholarshipPage() {
         fetchGrade5Requests();
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMode, selectedMemberId, requestId]);
 
   //Fetches the selected member details.
@@ -223,6 +265,7 @@ export default function Grade5ScholarshipPage() {
         fullName: data.fullName,
         nameWithInitials: data.nameWithInitials,
         nic: data.nic,
+        status: data.status ?? "",
       });
     } catch (error) {
       console.error("Fetch member error:", error);
@@ -294,6 +337,16 @@ export default function Grade5ScholarshipPage() {
     setMemberAmount(grade5Request.memberAmount || 0);
     setMinorAmount(grade5Request.minorAmount || 0);
     setIsDoubleAmount(!!grade5Request.isDoubleAmount);
+
+    fundBaselineRef.current = JSON.stringify({
+      minorAccountExists: !!grade5Request.minorAccountExists,
+      minorAccountNumber: grade5Request.minorAccountNumber || "",
+      eligibleMonths: grade5Request.eligibleMonths || 0,
+      disbursementOption: grade5Request.disbursementOption || MEMBER_ONLY,
+      memberAmount: grade5Request.memberAmount || 0,
+      minorAmount: grade5Request.minorAmount || 0,
+      isDoubleAmount: !!grade5Request.isDoubleAmount,
+    });
   }, [grade5Request]);
 
   //handle confirm in mark as incomplete
@@ -594,6 +647,36 @@ export default function Grade5ScholarshipPage() {
     });
   };
 
+  // Sends the scholarship request to the Finance Module for disbursement.
+  const handleSendToFinance = async () => {
+    if (!grade5Request?.requestNo) return;
+
+    setIsSendingToFinance(true);
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/grade5/${encodeURIComponent(grade5Request.requestNo)}/send-to-finance`,
+        { method: "POST" }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFundError(err.message || "Failed to send the scholarship to the Finance Module.");
+        return;
+      }
+
+      const updated = await res.json();
+      setGrade5Request((prev) => (prev ? { ...prev, ...updated } : updated));
+      setFundError("");
+    } catch (error) {
+      console.error("Send to Finance error:", error);
+      setFundError("Failed to send the scholarship to the Finance Module.");
+    } finally {
+      setIsSendingToFinance(false);
+    }
+  };
+
+  // Confirms the status change after user confirmation in the modal.
   const confirmChangeStatus = async () => {
     const { newStatus } = statusConfirmModal;
     setStatusConfirmModal({ isOpen: false, newStatus: "", statusLabel: "" });
@@ -625,7 +708,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-
+  // Handles the final submission of the Grade 5 request after user confirmation in the modal.
   const handleConfirmSubmit = async () => {
     if (!grade5Request?.id) {
       setSubmitError("Please save the Grade 5 request before submitting.");
@@ -717,6 +800,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
+  // Handles the change in minor account existence and recalculates disbursement amounts accordingly.
   const handleMinorAccountExistsChange = async (value: string) => {
     const exists = value === "YES";
 
@@ -778,9 +862,7 @@ export default function Grade5ScholarshipPage() {
     }
   };
 
-  // Reached from the Member Directory, which more roles can open than may work with
-  // scholarships — so this screen needs its own guard rather than inheriting the
-  // directory's.
+  // 
   if (user && !canAccessGrade5(user.role)) {
     return (
       <AccessRestricted
@@ -803,33 +885,33 @@ export default function Grade5ScholarshipPage() {
                 {grade5Request?.requestNo && `: ${grade5Request.requestNo}`}
               </p>
 
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-1">
                 <div className="inline-block bg-gray-100 px-3 py-1 rounded-md text-sm text-gray-700">
                   Member: {member.fullName} ({member.memberId})
                 </div>
 
+                {/* The reason reads as part of the status it explains. */}
                 {grade5Request?.status && (
                   <p className="text-sm font-semibold text-blue-600">
                     • Status: {grade5Request.status}
+                    {grade5Request.status === "INCOMPLETE" &&
+                      grade5Request.incompleteReason &&
+                      ` (${grade5Request.incompleteReason})`}
                   </p>
                 )}
-
-                {grade5Request?.status === "INCOMPLETE" &&
-                  grade5Request?.incompleteReason && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      ({grade5Request.incompleteReason})
-                    </p>
-                  )}
               </div>
             </div>
 
             {/*open in view mode*/}
             <div className="flex gap-2">
+              {/* View mode only. Amending a request is something you come back to it
+                  for - it is not offered inline straight after a save. */}
               {isViewRequestMode &&
                 grade5Request?.id &&
                 !isRequestLocked &&
                 !isEditMode &&
-                canEditRequest && (
+                canEditRequest &&
+                !isMemberBlocked && (
                   <Button
                     onClick={() => {
                       setIsEditing(true);
@@ -837,13 +919,29 @@ export default function Grade5ScholarshipPage() {
                       {/*Page routing*/ }
                       router.replace(
                         `/membership/directory/grade5-scholarship?requestId=${encodeURIComponent(
-                          String(requestId)
+                          String(requestId ?? grade5Request.requestNo ?? "")
                         )}&memberId=${encodeURIComponent(selectedMemberId)}&mode=edit`
                       );
                     }}
                     className="bg-white text-black hover:bg-gray-100"
                   >
                     Edit
+                  </Button>
+                )}
+
+              {/* an approved scholarship is released to the Finance Module from here. */}
+              {isViewRequestMode &&
+                !isEditMode &&
+                grade5Request?.status === "APPROVED" &&
+                canSendToFinance &&
+                !isMemberBlocked && (
+                  <Button
+                    onClick={handleSendToFinance}
+                    disabled={isSendingToFinance}
+                    title="Send this approved scholarship to the Finance Module for disbursement"
+                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    {isSendingToFinance ? "Sending..." : "Send to Finance"}
                   </Button>
                 )}
 
@@ -874,7 +972,9 @@ export default function Grade5ScholarshipPage() {
 
               {(!isViewRequestMode || isEditMode) && (
                 <>
-                  {canModifyRequest && (
+                  {canModifyRequest &&
+                    !isMemberBlocked &&
+                    (!grade5Request?.id || (isEditMode && hasUnsavedChanges)) && (
                     <Button
                       onClick={handleSave}
                       disabled={isRequestLocked}
@@ -884,20 +984,30 @@ export default function Grade5ScholarshipPage() {
                     </Button>
                   )}
 
-                  {canMarkIncomplete && (
+                  {canMarkIncomplete && !isMemberBlocked && (
                     <Button
                       onClick={() => setOpenModal(true)}
-                      disabled={!grade5Request?.id || isRequestLocked}
+                      disabled={!grade5Request?.id || isRequestLocked || incompleteActionsBlocked}
+                      title={
+                        incompleteActionsBlocked
+                          ? "This request is already marked incomplete. Edit it to supply the missing details."
+                          : undefined
+                      }
                       className="bg-[#D4183D] text-white hover:bg-[#b31334] disabled:cursor-not-allowed"
                     >
                       Mark Incomplete
                     </Button>
                   )}
 
-                  {canSubmitRequest && (
+                  {canSubmitRequest && !isMemberBlocked && (
                     <Button
                       onClick={handleSubmitForm}
-                      disabled={!grade5Request?.id || isRequestLocked}
+                      disabled={!grade5Request?.id || isRequestLocked || incompleteActionsBlocked}
+                      title={
+                        incompleteActionsBlocked
+                          ? "An incomplete request cannot be submitted as it stands. Edit it to supply the missing details."
+                          : undefined
+                      }
                       className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
                     >
                       Submit
@@ -918,6 +1028,42 @@ export default function Grade5ScholarshipPage() {
           {fundError && (
             <p className="text-red-500 text-sm mb-3">{fundError}</p>
           )}
+
+          {/*
+            An empty action bar with no explanation reads as a broken screen. This says
+            which member status caused it and what is still possible.
+          */}
+          {isMemberBlocked && (
+            <div className="mt-6 flex items-start gap-2 rounded-lg border border-red-300 bg-red-50/60 px-5 py-4">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div>
+                <p className="text-sm font-bold text-red-800">
+                  Member is not Active
+                </p>
+                <p className="mt-0.5 text-sm text-red-700">
+                  {member.fullName} is {member.status.replace(/_/g, " ")}. The scholarship
+                  request cannot be created, edited, submitted or have its status changed
+                  while the membership is not Active. Documents can still be uploaded.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {grade5Request?.id &&
+            isRequestLocked &&
+            grade5Request?.hasDeviation && (
+              <div className="mt-6 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50/60 px-5 py-4">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-bold text-amber-800">
+                    Deviation Process
+                  </p>
+                  <p className="mt-0.5 text-sm text-amber-700">
+                    {grade5Request.deviationReason || DEVIATION_MESSAGE}
+                  </p>
+                </div>
+              </div>
+            )}
 
           <div className="bg-white border border-gray-200 rounded-lg px-5 py-5 mt-6">
             <h2 className="text-lg font-bold text-[#953002] mb-4">
@@ -965,6 +1111,7 @@ export default function Grade5ScholarshipPage() {
 
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <Grade5Form
+                  onDirtyChange={setIsFormDirty}
                   ref={formRef}
                   memberId={selectedMemberId}
                   initialData={grade5Request}

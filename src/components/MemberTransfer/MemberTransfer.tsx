@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trash2, UploadCloud, Check, AlertCircle } from "lucide-react";
+import { Trash2, UploadCloud, Check, AlertCircle, Info } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
@@ -17,6 +17,9 @@ import {
   TableRow,
 } from "../ui/table";
 import { memberTransferSchema, type MemberTransferFormData, } from "@/lib/validators/membertransfer.schema";
+import { authFetch } from "@/lib/api/authFetch";
+import { useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/permissions";
 
 type DocumentFileItem = {
   file: File;
@@ -192,6 +195,13 @@ const toNullableNumber = (value: any) => {
 export default function ChangeMemberTransferForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+
+  // MMC30 seats the decision with Head Office, and MMC29's status change with
+  // whoever holds Inactive rights. The server enforces both independently; these
+  // only decide whether the buttons are offered.
+  const canApproveTransfer = hasPermission(user?.role, "MT_REQUEST_APPROVE");
+  const canSetInactive = hasPermission(user?.role, "MT_REQUEST_SET_INACTIVE");
 
   const requestKey = searchParams.get("requestId");
   const memberId = searchParams.get("memberId") || "";
@@ -206,7 +216,11 @@ export default function ChangeMemberTransferForm() {
 
   const [memberTransferRequestNo, setMemberTransferRequestNo] = useState("");
 
-  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED">("NEW");
+  const [status, setStatus] = useState<"NEW" | "INCOMPLETE" | "SUBMITTEDFORAPPROVAL" | "APPROVED" | "REJECTED" | "INACTIVE">("NEW");
+
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [statusChangeTarget, setStatusChangeTarget] = useState<"INACTIVE" | "">("");
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
@@ -233,7 +247,21 @@ export default function ChangeMemberTransferForm() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Request already awaiting approval for this member, if any. A second one would
+  // compete with it, so a new request is refused while it is outstanding.
+  const [inFlightRequestId, setInFlightRequestId] = useState<string | null>(null);
+
   const isExistingRequest = Boolean(requestKey);
+  const isBlockedByInFlightRequest = !isExistingRequest && inFlightRequestId !== null;
+
+  // A request awaiting approval, or one that was rejected, may be made Inactive.
+  // Nothing else moves: an approved transfer is already written onto the member's
+  // profile, and an inactive request is closed.
+  const STATUS_CHANGE_TARGETS: Record<string, ("INACTIVE")[]> = {
+    SUBMITTEDFORAPPROVAL: ["INACTIVE"],
+    REJECTED: ["INACTIVE"],
+  };
+  const availableStatusTargets = STATUS_CHANGE_TARGETS[status] || [];
   const isSubmitted = status === "SUBMITTEDFORAPPROVAL";
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
@@ -286,7 +314,7 @@ export default function ChangeMemberTransferForm() {
   useEffect(() => {
     const fetchRequiredDocumentTypes = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/required-document-types/MEMBER_TRANSFER");
+        const res = await authFetch("http://localhost:8080/api/required-document-types/MEMBER_TRANSFER");
         if (!res.ok) throw new Error("Failed to load document types");
         const data = await res.json();
         setRequiredDocumentTypes(data);
@@ -318,7 +346,7 @@ export default function ChangeMemberTransferForm() {
     const targetId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
     if (!targetId) return;
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:8080/api/uploaded-documents/${docId}?requestId=${encodeURIComponent(String(targetId))}`,
         { method: "DELETE" }
       );
@@ -344,10 +372,10 @@ export default function ChangeMemberTransferForm() {
     const fetchMasters = async () => {
       try {
         const [typesRes, districtsRes, designationsRes, occupationsRes] = await Promise.all([
-          fetch("http://localhost:8080/api/masters/working-location-types"),
-          fetch("http://localhost:8080/api/masters/districts"),
-          fetch("http://localhost:8080/api/masters/designations"),
-          fetch("http://localhost:8080/api/masters/nature-of-occupations"),
+          authFetch("http://localhost:8080/api/masters/working-location-types"),
+          authFetch("http://localhost:8080/api/masters/districts"),
+          authFetch("http://localhost:8080/api/masters/designations"),
+          authFetch("http://localhost:8080/api/masters/nature-of-occupations"),
         ]);
 
         const [typesData, districtsData, designationsData, occupationsData] = await Promise.all([
@@ -386,7 +414,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchMember = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
+        const res = await authFetch(`http://localhost:8080/api/members/by-member-id/${targetMemberId}`);
         if (!res.ok) throw new Error("Failed to load member");
 
         const data = await res.json();
@@ -497,7 +525,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchRequest = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/member-transfers");
+        const res = await authFetch("http://localhost:8080/api/member-transfers");
         if (!res.ok) throw new Error("Failed to load member transfer request");
 
         const data: MemberTransferRecord[] = await res.json();
@@ -513,6 +541,44 @@ export default function ChangeMemberTransferForm() {
 
     fetchRequest();
   }, [requestKey]);
+
+  // Refuse a new request up front when one is already awaiting approval, rather
+  // than letting the form be filled in and refused on submit
+  useEffect(() => {
+    if (requestKey) {
+      setInFlightRequestId(null);
+      return;
+    }
+
+    const targetMemberId = memberId || member?.memberId;
+    if (!targetMemberId) return;
+
+    const checkInFlightRequest = async () => {
+      try {
+        const res = await authFetch(
+          `http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(targetMemberId)}`
+        );
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (!data?.hasInFlight) {
+          setInFlightRequestId(null);
+          return;
+        }
+
+        setInFlightRequestId(data.requestId || "");
+        setPopupMessage(
+          `Member ${targetMemberId} already has transfer request ${data.requestId} awaiting approval.` +
+          ` A new transfer request cannot be raised until that one is approved or rejected.`
+        );
+        setShowPopup(true);
+      } catch (error) {
+        console.error("Failed to check for an existing member transfer request:", error);
+      }
+    };
+
+    checkInFlightRequest();
+  }, [requestKey, memberId, member?.memberId]);
 
   // Populate form when loadedRecord changes 
   useEffect(() => {
@@ -549,7 +615,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchUploadedDocuments = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(requestId))}`
         );
 
@@ -616,7 +682,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchZones = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `http://localhost:8080/api/masters/educational-zones?district=${encodeURIComponent(String(selectedDistrict))}`
         );
 
@@ -663,7 +729,7 @@ export default function ChangeMemberTransferForm() {
           params.append("zone", String(selectedZone));
         }
 
-        const res = await fetch(`http://localhost:8080/api/masters/working-locations?${params.toString()}`);
+        const res = await authFetch(`http://localhost:8080/api/masters/working-locations?${params.toString()}`);
 
         if (!res.ok) {
           setWorkingLocations([]);
@@ -703,7 +769,7 @@ export default function ChangeMemberTransferForm() {
 
     const fetchLocationDetails = async () => {
       try {
-        const res = await fetch(`http://localhost:8080/api/working-locations/${encodeURIComponent(String(selectedWorkingLocation))}`);
+        const res = await authFetch(`http://localhost:8080/api/working-locations/${encodeURIComponent(String(selectedWorkingLocation))}`);
         if (!res.ok) return;
 
         const data = await res.json();
@@ -723,6 +789,15 @@ export default function ChangeMemberTransferForm() {
 
   //Handle form submission for both new and existing requests
   const onSubmit = (data: MemberTransferFormData) => {
+    if (isBlockedByInFlightRequest) {
+      setPopupMessage(
+        `Member ${memberId || member?.memberId} already has transfer request ${inFlightRequestId}` +
+        ` awaiting approval. A new transfer request cannot be raised until that one is approved or rejected.`
+      );
+      setShowPopup(true);
+      return;
+    }
+
     setPendingFormData(data);
     setShowSubmitConfirmModal(true);
   };
@@ -762,7 +837,7 @@ export default function ChangeMemberTransferForm() {
       console.log("FORM DATA:", data);
       console.log("DTO PAYLOAD:", payload);
 
-      const res = await fetch("http://localhost:8080/api/member-transfers/submit", {
+      const res = await authFetch("http://localhost:8080/api/member-transfers/submit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -772,7 +847,21 @@ export default function ChangeMemberTransferForm() {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Submit failed (${res.status}): ${text}`);
+        let message = `Submit failed (${res.status})`;
+
+        try {
+          const body = JSON.parse(text);
+          if (body?.message) message = body.message;
+        } catch {
+          if (text) message = text;
+        }
+
+        // 409 means another request for this member reached approval first
+        if (res.status === 409) {
+          setInFlightRequestId("");
+        }
+
+        throw new Error(message);
       }
 
       const saved = await res.json();
@@ -799,7 +888,7 @@ export default function ChangeMemberTransferForm() {
           const formData = new FormData();
           formData.append("file", docFile.file);
 
-          const uploadRes = await fetch(
+          const uploadRes = await authFetch(
             `http://localhost:8080/api/uploaded-documents/upload?requestId=${encodeURIComponent(
               String(savedId)
             )}&requiredDocumentId=${encodeURIComponent(reqDoc.id)}`,
@@ -827,7 +916,7 @@ export default function ChangeMemberTransferForm() {
 
         // Refresh the uploaded documents list from backend
         try {
-          const docsRes = await fetch(
+          const docsRes = await authFetch(
             `http://localhost:8080/api/uploaded-documents/by-request?requestId=${encodeURIComponent(String(savedId))}`
           );
           if (docsRes.ok) {
@@ -887,7 +976,7 @@ export default function ChangeMemberTransferForm() {
     if (!requestId) return;
 
     try {
-      const res = await fetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/member-transfers/approve/${requestId}`, {
         method: "POST",
       });
 
@@ -920,7 +1009,7 @@ export default function ChangeMemberTransferForm() {
     if (!requestId || rejectReason.trim() === "") return;
 
     try {
-      const res = await fetch(`http://localhost:8080/api/member-transfers/reject/${requestId}`, {
+      const res = await authFetch(`http://localhost:8080/api/member-transfers/reject/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decisionReason: rejectReason.trim() }),
@@ -950,8 +1039,80 @@ export default function ChangeMemberTransferForm() {
       : "";
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
-  const canReviewSubmission = isViewMode && status === "SUBMITTEDFORAPPROVAL";
+  const canReviewSubmission =
+    isViewMode && status === "SUBMITTEDFORAPPROVAL" && canApproveTransfer;
+
+  // MMC30: an approved transfer that moves the member to a different District has the
+  // Loan and Finance Modules told to re-file their records. Compared here the same way
+  // the server compares it - a transfer that keeps the District, including one where
+  // "Keep Current District" was ticked, moves nothing and shows nothing.
+  const newDistrictName = isKeepDistrict
+    ? loadedRecord?.newWorkingLocation?.educationalDistrict?.name
+    : loadedRecord?.newEducationalDistrict?.name;
+
+  const districtChanged = Boolean(
+    newDistrictName &&
+    newDistrictName.trim().toLowerCase() !==
+    (loadedRecord?.currentEducationalDistrict || "").trim().toLowerCase()
+  );
+
+  const showRelocationNotice = status === "APPROVED" && districtChanged;
   const showRequestStatus = Boolean(requestId || isExistingRequest);
+  const canChangeStatus = isViewMode && availableStatusTargets.length > 0 && canSetInactive;
+
+  const formatStatusLabel = (value: string) =>
+    value === "SUBMITTEDFORAPPROVAL"
+      ? "Submitted for Approval"
+      : value.charAt(0) + value.slice(1).toLowerCase();
+
+  const executeStatusChange = async () => {
+    if (!statusChangeTarget || isChangingStatus) return;
+
+    const actionId = memberTransferRequestNo || requestId || loadedRecord?.requestId || requestKey;
+    if (!actionId) {
+      setPopupMessage("The request must be saved before its status can be changed");
+      setShowPopup(true);
+      return;
+    }
+
+    setIsChangingStatus(true);
+    try {
+      const res = await authFetch(
+        `http://localhost:8080/api/member-transfers/${encodeURIComponent(String(actionId))}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: statusChangeTarget }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        let message = "Failed to change status";
+        try {
+          message = JSON.parse(text).message || message;
+        } catch { }
+        setPopupMessage(message);
+        setShowPopup(true);
+        return;
+      }
+
+      const updated = await res.json();
+      const nextStatus = updated.status || statusChangeTarget;
+      setStatus(nextStatus);
+      setLoadedRecord((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setShowStatusChangeModal(false);
+      setStatusChangeTarget("");
+      setPopupMessage(`Status changed to ${formatStatusLabel(nextStatus)}`);
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Status change failed:", error);
+      setPopupMessage("Failed to change status");
+      setShowPopup(true);
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
 
   if (loading) return <div className="p-6">Loading...</div>;
 
@@ -984,6 +1145,19 @@ export default function ChangeMemberTransferForm() {
           </div>
 
           <div className="flex gap-2">
+            {canChangeStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStatusChangeTarget(availableStatusTargets[0]);
+                  setShowStatusChangeModal(true);
+                }}
+              >
+                Change Status
+              </Button>
+            )}
+
             {isViewMode && isEditableStatus && (
               <Button type="button" variant="outline" onClick={handleEnterEditMode}>
                 Edit
@@ -993,7 +1167,7 @@ export default function ChangeMemberTransferForm() {
             {!isViewMode && !isSubmitted && (
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded}
+                disabled={!isValid || isSubmitting || !areMandatoryDocsUploaded || isBlockedByInFlightRequest}
                 className="bg-[#953002] text-white hover:bg-[#953002] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
@@ -1298,6 +1472,22 @@ export default function ChangeMemberTransferForm() {
             </section>
           )}
 
+          {showRelocationNotice && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <Info size={16} className="mt-0.5 shrink-0 text-blue-600" />
+              <p className="text-sm text-blue-800">
+                The District changed to{" "}
+                <span className="font-semibold">{newDistrictName}</span>. A message has
+                been sent to the Loan Module and the Finance Module to move this
+                member&apos;s loans and savings accounts to the new District Office.
+                <span className="mt-1 block text-xs text-blue-700">
+                  Those modules are not integrated with this system yet, so the messages
+                  are recorded rather than delivered.
+                </span>
+              </p>
+            </div>
+          )}
+
           {canReviewSubmission && (
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" className="bg-green-100 text-green-600 hover:bg-green-200" onClick={handleApproveTransfer}>
@@ -1318,6 +1508,8 @@ export default function ChangeMemberTransferForm() {
           msgLower.includes("failed") ||
           msgLower.includes("error") ||
           msgLower.includes("duplicate") ||
+          msgLower.includes("already") ||
+          msgLower.includes("cannot") ||
           msgLower.includes("required") ||
           msgLower.includes("please");
 
@@ -1371,6 +1563,65 @@ export default function ChangeMemberTransferForm() {
           </div>
         );
       })()}
+
+      {showStatusChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <h3 className="mb-2 text-xl font-bold text-[#953002] text-center">
+              Change Status
+            </h3>
+
+            <p className="mb-4 text-sm text-gray-600 text-center">
+              Current status:{" "}
+              <span className="font-semibold text-gray-800">{formatStatusLabel(status)}</span>
+            </p>
+
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Change to</label>
+              {availableStatusTargets.map((target) => (
+                <label
+                  key={target}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="memberTransferStatusChangeTarget"
+                    value={target}
+                    checked={statusChangeTarget === target}
+                    onChange={() => setStatusChangeTarget(target)}
+                  />
+                  <span className="font-medium text-gray-800">{formatStatusLabel(target)}</span>
+                  {target === "INACTIVE" && (
+                    <span className="ml-auto text-xs text-gray-500">Requires Inactive rights</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-center gap-3 border-t border-gray-100 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowStatusChangeModal(false);
+                  setStatusChangeTarget("");
+                }}
+                className="w-28 rounded-lg text-sm font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeStatusChange}
+                disabled={!statusChangeTarget || isChangingStatus}
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+              >
+                {isChangingStatus ? "Saving..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSubmitConfirmModal && (() => {
         const currentReqId = memberTransferRequestNo || requestId || loadedRecord?.requestId;
