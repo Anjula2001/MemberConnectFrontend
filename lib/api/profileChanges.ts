@@ -14,7 +14,14 @@ export type ProfileChangeType =
   | "BASIC_PROFILE"
   | "NAME"
   | "NOMINEE"
-  | "REMITTANCE";
+  | "REMITTANCE"
+  /**
+   * Requirement 02 section 6. MMC28 lists Member Transfers on this same screen, filtered
+   * by the same Type dropdown - it is not a screen of its own. The server maps the
+   * transfer table's own status vocabulary onto the shared one, so the four statuses in
+   * statusOptionsFor's base set are exactly the four the SRS gives transfers.
+   */
+  | "MEMBER_TRANSFER";
 
 export type ProfileChangeStatus =
   | "NEW"

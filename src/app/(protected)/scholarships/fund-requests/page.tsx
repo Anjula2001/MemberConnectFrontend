@@ -11,6 +11,16 @@ import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import { TablePagination, clampPage, pageSlice } from "@/src/components/ui/table-pagination";
 import {
   Select,
   SelectContent,
@@ -32,19 +42,6 @@ type ScholarshipFundRequest = {
   status?: string;
 };
 
-type ScholarshipRow = {
-  id?: number | string;
-  requestId?: string;
-  studentName?: string;
-  memberName?: string;
-  memberId?: string;
-  universityName?: string;
-  nic?: string;
-  address?: string;
-  submissionLocation?: string;
-  fundRequests?: ScholarshipFundRequest[];
-};
-
 type FundRequestRow = ScholarshipFundRequest & {
   rowId: string;
   scholarshipRequestId: string;
@@ -54,6 +51,8 @@ type FundRequestRow = ScholarshipFundRequest & {
   universityName?: string;
   nic?: string;
   location?: string;
+  /** What the server calls the parent's district; copied to `location` on load. */
+  submissionLocation?: string;
 };
 
 const locationOptions = [
@@ -95,40 +94,6 @@ const statusOptions = [
 
 function normalizeStatus(status?: string) {
   return (status || "").toLowerCase().replace(/[\s_]+/g, "");
-}
-
-function getStatusColor(status?: string) {
-  const statusLower = normalizeStatus(status);
-
-  if (statusLower === "new") return "bg-blue-100 border-blue-200 text-blue-500";
-  if (statusLower === "incomplete") return "bg-pink-100 border-pink-200 text-pink-500";
-  if (statusLower === "approved") return "bg-green-100 border-green-200 text-green-500";
-  if (statusLower === "rejected") return "bg-red-100 border-red-200 text-red-500";
-  if (statusLower === "submittedforcommitteeapproval") return "bg-purple-100 border-purple-200 text-purple-500";
-  if (statusLower === "inactive") return "bg-gray-100 border-gray-200 text-gray-500";
-
-  return "bg-yellow-100 border-yellow-200 text-yellow-500";
-}
-
-function formatStatusLabel(status?: string) {
-  const statusUpper = (status || "").toUpperCase().replace(/[\s_]+/g, "");
-
-  switch (statusUpper) {
-    case "NEW":
-      return "New";
-    case "INCOMPLETE":
-      return "Incomplete";
-    case "SUBMITTEDFORCOMMITTEEAPPROVAL":
-      return "Submitted for Approval";
-    case "APPROVED":
-      return "Approved";
-    case "REJECTED":
-      return "Rejected";
-    case "INACTIVE":
-      return "Inactive";
-    default:
-      return status ? status.replace(/_/g, " ") : "-";
-  }
 }
 
 function formatDate(date?: string) {
@@ -241,6 +206,7 @@ export default function UniversityScholarshipFundRequestsPage() {
 
   const [requests, setRequests] = useState<FundRequestRow[]>([]);
   const [displayed, setDisplayed] = useState<FundRequestRow[]>([]);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [hasRetrieved, setHasRetrieved] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -264,82 +230,21 @@ export default function UniversityScholarshipFundRequestsPage() {
     }
   }, [currentLocation, isLocationFilterDisabled]);
 
-  useEffect(() => {
-    let filtered = [...requests];
+  /*
+   * The client-side filter that used to live here is gone. Location, Status, Received
+   * On, the date period, Search and Sort are all applied by
+   * /api/university-scholarship-fund-requests/search, and `displayed` is set from the
+   * response in handleRetrieve.
+   *
+   * Location must stay server-side in particular: resolveLocationScope pins a District
+   * Office caller to their own district, which a browser filter cannot enforce.
+   */
 
-    if (selectedLocations.length > 0) {
-      filtered = filtered.filter((request) => {
-        const requestLocation = (request.location || "").toLowerCase().trim();
-        if (!requestLocation) {
-          return false;
-        }
-        return selectedLocations.some(
-          (selected) => requestLocation === selected.toLowerCase().trim()
-        );
-      });
-    }
 
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((request) => selectedStatuses.includes(normalizeStatus(request.status)));
-    }
-
-    if (requestReceivedOn !== "all") {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      filtered = filtered.filter((request) => {
-        const requestedDate = parseYMD(request.requestedDate);
-        if (!requestedDate) return false;
-
-        if (requestReceivedOn === "thisMonth") {
-          return requestedDate.getMonth() === today.getMonth() && requestedDate.getFullYear() === today.getFullYear();
-        }
-
-        if (requestReceivedOn === "thisAndLastMonth") {
-          const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-          lastMonth.setHours(0, 0, 0, 0);
-          return requestedDate >= lastMonth && requestedDate <= today;
-        }
-
-        if (requestReceivedOn === "datePeriod" && fromDate && toDate) {
-          const start = parseYMD(fromDate);
-          const end = parseYMD(toDate);
-          return Boolean(start && end && requestedDate >= start && requestedDate <= end);
-        }
-
-        return true;
-      });
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((request) =>
-        (request.requestId || "").toLowerCase().includes(query) ||
-        (request.scholarshipRequestId || "").toLowerCase().includes(query) ||
-        (request.studentName || "").toLowerCase().includes(query) ||
-        (request.memberName || "").toLowerCase().includes(query) ||
-        (request.memberId || "").toLowerCase().includes(query) ||
-        (request.nic || "").toLowerCase().includes(query) ||
-        (request.universityName || "").toLowerCase().includes(query)
-      );
-    }
-
-    filtered.sort((a, b) => {
-      let comparison = 0;
-
-      if (sortBy === "requested-date") {
-        comparison = (a.requestedDate || "").localeCompare(b.requestedDate || "");
-      } else if (sortBy === "status") {
-        comparison = (a.status || "").localeCompare(b.status || "");
-      } else if (sortBy === "scholarship-id") {
-        comparison = (a.scholarshipRequestId || "").localeCompare(b.scholarshipRequestId || "");
-      }
-
-      return sortAsc ? comparison : -comparison;
-    });
-
-    setDisplayed(filtered);
-  }, [fromDate, requestReceivedOn, requests, searchQuery, selectedLocations, selectedStatuses, sortAsc, sortBy, toDate]);
+  // Clamped every render rather than only on paging: the effect above re-filters on any
+  // criteria change, which can shrink the result set under the current page.
+  const safePage = clampPage(page, displayed.length);
+  const pagedRequests = pageSlice(displayed, safePage);
 
   const validateDates = () => {
     setDateError("");
@@ -381,29 +286,46 @@ export default function UniversityScholarshipFundRequestsPage() {
     try {
       setIsLoading(true);
 
-      const response = await authFetch("http://localhost:8080/api/university-scholarships");
+      /*
+       * A dedicated fund-request search. This used to read the scholarship endpoint and
+       * flatten fund requests out of the nested payload in the browser, which meant
+       * downloading every scholarship request to render a page of ten fund requests.
+       * The server now returns fund requests directly, with the member and student
+       * details already flattened onto each row.
+       */
+      const params = new URLSearchParams();
+      selectedLocations.forEach((location) => params.append("locations", location));
+      selectedStatuses.forEach((status) => params.append("statuses", status));
+      params.append("receivedOn", requestReceivedOn);
+      params.append("sortBy", sortBy);
+      params.append("sortDirection", sortAsc ? "asc" : "desc");
+      if (searchQuery.trim()) params.append("search", searchQuery.trim());
+      if (requestReceivedOn === "datePeriod") {
+        if (fromDate) params.append("fromDate", fromDate);
+        if (toDate) params.append("toDate", toDate);
+      }
+
+      const response = await authFetch(
+        `http://localhost:8080/api/university-scholarship-fund-requests/search?${params.toString()}`
+      );
       if (!response.ok) {
         throw new Error("Failed to retrieve university scholarship fund requests");
       }
 
-      const data: ScholarshipRow[] = await response.json();
-      const rows = data.flatMap((scholarship) => {
-        const scholarshipRequestId = String(scholarship.requestId || scholarship.id || "");
+      const data = await response.json();
+      const rows: FundRequestRow[] = (Array.isArray(data) ? data : []).map(
+        (row: FundRequestRow) => ({
+          ...row,
+          // The table keys on rowId; the server has no equivalent, so it is composed here.
+          rowId: String(row.id || row.requestId || `${row.scholarshipRequestId}-${row.requestedDate || ""}`),
+          location: row.submissionLocation,
+        })
+      );
 
-        return (scholarship.fundRequests || []).map((fundRequest) => ({
-          ...fundRequest,
-          rowId: String(fundRequest.id || fundRequest.requestId || `${scholarshipRequestId}-${fundRequest.requestedDate || ""}`),
-          scholarshipRequestId: fundRequest.scholarshipRequestId || scholarshipRequestId,
-          studentName: scholarship.studentName,
-          memberName: scholarship.memberName,
-          memberId: scholarship.memberId,
-          universityName: scholarship.universityName,
-          nic: scholarship.nic,
-          location: scholarship.submissionLocation,
-        }));
-      });
-
+      // Already filtered and sorted server-side, so displayed mirrors the response.
       setRequests(rows);
+      setDisplayed(rows);
+      setPage(1);
       setHasRetrieved(true);
     } catch (error) {
       console.error("Failed to retrieve university scholarship fund requests:", error);
@@ -562,80 +484,109 @@ export default function UniversityScholarshipFundRequestsPage() {
           </CardContent>
         </Card>
 
-        <div className="rounded-lg border bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-sm text-gray bold">
-                  <th className="px-4 py-4 font-medium">Fund Request ID</th>
-                  <th className="px-4 py-4 font-medium">Scholarship ID</th>
-                  <th className="px-4 py-4 font-medium">Member</th>
-                  <th className="px-4 py-4 font-medium">Requested Date</th>
-                  <th className="px-4 py-4 font-medium">Requested Period</th>
-                  <th className="px-4 py-4 font-medium">Requested Amount</th>
-                  <th className="px-4 py-4 font-medium">Status</th>
-                  <th className="px-4 py-4 font-medium">Action</th>
-                </tr>
-              </thead>
+        {/* Results - shadcn Table, matching the Membership Directory. */}
+        <Card className="overflow-hidden rounded-xl border-neutral-300 py-0 shadow-none">
+          <CardContent className="overflow-x-auto px-0">
+            <Table className="border-collapse">
+              <TableHeader>
+                <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                  {[
+                    "Fund Request ID",
+                    "Scholarship ID",
+                    "Member",
+                    "Requested Date",
+                    "Requested Period",
+                    "Requested Amount",
+                    "Status",
+                  ].map((h) => (
+                    <TableHead
+                      key={h}
+                      className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                    >
+                      {h}
+                    </TableHead>
+                  ))}
+                  <TableHead className="px-4 py-3 text-right text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
 
-              <tbody>
+              <TableBody>
                 {displayed.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-4 text-center text-gray-500">
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-neutral-500">
                       {hasRetrieved ? "No data available" : "Use Retrieve to load fund requests"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  displayed.map((item) => {
+                  pagedRequests.map((item) => {
                     const fundRequestId = String(item.requestId || item.id || "");
                     const viewHref = `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(item.scholarshipRequestId)}&fundRequestId=${encodeURIComponent(fundRequestId)}&mode=view`;
                     const editHref = `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(item.scholarshipRequestId)}&fundRequestId=${encodeURIComponent(fundRequestId)}&mode=edit`;
                     const canEdit = hasEditRights && normalizeStatus(item.status) === "new";
 
                     return (
-                      <tr key={item.rowId} className="border-t text-sm text-gray-600">
-                        <td className="px-4 py-4 font-medium">
+                      <TableRow key={item.rowId} className="hover:bg-neutral-50">
+                        <TableCell className="px-4 py-4 font-medium">
                           <Link href={viewHref} className="text-[#953002] hover:underline">
                             {item.requestId || item.id || "-"}
                           </Link>
-                        </td>
-                        <td className="px-4 py-4 text-gray-600">{item.scholarshipRequestId || "-"}</td>
-                        <td className="px-4 py-4 text-gray-600">{item.memberName || item.memberId || "-"}</td>
-                        <td className="px-4 py-4 text-gray-600">{formatDate(item.requestedDate)}</td>
-                        <td className="px-4 py-4 text-gray-600">{item.requestedPeriod || "-"}</td>
-                        <td className="px-4 py-4 text-gray-600">{formatCurrency(item.requestedAmount)}</td>
-                        <td className="px-4 py-4">
-                          <span className={`rounded-full border px-2 py-1 text-[11px] ${getStatusColor(item.status)}`}>
-                            {formatStatusLabel(item.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">
+                          {item.scholarshipRequestId || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">
+                          {item.memberName || item.memberId || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                          {formatDate(item.requestedDate)}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">
+                          {item.requestedPeriod || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                          {formatCurrency(item.requestedAmount)}
+                        </TableCell>
+                        <TableCell className="px-4 py-4">
+                          <StatusBadge status={item.status} vocabulary="scholarship" />
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-right">
                           {canEdit ? (
                             <Link
                               href={editHref}
-                              className="text-[#953002] transition-colors hover:text-[#c44515]"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                               aria-label="Edit fund request"
                             >
-                              <Pencil size={18} />
+                              <Pencil size={16} />
                             </Link>
                           ) : (
                             <Link
                               href={viewHref}
-                              className="text-[#953002] transition-colors hover:text-[#c44515]"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                               aria-label="View fund request"
                             >
-                              <Eye size={18} />
+                              <Eye size={16} />
                             </Link>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </TableBody>
+            </Table>
+
+            {displayed.length > 0 && (
+              <TablePagination
+                page={safePage}
+                total={displayed.length}
+                onPageChange={setPage}
+                itemLabel="fund request"
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

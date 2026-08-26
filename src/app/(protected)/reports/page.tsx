@@ -18,6 +18,10 @@ import {
   type BoardApprovalListDTO,
 } from "@/lib/api/boardApprovalLists";
 import {
+  getTerminationApprovalLists,
+  type TerminationApprovalListDTO,
+} from "@/lib/api/terminationApprovalLists";
+import {
   getDispatches,
   type MemberDocumentDispatchDTO,
 } from "@/lib/api/membershipDocuments";
@@ -28,6 +32,7 @@ import {
   DISPATCH_ROLES,
   DORMANT_BOARD_ROLES,
   REGISTRATION_ROLES,
+  TERMINATION_BOARD_ROLES,
   hasRole,
 } from "@/lib/permissions";
 import {
@@ -45,7 +50,57 @@ const formatDate = (value?: string | null) =>
     : "—";
 
 /**
- * The reports defined by section 5 of the Member Registration specification.
+ * A Board Approval List holds one kind of record - MMC08 and MMC21 only allow a
+ * homogeneous selection - so the first non-empty collection identifies it.
+ *
+ * Reports counted only applicationIds, which is why a Name Change or Nominee Change
+ * list read "(0 applications)" here: the count was of the one thing those lists do
+ * not contain. The Board Approvals screen already classifies lists this way.
+ */
+type BoardListContent = "applications" | "name-change" | "nominee-change";
+
+const BOARD_LIST_CONTENT: Record<BoardListContent, { label: string; noun: string }> = {
+  applications: { label: "Membership", noun: "application" },
+  "name-change": { label: "Name Change", noun: "request" },
+  "nominee-change": { label: "Nominee Change", noun: "request" },
+};
+
+const describeBoardList = (list: BoardApprovalListDTO) => {
+  const names = list.nameChangeRequestIds?.length ?? 0;
+  const nominees = list.nomineeChangeRequestIds?.length ?? 0;
+  // applicationCount comes from the server. The list endpoint no longer ships
+  // applicationIds - counting those here would read 0 for every membership list.
+  const applications = list.applicationCount ?? list.applicationIds?.length ?? 0;
+
+  const content: BoardListContent =
+    names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
+
+  return {
+    ...BOARD_LIST_CONTENT[content],
+    count: names > 0 ? names : nominees > 0 ? nominees : applications,
+    content,
+  };
+};
+
+/**
+ * MMC11 and MMC24 are separate reports from the Application List, because a name or
+ * nominee change is judged as a comparison and needs its current value printed too.
+ * Sending every list to the application sheet printed an empty report for those two.
+ */
+const boardApprovalPrintPath = (list: BoardApprovalListDTO) => {
+  const base = "/membership/board-approvals/print";
+  const listId = encodeURIComponent(list.listId ?? "");
+  const { content } = describeBoardList(list);
+
+  if (content === "name-change") return `${base}/name/${listId}`;
+  if (content === "nominee-change") return `${base}/nominee/${listId}`;
+  return `${base}/${listId}`;
+};
+
+/**
+ * The reports defined by section 5 of the Member Registration specification, plus
+ * the Termination module's board report (MMT08), which is produced the same way and
+ * had no home anywhere else.
  *
  * Only the ones that are actually implemented expose an action; the rest are listed
  * with an explicit "not yet available" state rather than a button that does nothing.
@@ -131,6 +186,18 @@ const REPORTS: ReportDefinition[] = [
     roles: DORMANT_BOARD_ROLES,
     available: true,
   },
+  {
+    // MMT08. Numbered in this page's own sequence, as 5.6 above is: the Termination
+    // specification calls this its section 5.1, which would collide with the
+    // Application List report at the top of this array.
+    section: "5.7",
+    title: "Termination Request List for Board Approval",
+    category: "Termination",
+    description:
+      "The termination requests attached to a Termination Approval List, printed as the sheet taken into the Board Meeting for approval or rejection.",
+    roles: TERMINATION_BOARD_ROLES,
+    available: true,
+  },
 ];
 
 export default function ReportsPage() {
@@ -146,9 +213,13 @@ export default function ReportsPage() {
   const [dispatches, setDispatches] = useState<MemberDocumentDispatchDTO[]>([]);
   const [selectedDispatchNo, setSelectedDispatchNo] = useState("");
 
+  const [terminationLists, setTerminationLists] = useState<TerminationApprovalListDTO[]>([]);
+  const [selectedTerminationListId, setSelectedTerminationListId] = useState("");
+
   const canSeeBoardApprovalReport = hasRole(user?.role, BOARD_GOVERNANCE_ROLES);
   const canSeeDispatchReport = hasRole(user?.role, DISPATCH_ROLES);
   const canSeeDormantReport = hasRole(user?.role, DORMANT_BOARD_ROLES);
+  const canSeeTerminationReport = hasRole(user?.role, TERMINATION_BOARD_ROLES);
 
   // Only the Board Approval report needs data up front, and only for roles that can
   // actually run it.
@@ -203,6 +274,19 @@ export default function ReportsPage() {
     };
   }, [canSeeDispatchReport]);
 
+  useEffect(() => {
+    if (!canSeeTerminationReport) return;
+    let cancelled = false;
+    getTerminationApprovalLists()
+      .then((l) => !cancelled && setTerminationLists(l))
+      .catch(() => {
+        /* selector simply stays empty */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canSeeTerminationReport]);
+
   // Newest meeting first — the list you just created is the one you want to print.
   const sortedLists = useMemo(
     () =>
@@ -212,14 +296,20 @@ export default function ReportsPage() {
     [approvalLists]
   );
 
+  const sortedTerminationLists = useMemo(
+    () =>
+      [...terminationLists].sort((a, b) =>
+        (b.boardMeetingDate ?? "").localeCompare(a.boardMeetingDate ?? "")
+      ),
+    [terminationLists]
+  );
+
   const visibleReports = REPORTS.filter((report) => hasRole(user?.role, report.roles));
 
   const openBoardApprovalReport = () => {
-    if (!selectedListId) return;
-    window.open(
-      `/membership/board-approvals/print/${encodeURIComponent(selectedListId)}`,
-      "_blank"
-    );
+    const list = sortedLists.find((item) => item.listId === selectedListId);
+    if (!list) return;
+    window.open(boardApprovalPrintPath(list), "_blank");
   };
 
   return (
@@ -245,6 +335,7 @@ export default function ReportsPage() {
               const isBoardApproval = report.section === "5.1";
               const isDispatchReport = report.section === "5.5";
               const isDormantReport = report.section === "5.6";
+              const isTerminationReport = report.section === "5.7";
 
               return (
                 <Card key={report.section} className="rounded-xl py-0">
@@ -390,16 +481,19 @@ export default function ReportsPage() {
                               />
                             </SelectTrigger>
                             <SelectContent>
-                              {sortedLists.map((list) => (
-                                <SelectItem
-                                  key={list.listId}
-                                  value={list.listId ?? ""}
-                                >
-                                  {list.listId} — {formatDate(list.boardMeetingDate)} (
-                                  {list.applicationIds?.length ?? 0} application
-                                  {(list.applicationIds?.length ?? 0) === 1 ? "" : "s"})
-                                </SelectItem>
-                              ))}
+                              {sortedLists.map((list) => {
+                                const { label, noun, count } = describeBoardList(list);
+                                return (
+                                  <SelectItem
+                                    key={list.listId}
+                                    value={list.listId ?? ""}
+                                  >
+                                    {list.listId} — {formatDate(list.boardMeetingDate)} ·{" "}
+                                    {label} ({count} {noun}
+                                    {count === 1 ? "" : "s"})
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                         )}
@@ -416,6 +510,56 @@ export default function ReportsPage() {
                           ) : (
                             <Printer className="size-4" />
                           )}
+                          Open Report
+                        </Button>
+                      </div>
+                    ) : report.available && isTerminationReport ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-neutral-600">
+                          Termination Approval List
+                        </label>
+                        <Select
+                          value={selectedTerminationListId}
+                          onValueChange={setSelectedTerminationListId}
+                          disabled={sortedTerminationLists.length === 0}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={
+                                sortedTerminationLists.length === 0
+                                  ? "No termination approval lists created yet"
+                                  : "Select a termination approval list"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sortedTerminationLists.map((list) => {
+                              const count =
+                                list.requestCount ?? list.requestNos?.length ?? 0;
+                              return (
+                                <SelectItem key={list.listId} value={list.listId ?? ""}>
+                                  {list.listId} — {formatDate(list.boardMeetingDate)} ({count}{" "}
+                                  request{count === 1 ? "" : "s"})
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3 text-sm"
+                          disabled={!selectedTerminationListId}
+                          onClick={() =>
+                            window.open(
+                              `/membership/termination/approval-lists/print/${encodeURIComponent(
+                                selectedTerminationListId
+                              )}`,
+                              "_blank"
+                            )
+                          }
+                        >
+                          <Printer className="size-4" />
                           Open Report
                         </Button>
                       </div>

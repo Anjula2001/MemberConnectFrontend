@@ -274,7 +274,7 @@ function DormantApprovalListsInner() {
   if (user && !canManageLists) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-8 w-8 text-[#8B4513]" />
+        <ShieldAlert className="h-8 w-8 text-[#953002]" />
         <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
         <p className="max-w-md text-sm text-muted-foreground">
           Inactivation Approval Lists are restricted to Head Office and Board
@@ -287,7 +287,7 @@ function DormantApprovalListsInner() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-[#8B4513]">
+        <h1 className="text-2xl font-bold text-[#953002]">
           Inactivation Approval Lists for Dormant Members
         </h1>
         <Link href="/membership/dormant">
@@ -312,7 +312,7 @@ function DormantApprovalListsInner() {
       {/* MMD14 — retrieve lists by board meeting date */}
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">Retrieve Approval Lists</CardTitle>
+          <CardTitle className="text-lg text-[#953002]">Retrieve Approval Lists</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
@@ -360,7 +360,7 @@ function DormantApprovalListsInner() {
             <Button
               onClick={() => void loadLists()}
               disabled={loading}
-              className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+              className="bg-[#953002] text-white hover:bg-[#7a2700]"
             >
               {loading ? "Retrieving..." : "Retrieve"}
             </Button>
@@ -370,7 +370,7 @@ function DormantApprovalListsInner() {
 
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">
+          <CardTitle className="text-lg text-[#953002]">
             Approval Lists ({filteredLists.length})
           </CardTitle>
         </CardHeader>
@@ -417,7 +417,7 @@ function DormantApprovalListsInner() {
                     <TableCell className="text-right">
                       <Button
                         size="sm"
-                        className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                        className="bg-[#953002] text-white hover:bg-[#7a2700]"
                         onClick={() => setSelectedListId(list.listId)}
                       >
                         Retrieve Dormant Members
@@ -435,7 +435,7 @@ function DormantApprovalListsInner() {
         <Card className="border-2 border-[#ffffff]">
           <CardHeader className="bg-muted/30">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-lg text-[#8B4513]">
+              <CardTitle className="text-lg text-[#953002]">
                 {selected.listId} &mdash; {selected.members.length} Dormant Member(s)
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
@@ -512,7 +512,7 @@ function DormantApprovalListsInner() {
                         <TableCell>
                           <Link
                             href={`/membership/directory/${m.id}`}
-                            className="font-medium text-[#8B4513] underline-offset-2 hover:underline"
+                            className="font-medium text-[#953002] underline-offset-2 hover:underline"
                           >
                             {m.memberId}
                           </Link>
@@ -606,7 +606,7 @@ function DormantApprovalListsInner() {
                 <Button
                   disabled={!canProceed}
                   onClick={() => setShowConfirm(true)}
-                  className="bg-[#8B4513] text-white hover:bg-[#A0522D] disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
                 >
                   Proceed
                 </Button>
@@ -620,7 +620,7 @@ function DormantApprovalListsInner() {
       {showConfirm && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-[#8B4513]">Confirm Board Decision</h2>
+            <h2 className="text-lg font-semibold text-[#953002]">Confirm Board Decision</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {selected.listId} &mdash; this cannot be undone once processed.
             </p>
@@ -693,7 +693,7 @@ function DormantApprovalListsInner() {
               <Button
                 onClick={() => void handleProcess()}
                 disabled={processing}
-                className="bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 {processing ? "Processing..." : "Process"}
               </Button>
@@ -706,7 +706,7 @@ function DormantApprovalListsInner() {
       {showDelete && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-[#8B4513]">Delete Approval List</h2>
+            <h2 className="text-lg font-semibold text-[#953002]">Delete Approval List</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Do you want to delete the selected Inactivation Approval List? The{" "}
               {selected.members.length} member(s) on it will return to &ldquo;Selected for

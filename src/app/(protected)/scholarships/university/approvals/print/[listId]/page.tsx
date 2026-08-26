@@ -11,22 +11,17 @@ import AccessRestricted from "@/src/components/AccessRestricted";
 
 const API_BASE_URL = "http://localhost:8080";
 
-type ApprovalList = {
-  listId: string;
-  boardMeetingId: number;
-  boardMeetingDate: string;
-  status: string;
-  type: string;
-};
-
-type ScholarshipRequest = {
+type RequestRow = {
   id: number;
-  requestNo: string;
-  memberId: string;
-  studentName: string;
-  marksObtained: number;
-  disbursementOption: string;
-  status: string;
+  requestId?: string;
+  studentName?: string;
+  memberName?: string;
+  memberId?: string;
+  universityName?: string;
+  nic?: string;
+  approvalListId?: string;
+  scheduledDate?: string;
+  boardMeetingName?: string;
 };
 
 const formatDate = (value?: string | null) =>
@@ -39,17 +34,20 @@ const formatDate = (value?: string | null) =>
     : "—";
 
 /**
- * "Grade 5 Scholarship Request List for Board Approval" report.
+ * "University Scholarship Request List for Board Approval" report.
  *
- * A dedicated report route, like the Termination and Dormant approval lists already
- * have. The Print button on the approval-lists screen used to call window.print() on
- * the live page, which put the sidebar, the tab bar and the search panel on the sheet -
- * a screenshot of the application rather than a report.
+ * A dedicated report route, matching the Grade 5, Termination and Dormant approval
+ * lists. The Print button on the approvals screen used to call window.print() on the
+ * live page, which printed the sidebar, the tab bar and the search panel along with it.
  *
- * The Approve and Reject columns are deliberately blank: this sheet goes into the Board
- * Meeting and is marked by hand, then the outcome is keyed back in on the list screen.
+ * The list has no endpoint of its own - requests carry their approvalListId - so the
+ * sheet is assembled by filtering the scholarship requests on that id, which is how the
+ * approvals screen groups them too.
+ *
+ * Approve and Reject are left blank: the sheet is marked by hand at the meeting and the
+ * outcome keyed back in afterwards.
  */
-export default function Grade5ApprovalListPrintPage({
+export default function UniversityApprovalListPrintPage({
   params,
 }: {
   params: Promise<{ listId: string }>;
@@ -58,10 +56,9 @@ export default function Grade5ApprovalListPrintPage({
   const router = useRouter();
   const { user } = useAuth();
 
-  const canPrint = hasPermission(user?.role, "G5_LIST_PRINT");
+  const canPrint = hasPermission(user?.role, "US_LIST_PRINT");
 
-  const [list, setList] = useState<ApprovalList | null>(null);
-  const [requests, setRequests] = useState<ScholarshipRequest[]>([]);
+  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,23 +67,12 @@ export default function Grade5ApprovalListPrintPage({
 
     const load = async () => {
       try {
-        const [listsRes, requestsRes] = await Promise.all([
-          // The controller maps the collection at /all — a bare /approval-lists is a 404.
-          // Corrected against the route origin/dev's print page used.
-          authFetch(`${API_BASE_URL}/api/grade5/approval-lists/all`),
-          authFetch(`${API_BASE_URL}/api/grade5/approval-lists/${listId}/requests`),
-        ]);
+        const res = await authFetch(`${API_BASE_URL}/api/university-scholarships`);
+        if (!res.ok) throw new Error("Could not load the approval list.");
 
-        if (!listsRes.ok || !requestsRes.ok) {
-          throw new Error("Could not load the approval list.");
-        }
-
-        const lists: ApprovalList[] = await listsRes.json();
-        const requestRows: ScholarshipRequest[] = await requestsRes.json();
-
+        const all: RequestRow[] = await res.json();
         if (cancelled) return;
-        setList(lists.find((l) => l.listId === listId) ?? null);
-        setRequests(requestRows);
+        setRequests(all.filter((r) => r.approvalListId === listId));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Could not load the approval list.");
@@ -102,11 +88,14 @@ export default function Grade5ApprovalListPrintPage({
     };
   }, [listId]);
 
+  const isDeviation = listId.startsWith("USDL-");
+  const meetingDate = requests[0]?.scheduledDate;
+
   if (user && !canPrint) {
     return (
       <AccessRestricted
-        message="Printing Grade 5 approval lists is restricted to board roles."
-        fallbackHref="/scholarships/grade-5/approval-lists"
+        message="Printing University Scholarship approval lists is restricted to board roles."
+        fallbackHref="/scholarships/university/approvals"
         fallbackLabel="Back to Approval Lists"
       />
     );
@@ -169,18 +158,18 @@ export default function Grade5ApprovalListPrintPage({
             Future Finance Institute
           </h1>
           <p className="mt-1 text-sm font-semibold text-neutral-700">
-            Grade 5 Scholarship Request List for Board Approval
+            University Scholarship Request List for Board Approval
           </p>
           <p className="mt-0.5 text-xs text-neutral-500">
-            {list?.type === "DEVIATION" ? "Deviation Board Approval" : "Normal Board Approval"}
+            {isDeviation ? "Deviation Board Approval" : "Normal Board Approval"}
           </p>
         </div>
 
         {/* Meeting particulars */}
         <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-4">
           {[
-            ["List ID", list?.listId ?? listId],
-            ["Board Meeting Date", formatDate(list?.boardMeetingDate)],
+            ["List ID", listId],
+            ["Board Meeting Date", formatDate(meetingDate)],
             ["Total Requests", String(requests.length)],
             ["Printed On", formatDate(new Date().toISOString())],
           ].map(([label, value]) => (
@@ -201,9 +190,10 @@ export default function Grade5ApprovalListPrintPage({
                 "#",
                 "Request ID",
                 "Member ID",
+                "Member Name",
                 "Student Name",
-                "Marks Obtained",
-                "Disbursement",
+                "NIC",
+                "University",
                 "Approve",
                 "Reject",
               ].map((h) => (
@@ -221,19 +211,22 @@ export default function Grade5ApprovalListPrintPage({
               <tr key={request.id ?? i}>
                 <td className="border border-neutral-300 px-2 py-1.5 text-center">{i + 1}</td>
                 <td className="border border-neutral-300 px-2 py-1.5 whitespace-nowrap">
-                  {request.requestNo ?? "—"}
+                  {request.requestId ?? "—"}
                 </td>
                 <td className="border border-neutral-300 px-2 py-1.5 whitespace-nowrap">
                   {request.memberId ?? "—"}
                 </td>
                 <td className="border border-neutral-300 px-2 py-1.5">
-                  {request.studentName ?? "—"}
-                </td>
-                <td className="border border-neutral-300 px-2 py-1.5 text-center tabular-nums">
-                  {request.marksObtained ?? "—"}
+                  {request.memberName ?? "—"}
                 </td>
                 <td className="border border-neutral-300 px-2 py-1.5">
-                  {request.disbursementOption?.replace(/_/g, " ") ?? "—"}
+                  {request.studentName ?? "—"}
+                </td>
+                <td className="border border-neutral-300 px-2 py-1.5 whitespace-nowrap">
+                  {request.nic ?? "—"}
+                </td>
+                <td className="border border-neutral-300 px-2 py-1.5">
+                  {request.universityName ?? "—"}
                 </td>
                 {/* Left blank deliberately — marked by hand at the meeting. */}
                 <td className="border border-neutral-300 px-2 py-1.5" />
@@ -243,7 +236,7 @@ export default function Grade5ApprovalListPrintPage({
             {requests.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="border border-neutral-300 px-2 py-4 text-center text-neutral-500"
                 >
                   No scholarship requests in this list.

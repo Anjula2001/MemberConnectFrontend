@@ -53,7 +53,7 @@ export default function SignatureCardTemplate({ member }: { member: MemberDTO })
               width: "5.6mm",
               height: "5.6mm",
               borderRadius: "1.2mm",
-              background: "#9e3600",
+              background: "#953002",
             }}
           >
             <svg width="3mm" height="3mm" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -75,13 +75,13 @@ export default function SignatureCardTemplate({ member }: { member: MemberDTO })
           <span style={{ fontSize: "1.1mm", fontWeight: 600, letterSpacing: "0.12mm", textTransform: "uppercase", color: "#a1a1aa" }}>
             Member ID
           </span>
-          <span style={{ fontSize: "2.4mm", fontWeight: 700, letterSpacing: "0.06mm", color: "#9e3600", fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ fontSize: "2.4mm", fontWeight: 700, letterSpacing: "0.06mm", color: "#953002", fontVariantNumeric: "tabular-nums" }}>
             {member.memberId ?? "—"}
           </span>
         </div>
       </div>
 
-      <div style={{ height: "0.3mm", margin: "2.6mm 5.6mm 0 5.6mm", background: "#9e3600" }} />
+      <div style={{ height: "0.3mm", margin: "2.6mm 5.6mm 0 5.6mm", background: "#953002" }} />
 
       {/* Member particulars */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "2.6mm 3.2mm", padding: "3.2mm 5.6mm 0 5.6mm" }}>

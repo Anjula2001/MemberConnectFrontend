@@ -131,22 +131,22 @@ export default function NomineeChangeApprovalListPrintPage({
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#9d3602]"
+          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#953002]"
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
         <button
           type="button"
           onClick={() => window.print()}
-          className="flex items-center gap-2 rounded-lg bg-[#9e3600] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8b2f00]"
+          className="flex items-center gap-2 rounded-lg bg-[#953002] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7a2700]"
         >
           <Printer className="h-4 w-4" /> Print
         </button>
       </div>
 
       <div className="print-sheet mx-4 mb-8 rounded-lg border border-neutral-200 bg-white p-8 shadow-sm md:mx-6">
-        <div className="border-b-2 border-[#9e3600] pb-4 text-center">
-          <h1 className="text-xl font-bold tracking-tight text-[#9e3600]">
+        <div className="border-b-2 border-[#953002] pb-4 text-center">
+          <h1 className="text-xl font-bold tracking-tight text-[#953002]">
             Future Finance Institute
           </h1>
           <p className="mt-1 text-sm font-semibold text-neutral-700">

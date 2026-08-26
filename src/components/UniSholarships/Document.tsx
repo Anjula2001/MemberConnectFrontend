@@ -3,6 +3,14 @@
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "../ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
 import { Trash2, UploadCloud } from "lucide-react";
 
 export type DocumentFileItem = {
@@ -171,55 +179,59 @@ export default function Document({
 
       {files.length > 0 && (
         <div className="overflow-x-auto rounded border">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="px-3 py-2">Document Type</th>
-                <th className="px-3 py-2">File Name</th>
-                {!disabled && <th className="px-3 py-2">Action</th>}
-              </tr>
-            </thead>
+          <Table className="border-collapse">
+            <TableHeader>
+              <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">Document Type</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">File Name</TableHead>
+                {!disabled && (
+                  <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Action</TableHead>
+                )}
+              </TableRow>
+            </TableHeader>
 
-            <tbody>
+            <TableBody>
               {files.map((item, index) => (
-                <tr key={`${item.file.name}-${index}`} className="border-t">
-                  <td className="px-3 py-2">
+                <TableRow key={`${item.file.name}-${index}`} className="hover:bg-neutral-50">
+                  <TableCell className="px-4 py-4 text-neutral-700">
                     {getDocumentLabel(item.documentType)}
-                  </td>
+                  </TableCell>
 
-                  <td className="px-3 py-2">
+                  <TableCell className="px-4 py-4">
                     {item.id ? (
                       <a
                         href={`http://localhost:8080/api/uploaded-documents/download/${item.id}?requestId=${encodeURIComponent(requestId ? String(requestId) : "")}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-medium text-blue-600 underline hover:text-blue-800"
+                        className="font-medium text-[#953002] hover:underline"
                       >
                         {item.file.name}
                       </a>
                     ) : (
-                      <span className="font-medium text-gray-700">
+                      <span className="font-medium text-neutral-700">
                         {item.file.name}
                       </span>
                     )}
-                  </td>
+                  </TableCell>
 
                   {!disabled && (
-                    <td className="px-3 py-2">
+                    <TableCell className="px-4 py-4 text-right">
                       <Button
                         type="button"
                         variant="ghost"
+                        size="icon"
+                        aria-label="Remove document"
                         onClick={() => removeFile(index)}
-                        className="text-red-600"
+                        className="text-red-600 hover:text-red-800"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
-                    </td>
+                    </TableCell>
                   )}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

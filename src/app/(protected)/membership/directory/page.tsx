@@ -15,7 +15,6 @@ import {
 	SlidersHorizontal,
 } from "lucide-react";
 
-import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Checkbox } from "@/src/components/ui/checkbox";
@@ -35,27 +34,55 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/src/components/ui/table";
+import {
+	TablePagination,
+	DEFAULT_PAGE_SIZE,
+} from "@/src/components/ui/table-pagination";
 
-import { type MemberDTO, type MemberStatus, searchMembers } from "@/lib/api/member";
-import { getEducationalDistricts } from "@/lib/api/education";
+import {
+	type MemberDTO,
+	type MemberSearchPageParams,
+	type MemberStatus,
+	searchMembersPage,
+} from "@/lib/api/member";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+	getEducationalDistricts,
+	getEducationalZonesByDistrict,
+} from "@/lib/api/education";
+import { getWorkingLocationTypes } from "@/lib/api/masters";
 import { useAuth } from "@/lib/auth-context";
+
+/**
+ * Every value of the backend MemberStatus enum, with a readable label.
+ *
+ * The filter previously offered five of the fifteen. The ten it omitted were not
+ * unused states - a third of the membership sat in them (dormant, termination and
+ * retirement requests, recorded deaths), and those members could not be filtered
+ * for at all. Anything the server can store has to be selectable here, so this list
+ * is kept exhaustive rather than curated.
+ */
+const MEMBER_STATUS_LABELS: Record<MemberStatus, string> = {
+	ACTIVE: "Active",
+	INACTIVE: "Inactive",
+	RESIGNED: "Resigned",
+	TERMINATION_REQUESTED: "Termination Requested",
+	TERMINATION_APPROVED: "Termination Approved",
+	TERMINATED: "Terminated",
+	RETIREMENT_REQUESTED: "Retirement Requested",
+	RETIREMENT_APPROVED: "Retirement Approved",
+	RETIRED: "Retired",
+	MEMBER_DEATH_RECORDED: "Death Recorded",
+	MEMBER_DEATH_APPROVED: "Death Approved",
+	DECEASED: "Deceased",
+	SELECTED_FOR_DORMANT: "Selected for Dormant",
+	SENT_FOR_DORMANT_APPROVAL: "Sent for Dormant Approval",
+	INACTIVE_DORMANT: "Inactive (Dormant)",
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const STATUS_BADGE_CLASSES: Record<string, string> = {
-	ACTIVE: "bg-green-600 hover:bg-green-600 text-white",
-	INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
-	RESIGNED: "bg-yellow-600 hover:bg-yellow-600 text-white",
-	TERMINATED: "bg-red-600 hover:bg-red-600 text-white",
-	RETIRED: "bg-red-600 hover:bg-red-600 text-white",
-	DECEASED: "bg-neutral-700 hover:bg-neutral-700 text-white",
-};
-
-function statusBadgeClass(status?: string) {
-	return STATUS_BADGE_CLASSES[status ?? ""] ?? "bg-gray-400 hover:bg-gray-400 text-white";
-}
 
 // ---------------------------------------------------------------------------
 // MultiSelectDropdown
@@ -121,7 +148,7 @@ function MultiSelectDropdown({
 									<Checkbox
 										checked={selected.includes(option.value)}
 										onCheckedChange={() => toggleOption(option.value)}
-										className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+										className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
 									/>
 									<span className="text-sm">{option.label}</span>
 								</label>
@@ -155,6 +182,8 @@ export default function MemberDirectoryPage() {
 	const [sortBy, setSortBy] = useState("membership-date");
 	const [sortAsc, setSortAsc] = useState(true);
 	const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+	const [zoneOptions, setZoneOptions] = useState<string[]>([]);
+	const [workingLocationTypeOptions, setWorkingLocationTypeOptions] = useState<string[]>([]);
 
 	// Load the real District Office location master (replaces a hardcoded sample list),
 	// and lock District Office users to their own assigned district — they shouldn't be
@@ -174,6 +203,47 @@ export default function MemberDirectoryPage() {
 		};
 	}, []);
 
+	// The real Working Location Type master. These were hard-coded as
+	// "School / Office / University"; the master actually holds "Government School",
+	// "National School", "Zonal Education Office" and so on, and the server matches
+	// the stored name, so none of the three ever selected a member.
+	useEffect(() => {
+		let isCancelled = false;
+		getWorkingLocationTypes()
+			.then((types) => {
+				if (isCancelled) return;
+				setWorkingLocationTypeOptions(types.map((t) => t.name));
+			})
+			.catch(() => {
+				/* leave empty on failure - filter simply shows no options */
+			});
+		return () => {
+			isCancelled = true;
+		};
+	}, []);
+
+	// Zones belong to a district in the master, so the zone list follows the chosen
+	// Educational District - the same cascade the registration form uses. The old
+	// list was three invented slugs ("colombo-zone"), which matched nothing.
+	useEffect(() => {
+		if (educationalDistrict === "all-districts") {
+			setZoneOptions([]);
+			return;
+		}
+		let isCancelled = false;
+		getEducationalZonesByDistrict(educationalDistrict)
+			.then((zones) => {
+				if (isCancelled) return;
+				setZoneOptions(zones);
+			})
+			.catch(() => {
+				if (!isCancelled) setZoneOptions([]);
+			});
+		return () => {
+			isCancelled = true;
+		};
+	}, [educationalDistrict]);
+
 	useEffect(() => {
 		if (isDistrictOfficer && user?.assignedDistrict) {
 			setSelectedLocations([user.assignedDistrict]);
@@ -181,10 +251,17 @@ export default function MemberDirectoryPage() {
 	}, [isDistrictOfficer, user?.assignedDistrict]);
 
 	// ---- data state ----
+	// One page of members, not the whole result set — see loadPage().
 	const [members, setMembers] = useState<MemberDTO[]>([]);
+	const [totalCount, setTotalCount] = useState(0);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasFetched, setHasFetched] = useState(false);
+	const [page, setPage] = useState(1);
+	// The filter the visible rows were fetched with, frozen at Retrieve. Paging reuses
+	// it so that edits made to the criteria fields since — which are not meant to take
+	// effect until Retrieve is pressed — cannot silently change what page 2 contains.
+	const [activeSearch, setActiveSearch] = useState<MemberSearchPageParams | null>(null);
 
 	// ---------------------------------------------------------------------------
 	// Fetch helpers
@@ -207,52 +284,84 @@ export default function MemberDirectoryPage() {
 		return `/membership/directory/report?${p.toString()}`;
 	};
 
-	const fetchMembers = useCallback(async () => {
+	/** The criteria fields as the backend wants them, read when Retrieve runs. */
+	const buildSearchParams = useCallback((): MemberSearchPageParams => ({
+		query: searchQuery || undefined,
+		statuses: selectedStatuses.length > 0 ? selectedStatuses : undefined,
+		locations: selectedLocations.length > 0 ? selectedLocations : undefined,
+		workingLocationType:
+			workingLocationType !== "all-types" ? workingLocationType : undefined,
+		educationalZone:
+			educationalZone !== "all-zones" ? educationalZone : undefined,
+		educationalDistrict:
+			educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
+		membershipStartFrom: membershipStartFrom || undefined,
+		membershipStartTo: membershipStartTo || undefined,
+		// Sorting moves to the server with the paging. A page cannot be ordered in the
+		// browser and still be right: sorting ten of a hundred rows only reorders the
+		// ten already chosen. It also gains the District option, which the local sort
+		// silently ignored even though the dropdown offered it.
+		sortBy,
+		sortDirection: sortAsc ? "asc" : "desc",
+	}), [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
+		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
+
+	/**
+	 * Fetches one page. Filtering, sorting, paging and the total are the database's
+	 * work — the browser receives ten rows and the number needed to describe them,
+	 * rather than the whole membership to slice ten rows out of.
+	 */
+	const loadPage = useCallback(async (
+		search: MemberSearchPageParams,
+		requestedPage: number,
+	) => {
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await searchMembers({
-				query: searchQuery || undefined,
-				statuses: selectedStatuses.length > 0 ? selectedStatuses : undefined,
-				locations: selectedLocations.length > 0 ? selectedLocations : undefined,
-				workingLocationType:
-					workingLocationType !== "all-types" ? workingLocationType : undefined,
-				educationalZone:
-					educationalZone !== "all-zones" ? educationalZone : undefined,
-				educationalDistrict:
-					educationalDistrict !== "all-districts" ? educationalDistrict : undefined,
-				membershipStartFrom: membershipStartFrom || undefined,
-				membershipStartTo: membershipStartTo || undefined,
+			const result = await searchMembersPage({
+				...search,
+				page: requestedPage - 1,
+				size: DEFAULT_PAGE_SIZE,
 			});
-
-			// Client-side sort, honouring the ascending/descending toggle.
-			const sorted = [...data].sort((a, b) => {
-				let cmp = 0;
-				if (sortBy === "membership-date") {
-					cmp = (a.membershipStartDate ?? "").localeCompare(b.membershipStartDate ?? "");
-				} else if (sortBy === "memberID") {
-					cmp = (a.memberId ?? "").localeCompare(b.memberId ?? "");
-				} else if (sortBy === "status") {
-					cmp = (a.status ?? "").localeCompare(b.status ?? "");
-				}
-				return sortAsc ? cmp : -cmp;
-			});
-
-			setMembers(sorted);
-			setHasFetched(true);
+			setMembers(result.content);
+			setTotalCount(result.totalElements);
+			// Trust the server's page number over the requested one: it answers with the
+			// last page that exists when the request points past the end.
+			setPage(result.page + 1);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : "Failed to fetch members.");
+			setMembers([]);
+			setTotalCount(0);
+			setPage(1);
 		} finally {
+			setHasFetched(true);
 			setLoading(false);
 		}
-	}, [searchQuery, selectedStatuses, selectedLocations, workingLocationType, educationalZone,
-		educationalDistrict, membershipStartFrom, membershipStartTo, sortBy, sortAsc]);
+	}, []);
+
+	const fetchMembers = useCallback(async () => {
+		const search = buildSearchParams();
+		setActiveSearch(search);
+		await loadPage(search, 1);
+	}, [buildSearchParams, loadPage]);
+
+	const handlePageChange = useCallback((nextPage: number) => {
+		if (!activeSearch || nextPage === page) return;
+		void loadPage(activeSearch, nextPage);
+	}, [activeSearch, page, loadPage]);
 
 	// Deliberately no fetch on mount. Opening the Directory shows the filters and an
 	// empty table until the user clicks Retrieve — the same pattern the other list
 	// screens follow, and what the "Click Retrieve to load members." empty state below
 	// has always described. Auto-loading also meant every visit pulled the full
 	// membership before the user had chosen any filter.
+
+	// ---------------------------------------------------------------------------
+	// Paging
+	// ---------------------------------------------------------------------------
+
+	// `members` is already the page the server returned, and `page` is the number it
+	// reported, so there is nothing left to slice or clamp here.
 
 	// ---------------------------------------------------------------------------
 	// Options
@@ -263,13 +372,9 @@ export default function MemberDirectoryPage() {
 		label: district,
 	}));
 
-	const statusOptions: MultiSelectOption[] = [
-		{ value: "ACTIVE", label: "Active" },
-		{ value: "INACTIVE", label: "Inactive" },
-		{ value: "RESIGNED", label: "Resigned" },
-		{ value: "TERMINATED", label: "Terminated" },
-		{ value: "DECEASED", label: "Deceased" },
-	];
+	const statusOptions: MultiSelectOption[] = (
+		Object.keys(MEMBER_STATUS_LABELS) as MemberStatus[]
+	).map((value) => ({ value, label: MEMBER_STATUS_LABELS[value] }));
 
 	// ---------------------------------------------------------------------------
 	// Render helpers
@@ -321,7 +426,7 @@ export default function MemberDirectoryPage() {
 						type="button"
 						onClick={fetchMembers}
 						disabled={loading}
-						className="h-9 bg-[#9e3600] text-white hover:bg-[#8b2f00] disabled:opacity-60"
+						className="h-9 bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-60"
 					>
 						{loading ? (
 							<Loader2 className="h-4 w-4 animate-spin" />
@@ -336,7 +441,7 @@ export default function MemberDirectoryPage() {
 						size="icon"
 						title="Print the retrieved membership records"
 						onClick={() => window.open(buildReportUrl(), "_blank")}
-						disabled={members.length === 0}
+						disabled={totalCount === 0}
 						className="h-9 w-9 border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
 					>
 						<Printer className="h-4 w-4" />
@@ -352,12 +457,12 @@ export default function MemberDirectoryPage() {
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
-			<h1 className="text-3xl font-bold text-[#9d3602]">Membership Profile Search</h1>
+			<h1 className="text-3xl font-bold text-[#953002]">Membership Profile Search</h1>
 
 			{/* ── Search Criteria Card ── */}
 			<Card className="rounded-xl border-neutral-300 py-0 shadow-none">
 				<CardHeader className="px-5 pt-5 pb-3">
-					<CardTitle className="text-[34px] font-semibold leading-none text-[#9d3602] sm:text-3xl">
+					<CardTitle className="text-[34px] font-semibold leading-none text-[#953002] sm:text-3xl">
 						Search Criteria
 					</CardTitle>
 				</CardHeader>
@@ -437,9 +542,11 @@ export default function MemberDirectoryPage() {
 											</SelectTrigger>
 											<SelectContent>
 												<SelectItem value="all-types">All Types</SelectItem>
-												<SelectItem value="school">School</SelectItem>
-												<SelectItem value="office">Office</SelectItem>
-												<SelectItem value="university">University</SelectItem>
+												{workingLocationTypeOptions.map((type) => (
+													<SelectItem key={type} value={type}>
+														{type}
+													</SelectItem>
+												))}
 											</SelectContent>
 										</Select>
 									</div>
@@ -448,15 +555,27 @@ export default function MemberDirectoryPage() {
 										<p className="text-xs font-semibold text-neutral-600">
 											Educational Zone
 										</p>
-										<Select value={educationalZone} onValueChange={setEducationalZone}>
+										<Select
+											value={educationalZone}
+											onValueChange={setEducationalZone}
+											disabled={educationalDistrict === "all-districts"}
+										>
 											<SelectTrigger className="w-full border-neutral-300 bg-white">
-												<SelectValue placeholder="All Zones" />
+												<SelectValue
+													placeholder={
+														educationalDistrict === "all-districts"
+															? "Select a district first"
+															: "All Zones"
+													}
+												/>
 											</SelectTrigger>
 											<SelectContent>
 												<SelectItem value="all-zones">All Zones</SelectItem>
-												<SelectItem value="colombo-zone">Colombo Zone</SelectItem>
-												<SelectItem value="kandy-zone">Kandy Zone</SelectItem>
-												<SelectItem value="galle-zone">Galle Zone</SelectItem>
+												{zoneOptions.map((zone) => (
+													<SelectItem key={zone} value={zone}>
+														{zone}
+													</SelectItem>
+												))}
 											</SelectContent>
 										</Select>
 									</div>
@@ -469,7 +588,12 @@ export default function MemberDirectoryPage() {
 										</p>
 										<Select
 											value={educationalDistrict}
-											onValueChange={setEducationalDistrict}
+											onValueChange={(next) => {
+												setEducationalDistrict(next);
+												// The selected zone belongs to the district being replaced, so
+												// keeping it would filter on a zone the new district does not have.
+												setEducationalZone("all-zones");
+											}}
 										>
 											<SelectTrigger className="w-full border-neutral-300 bg-white">
 												<SelectValue placeholder="All Districts" />
@@ -555,7 +679,7 @@ export default function MemberDirectoryPage() {
 										{error}
 									</TableCell>
 								</TableRow>
-							) : !hasFetched || members.length === 0 ? (
+							) : !hasFetched || totalCount === 0 ? (
 								<TableRow>
 									<TableCell colSpan={6} className="py-10 text-center text-neutral-500">
 										{hasFetched
@@ -573,7 +697,7 @@ export default function MemberDirectoryPage() {
 											{member.memberId || member.id ? (
 												<Link
 													href={`/membership/directory/${member.id}`}
-													className="text-[#9d3602] hover:underline"
+													className="text-[#953002] hover:underline"
 												>
 													{member.memberId ?? "—"}
 												</Link>
@@ -594,11 +718,7 @@ export default function MemberDirectoryPage() {
 											{member.workingLocation ?? member.educationalDistrict ?? "—"}
 										</TableCell>
 										<TableCell className="px-4 py-4">
-											<Badge
-												className={`px-2.5 py-0.5 text-[11px] font-semibold ${statusBadgeClass(member.status)}`}
-											>
-												{member.status ?? "—"}
-											</Badge>
+											<StatusBadge status={member.status} vocabulary="member" />
 										</TableCell>
 									</TableRow>
 								))
@@ -606,11 +726,13 @@ export default function MemberDirectoryPage() {
 						</TableBody>
 					</Table>
 
-					{/* Result count footer */}
+					{/* Result count + paging footer */}
 					{hasFetched && !loading && !error && (
-						<div className="border-t border-neutral-200 px-4 py-2 text-xs text-neutral-500">
-							{members.length} member{members.length !== 1 ? "s" : ""} found
-						</div>
+						<TablePagination
+							page={page}
+							total={totalCount}
+							onPageChange={handlePageChange}
+						/>
 					)}
 				</CardContent>
 			</Card>

@@ -192,7 +192,7 @@ export default function MemberAccountsAdminPage() {
                 type="button"
                 onClick={runSearch}
                 disabled={searching}
-                className="h-9 bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                className="h-9 bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 Search
@@ -437,7 +437,7 @@ export default function MemberAccountsAdminPage() {
                 type="button"
                 onClick={save}
                 disabled={saving}
-                className="bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Changes

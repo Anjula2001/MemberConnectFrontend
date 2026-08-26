@@ -75,7 +75,7 @@ export default function ImageDropzoneCard({
 	return (
 		<div className="relative rounded-md border border-neutral-200 p-4">
 			<div className="mb-3 flex items-center justify-between">
-				<p className="text-sm font-semibold text-[#b2410f] mx-auto">{title}</p>
+				<p className="text-sm font-semibold text-[#953002] mx-auto">{title}</p>
 				{(isUploading || isDeleting) && (
 					<Loader2 className="absolute right-4 top-4 h-4 w-4 animate-spin text-neutral-400" />
 				)}
@@ -85,7 +85,7 @@ export default function ImageDropzoneCard({
 				{...getRootProps()}
 				className={`mx-auto flex h-24 w-40 items-center justify-center overflow-hidden rounded-md border border-dashed text-xs transition-colors ${
 					isDragActive
-						? "border-[#b2410f] bg-[#fff3ec]"
+						? "border-[#953002] bg-[#fff3ec]"
 						: displayUrl
 						? "border-neutral-200 bg-neutral-50"
 						: "border-neutral-300 bg-neutral-100 text-neutral-400"

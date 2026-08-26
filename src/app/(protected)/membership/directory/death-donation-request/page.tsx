@@ -6,6 +6,14 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Info, Pencil } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
@@ -953,7 +961,7 @@ export default function DeathDonationRequestPage() {
       <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
         <Link
           href={backHref}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
@@ -1001,7 +1009,7 @@ export default function DeathDonationRequestPage() {
                 <Button
                   onClick={handleSave}
                   disabled={!canModifyMember || isSaving}
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? "Saving..." : "Save"}
                 </Button>
@@ -1019,7 +1027,7 @@ export default function DeathDonationRequestPage() {
                   <Button
                     onClick={handleSubmit}
                     disabled={!request?.requestNo || isSubmitting}
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Submit
                   </Button>
@@ -1082,7 +1090,7 @@ export default function DeathDonationRequestPage() {
                 <Button
                   onClick={handleSaveConcerns}
                   disabled={isSaving}
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? "Saving..." : "Save Concerns"}
                 </Button>
@@ -1345,56 +1353,65 @@ export default function DeathDonationRequestPage() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full border text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="border-b px-4 py-2 text-left">Member ID</th>
-                    <th className="border-b px-4 py-2 text-left">Relationship</th>
-                    <th className="border-b px-4 py-2 text-left">Source</th>
-                    <th className="border-b px-4 py-2 text-left">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {relatives.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
-                        No close relatives added yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    relatives.map((relative, index) => (
-                      <tr key={`${relative.relativeMemberId}-${index}`}>
-                        <td className="border-b px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            {relative.autoPopulated && (
-                              <Info className="h-4 w-4 text-amber-600" aria-label="Auto populated" />
+              <div className="overflow-hidden rounded-lg border border-neutral-300">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                      {["Member ID", "Relationship", "Source", "Action"].map((h) => (
+                        <TableHead
+                          key={h}
+                          className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                        >
+                          {h}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {relatives.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-10 text-center text-neutral-500">
+                          No close relatives added yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      relatives.map((relative, index) => (
+                        <TableRow
+                          key={`${relative.relativeMemberId}-${index}`}
+                          className="hover:bg-neutral-50"
+                        >
+                          <TableCell className="px-4 py-4 font-medium">
+                            <div className="flex items-center gap-2">
+                              {relative.autoPopulated && (
+                                <Info className="h-4 w-4 text-amber-600" aria-label="Auto populated" />
+                              )}
+                              {relative.relativeMemberId}
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {relative.relationshipToDeceased}
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {relative.autoPopulated ? "Auto" : "Manual"}
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
+                            {!relative.autoPopulated && isFormEditable && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleRemoveRelative(index)}
+                              >
+                                Remove
+                              </Button>
                             )}
-                            {relative.relativeMemberId}
-                          </div>
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {relative.relationshipToDeceased}
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {relative.autoPopulated ? "Auto" : "Manual"}
-                        </td>
-                        <td className="border-b px-4 py-2">
-                          {!relative.autoPopulated && isFormEditable && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleRemoveRelative(index)}
-                            >
-                              Remove
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
 
@@ -1509,7 +1526,7 @@ export default function DeathDonationRequestPage() {
                   type="button"
                   onClick={handleRefreshDonation}
                   disabled={isRefreshingDonation}
-                  className="mt-4 bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-4 bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isRefreshingDonation ? "Recalculating..." : "Recalculate"}
                 </Button>
@@ -1577,7 +1594,7 @@ export default function DeathDonationRequestPage() {
                           className={`rounded-md px-3 py-1 text-sm text-white ${
                             uploadingDocumentType === docType.type
                               ? "cursor-not-allowed bg-[#953002]/60"
-                              : "cursor-pointer bg-[#953002] hover:bg-[#7a2702]"
+                              : "cursor-pointer bg-[#953002] hover:bg-[#7a2700]"
                           }`}
                         >
                           {uploadingDocumentType === docType.type ? "Uploading..." : "Add"}

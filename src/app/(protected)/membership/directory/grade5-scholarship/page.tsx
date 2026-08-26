@@ -939,7 +939,7 @@ export default function Grade5ScholarshipPage() {
                     onClick={handleSendToFinance}
                     disabled={isSendingToFinance}
                     title="Send this approved scholarship to the Finance Module for disbursement"
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
                     {isSendingToFinance ? "Sending..." : "Send to Finance"}
                   </Button>
@@ -1008,7 +1008,7 @@ export default function Grade5ScholarshipPage() {
                           ? "An incomplete request cannot be submitted as it stands. Edit it to supply the missing details."
                           : undefined
                       }
-                      className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                      className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed"
                     >
                       Submit
                     </Button>
@@ -1417,7 +1417,7 @@ export default function Grade5ScholarshipPage() {
               <Button
                 onClick={handleConfirmSubmit}
                 disabled={submittingRequest}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 {submittingRequest ? "Submitting..." : "Submit"}
               </Button>
@@ -1449,7 +1449,7 @@ export default function Grade5ScholarshipPage() {
               <Button
                 type="button"
                 onClick={confirmChangeStatus}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 OK
               </Button>

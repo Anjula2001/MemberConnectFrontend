@@ -10,11 +10,28 @@ import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
 import ProgressTimeline from "@/src/components/membership/ProgressTimeline";
 import RemittanceSavingsTab from "@/src/components/membership/RemittanceSavingsTab";
 import { Badge } from "@/src/components/ui/badge";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/src/components/ui/table";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Separator } from "@/src/components/ui/separator";
 
 import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from "@/lib/api/member";
+import { authFetch } from "@/lib/api/authFetch";
 import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
+import {
+	AD_HOC_DISPLAY_NAME,
+	AD_HOC_DOCUMENT_TYPE,
+	downloadAdHocDocument,
+	getAdHocDocuments,
+	type AdHocDocumentDTO,
+} from "@/lib/api/adHocDocuments";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -31,7 +48,6 @@ const detailTabs = [
 	"Profile Details",
 	"Documents",
 	"Remittance & Savings",
-	"Loans",
 	"Scholarships",
 	"Progress",
 ];
@@ -78,7 +94,7 @@ function Field({ label, value }: { label: string; value: string | undefined | nu
 }
 
 function SectionTitle({ title }: { title: string }) {
-	return <p className="text-sm font-semibold text-[#b2410f]">{title}</p>;
+	return <p className="text-sm font-semibold text-[#953002]">{title}</p>;
 }
 
 export default function MemberProfilePage({
@@ -90,6 +106,12 @@ export default function MemberProfilePage({
 	const [memberIdParam, setMemberIdParam] = useState<string | null>(null);
 	const [profile, setProfile] = useState<MemberDTO | null>(null);
 	const [documents, setDocuments] = useState<UploadDocumentResponseDTO[]>([]);
+	/*
+	 * MMD09's ad-hoc documents, kept separate from `documents` because they are keyed by
+	 * member rather than by application - see lib/api/adHocDocuments.ts. Merging them
+	 * into one list would mean giving them a fake applicationId.
+	 */
+	const [adHocDocuments, setAdHocDocuments] = useState<AdHocDocumentDTO[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [activeTab, setActiveTab] = useState("Profile Details");
 	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
@@ -142,7 +164,6 @@ export default function MemberProfilePage({
 		}
 	};
 
-	const [loansData, setLoansData] = useState<{ loans: any[]; obligations: any[] } | null>(null);
 	const [scholarships, setScholarships] = useState<any[]>([]);
 
 	// Filter out orphaned old local files ("uploads/...") for ALL documents
@@ -151,9 +172,39 @@ export default function MemberProfilePage({
 	// displayDocuments is used for the "Documents" tab. We want ALL valid documents to show up as folders.
 	const displayDocuments = validDocuments;
 	const uniqueDocTypes = Array.from(new Set(displayDocuments.map(d => d.documentType)));
+
+	/*
+	 * MMD09: the Ad-hoc Documents type "will be always displayed on top of the 'Document
+	 * Types' section, if the Member has an ad-hoc document uploaded. The date displayed
+	 * will be the date of the first document uploaded to the Ad-hoc Document type."
+	 *
+	 * The API returns oldest first, so the head of the list is that first upload - no
+	 * separate min() and no chance of the two disagreeing.
+	 */
+	const hasAdHocDocuments = adHocDocuments.length > 0;
+	const firstAdHocUploadDate = hasAdHocDocuments ? adHocDocuments[0].uploadedAt : null;
 	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
 	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
 	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	/** MMD09: clicking a file downloads it. Goes through the authenticated client,
+	 *  since a bare href would reach the endpoint without the JWT. */
+	const handleAdHocDownload = async (doc: AdHocDocumentDTO) => {
+		if (!profile?.memberId) return;
+		try {
+			const blob = await downloadAdHocDocument(profile.memberId, doc.id);
+			const url = URL.createObjectURL(blob);
+			const link = window.document.createElement("a");
+			link.href = url;
+			link.download = doc.fileName;
+			window.document.body.appendChild(link);
+			link.click();
+			link.remove();
+			URL.revokeObjectURL(url);
+		} catch {
+			// The tab stays usable if one file cannot be fetched; the row remains listed.
+		}
+	};
 
 	// MMT12 needs both: the member must be Active, and the user must hold the right to
 	// raise a retirement request in the first place.
@@ -410,22 +461,6 @@ export default function MemberProfilePage({
 						})
 						.catch(e => console.error("Error loading member transfer status", e));
 
-					// Load Loans and Obligations
-					fetch(`http://localhost:8080/api/members/${data.memberId}/loans`)
-						.then(res => {
-							if (!res.ok) return null;
-							return res.text().then(text => {
-								try {
-									return text ? JSON.parse(text) : null;
-								} catch (e) {
-									return null;
-								}
-							});
-						})
-						.then(loansVal => {
-							if (loansVal) setLoansData(loansVal);
-						})
-						.catch(e => console.error("Error loading loans", e));
 				}
 			} catch (err) {
 				console.error("Failed to fetch member", err);
@@ -483,7 +518,7 @@ export default function MemberProfilePage({
 	if (loading) {
 		return (
 			<div className="flex h-[50vh] items-center justify-center">
-				<Loader2 className="h-8 w-8 animate-spin text-[#9d3602]" />
+				<Loader2 className="h-8 w-8 animate-spin text-[#953002]" />
 			</div>
 		);
 	}
@@ -497,7 +532,7 @@ export default function MemberProfilePage({
 			<div className="flex items-center">
 				<Link
 					href="/membership/directory"
-					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
 				>
 					<ArrowLeft className="h-4 w-4" />
 					Back to List
@@ -516,7 +551,13 @@ export default function MemberProfilePage({
 							)}
 						</div>
 						<div>
-							<h1 className="text-2xl font-semibold text-[#9d3602]">{profile.fullName || profile.nameWithInitials}</h1>
+							<div className="flex flex-wrap items-center gap-2">
+								<h1 className="text-2xl font-semibold text-[#953002]">{profile.fullName || profile.nameWithInitials}</h1>
+								{/* MR14 lists Status among the profile fields. It already decided which
+								    Actions were offered; showing it means a greyed-out action now has a
+								    visible reason instead of looking broken. */}
+								<StatusBadge status={profile.status} vocabulary="member" />
+							</div>
 							<p className="text-xs text-neutral-500">
 								{profile.memberId} <span className="mx-2">•</span> {profile.designation || "—"}
 							</p>
@@ -535,41 +576,46 @@ export default function MemberProfilePage({
 									<p className="text-2xl font-semibold text-neutral-800">Profile Requests</p>
 								</div>
 
-								<div className="border-b border-neutral-300 px-5 py-2 space-y-1">
-									{/* MMC01/05/14/18 put raising a profile change at District Office, so a
-									    role that cannot raise one is not offered the group at all. */}
-									{(canRaiseProfileChange ? actionGroups.profileRequests : []).map((item) => {
-										const disabledReason = actionDisabledReason(item);
-										const isDisabled = disabledReason !== null;
-										const note = actionNote(item);
+								{/* The five profile change types collapse into one entry, the same
+								    shape Scholarship uses. Listed flat they filled most of the menu
+								    and pushed Retirement, Death Donation and Termination out of view. */}
+								{canRaiseProfileChange && (
+									<div className="border-b border-neutral-300 px-5 py-2">
+										<details className="group">
+											<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
+												<span>Profile Changes</span>
+												<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+											</summary>
+											<div className="mt-1 space-y-1 pl-3">
+												{actionGroups.profileRequests.map((item) => {
+													const disabledReason = actionDisabledReason(item);
+													const isDisabled = disabledReason !== null;
 
-										return (
-											<button
-												key={item}
-												type="button"
-												onClick={() => handleActionClick(item)}
-												disabled={isDisabled}
-												title={disabledReason ?? undefined}
-												className={
-													isDisabled
-														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
-														: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
-												}
-											>
-												{item}
-												{note && (
-													<span className="mt-0.5 block text-xs font-normal whitespace-normal text-amber-600">
-														{note}
-													</span>
-												)}
-											</button>
-										);
-									})}
-								</div>
+													return (
+														<button
+															key={item}
+															type="button"
+															onClick={() => handleActionClick(item)}
+															disabled={isDisabled}
+															title={disabledReason ?? undefined}
+															className={
+																isDisabled
+																	? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
+																	: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
+															}
+														>
+															{item}
+														</button>
+													);
+												})}
+											</div>
+										</details>
+									</div>
+								)}
 
 								<div className="border-b border-neutral-300 px-5 py-2">
 									<details className="group">
-										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602] [&::-webkit-details-marker]:hidden">
+										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
 											<span>Scholarship</span>
 											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
 										</summary>
@@ -588,7 +634,7 @@ export default function MemberProfilePage({
 														className={
 															isDisabled
 																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
-																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
 														}
 													>
 														{item}
@@ -625,7 +671,7 @@ export default function MemberProfilePage({
 														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
 														: item === "Member Termination"
 															? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
 												}
 											>
 												{item}
@@ -635,9 +681,7 @@ export default function MemberProfilePage({
 								</div>
 							</div>
 						</details>
-						<Badge className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${profile.status === 'ACTIVE' ? 'bg-green-600 hover:bg-green-600' : profile.status === 'INACTIVE' ? 'bg-gray-500 hover:bg-gray-500' : 'bg-red-600 hover:bg-red-600'}`}>
-							{profile.status}
-						</Badge>
+						<StatusBadge status={profile.status} vocabulary="member" />
 						{canTestActivate && profile.status === "INACTIVE" && (
 							<button
 								type="button"
@@ -654,7 +698,6 @@ export default function MemberProfilePage({
 
 				<div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2">
 					{detailTabs.map((tab) => {
-						const hasActiveLoan = loansData?.loans?.some((loan: any) => loan.balance > 0);
 						return (
 							<button
 								key={tab}
@@ -667,11 +710,6 @@ export default function MemberProfilePage({
 								}
 							>
 								<span>{tab}</span>
-								{tab === "Loans" && hasActiveLoan && (
-									<span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 border border-red-200 leading-none">
-										Outstanding
-									</span>
-								)}
 								{tab === "Scholarships" && scholarships.length > 0 && (
 									<span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200 leading-none">
 										Active
@@ -687,7 +725,7 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-5 p-4">
 								<div>
-									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
 										Member Information
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Personal and official details</p>
@@ -720,6 +758,7 @@ export default function MemberProfilePage({
 								<SectionTitle title="Employment Details" />
 								<div className="grid gap-4 md:grid-cols-4">
 									<Field label="Designation" value={profile.designation} />
+									<Field label="Nature of Occupation" value={profile.natureOfOccupation} />
 									<Field label="Working Location Type" value={profile.workingLocationType} />
 									<Field label="Working Location" value={profile.workingLocation} />
 									<Field label="District" value={profile.educationalDistrict} />
@@ -727,6 +766,9 @@ export default function MemberProfilePage({
 									<Field label="Salary Paying Office" value={profile.salaryPayingOffice} />
 									<Field label="Name in Payroll" value={profile.nameAsInPayroll} />
 									<Field label="Computer No. in Payslip" value={profile.computerNoInPayslip} />
+									<div className="md:col-span-4">
+										<Field label="Working Location Address" value={profile.workingLocationAddress} />
+									</div>
 								</div>
 
 								<Separator />
@@ -768,19 +810,46 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-5 p-4">
 								<div>
-									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
 										Uploaded Documents
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
 								</div>
 
-								{displayDocuments.length === 0 ? (
+								{displayDocuments.length === 0 && !hasAdHocDocuments ? (
 									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
 										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
 										<p>No documents found for this member.</p>
 									</div>
 								) : !selectedDocType ? (
 									<div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+										{/* MMD09 pins Ad-hoc Documents above every other type, dated by
+										    the first document ever filed under it. */}
+										{hasAdHocDocuments && (
+											<button
+												type="button"
+												onClick={() => setSelectedDocType(AD_HOC_DOCUMENT_TYPE)}
+												className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-[#953002]/30 bg-[#fff9f6] p-6 transition-all hover:border-[#953002]/50 hover:shadow-sm"
+											>
+												<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
+													<Folder className="h-6 w-6" />
+												</div>
+												<div className="text-center">
+													<p className="text-sm font-semibold text-neutral-700">
+														{AD_HOC_DISPLAY_NAME}
+													</p>
+													<p className="mt-1 text-xs text-neutral-500">
+														{adHocDocuments.length} Files
+													</p>
+													<p className="mt-0.5 text-[10px] text-neutral-400">
+														Since{" "}
+														{firstAdHocUploadDate
+															? new Date(firstAdHocUploadDate).toLocaleDateString()
+															: "—"}
+													</p>
+												</div>
+											</button>
+										)}
 										{uniqueDocTypes.map((type) => {
 											const count = displayDocuments.filter((d) => d.documentType === type).length;
 											return (
@@ -788,9 +857,9 @@ export default function MemberProfilePage({
 													key={type}
 													type="button"
 													onClick={() => setSelectedDocType(type)}
-													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#b2410f]/30 hover:shadow-sm"
+													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#953002]/30 hover:shadow-sm"
 												>
-													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#b2410f]/10 text-[#b2410f]">
+													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
 														<Folder className="h-6 w-6" />
 													</div>
 													<div className="text-center">
@@ -808,17 +877,66 @@ export default function MemberProfilePage({
 										<button
 											type="button"
 											onClick={() => setSelectedDocType(null)}
-											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
 										>
 											<ArrowLeft className="h-4 w-4" />
 											Back to Document Types
 										</button>
 
+										{selectedDocType === AD_HOC_DOCUMENT_TYPE ? (
+											/* Ad-hoc files come from their own endpoint and download through
+											   the authenticated client, so they get their own grid rather
+											   than being forced into the application-document shape. */
+											<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+												{adHocDocuments.map((doc) => (
+													<div
+														key={doc.id}
+														className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm"
+													>
+														<div className="flex items-start justify-between gap-2">
+															<Badge
+																className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+																variant="outline"
+															>
+																{AD_HOC_DISPLAY_NAME}
+															</Badge>
+															<span className="shrink-0 text-xs text-neutral-400">
+																{new Date(doc.uploadedAt).toLocaleDateString()}
+															</span>
+														</div>
+														<div className="flex items-center gap-2">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
+																<FileText className="h-4 w-4" />
+															</div>
+															<div className="flex-1 overflow-hidden">
+																<p
+																	className="truncate text-sm font-medium text-neutral-800"
+																	title={doc.fileName}
+																>
+																	{doc.fileName}
+																</p>
+																<p className="text-[10px] text-neutral-500">
+																	{doc.fileType || "File"}
+																</p>
+															</div>
+														</div>
+														<button
+															type="button"
+															onClick={() => void handleAdHocDownload(doc)}
+															className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-100"
+														>
+															<Download className="h-3 w-3" />
+															Download
+														</button>
+													</div>
+												))}
+											</div>
+										) : (
 										<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 											{displayDocuments
 												.filter((d) => d.documentType === selectedDocType)
 												.map((doc) => (
-													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm">
+													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm">
 														<div className="flex items-start justify-between gap-2">
 															<Badge className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200" variant="outline">
 																{doc.documentType.replace(/_/g, ' ')}
@@ -828,7 +946,7 @@ export default function MemberProfilePage({
 															</span>
 														</div>
 														<div className="flex items-center gap-2">
-															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#b2410f]/10 text-[#b2410f]">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
 																<FileText className="h-4 w-4" />
 															</div>
 															<div className="flex-1 overflow-hidden">
@@ -855,56 +973,9 @@ export default function MemberProfilePage({
 													</div>
 												))}
 										</div>
+										)}
 									</div>
 								)}
-							</CardContent>
-						</Card>
-					)}
-
-					{activeTab === "Loans" && (
-						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
-							<CardContent className="space-y-6 p-4">
-								<div>
-									<h2 className="text-xl font-semibold leading-none text-[#9d3602]">
-										Loan Records
-									</h2>
-									<p className="mt-1 text-xs text-neutral-500">Member outstanding loans</p>
-								</div>
-
-								{/* Loans Section */}
-								<div className="space-y-3">
-									<p className="text-sm font-semibold text-[#b2410f]">Active Outstanding Loans</p>
-									<div className="overflow-hidden rounded-lg border border-neutral-200">
-										<table className="w-full text-left text-xs">
-											<thead className="bg-neutral-50 text-neutral-700">
-												<tr className="border-b border-neutral-200">
-													<th className="px-4 py-3 font-semibold">Loan ID</th>
-													<th className="px-4 py-3 font-semibold text-right">Outstanding Balance (LKR)</th>
-												</tr>
-											</thead>
-											<tbody className="divide-y divide-neutral-200">
-												{loansData?.loans && loansData.loans.length > 0 ? (
-													loansData.loans.map((loan: any) => (
-														<tr key={loan.id} className="hover:bg-neutral-50/50">
-															<td className="px-4 py-3 font-medium text-neutral-800">
-																{loan.id}
-															</td>
-															<td className="px-4 py-3 text-right font-medium text-red-600">
-																{loan.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-															</td>
-														</tr>
-													))
-												) : (
-													<tr>
-														<td colSpan={2} className="px-4 py-6 text-center text-neutral-500">
-															No active outstanding loans found.
-														</td>
-													</tr>
-												)}
-											</tbody>
-										</table>
-									</div>
-								</div>
 							</CardContent>
 						</Card>
 					)}
@@ -913,7 +984,7 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-6 p-4">
 								<div>
-									<h2 className="text-xl font-semibold leading-none text-[#9d3602]">
+									<h2 className="text-xl font-semibold leading-none text-[#953002]">
 										Scholarship Details
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
@@ -932,7 +1003,7 @@ export default function MemberProfilePage({
 														<button
 															type="button"
 															onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
-															className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+															className="text-sm font-medium text-[#953002] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
 														>
 															{scholarship.requestNo}
 														</button>
@@ -983,7 +1054,7 @@ export default function MemberProfilePage({
 						<ProgressTimeline memberId={profile.id} />
 					)}
 
-					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Loans" && activeTab !== "Scholarships" && activeTab !== "Progress" && activeTab !== "Remittance & Savings" && (
+					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Scholarships" && activeTab !== "Progress" && activeTab !== "Remittance & Savings" && (
 						<div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
 							<p>This tab is currently under construction.</p>
 						</div>

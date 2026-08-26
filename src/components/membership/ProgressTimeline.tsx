@@ -12,10 +12,18 @@ import { getApplicationHistory, getMemberHistory, type AuditDTO } from "@/lib/ap
  */
 const MODULE_TAGS: Record<string, string> = {
   MEMBER_APPLICATION: 'application',
+  MEMBER: 'membership',
   PROFILE_CHANGE_BASIC: 'basic profile change',
   PROFILE_CHANGE_NAME: 'name change',
   PROFILE_CHANGE_NOMINEE: 'nominee change',
   PROFILE_CHANGE_REMITTANCE: 'remittance change',
+  // Transfers were already reaching the timeline untagged; the rest only started
+  // appearing once getMemberHistory stopped filtering them out.
+  PROFILE_CHANGE_TRANSFER: 'member transfer',
+  MEMBER_TERMINATION: 'termination',
+  MEMBER_DEATH: 'member death',
+  DEATH_DONATION: 'death donation',
+  DORMANT_MEMBERSHIP: 'dormant membership',
 };
 
 export default function ProgressTimeline({
@@ -92,7 +100,7 @@ export default function ProgressTimeline({
 
           return (
             <li key={e.id} className="mb-5 last:mb-0">
-              <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-[#9e3600]" />
+              <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-[#953002]" />
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-semibold text-neutral-800">{e.actionName}</p>
                 <p className="text-xs text-neutral-500">{when}</p>

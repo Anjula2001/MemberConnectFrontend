@@ -50,7 +50,7 @@ export default function DormantApprovalListPrintPage() {
   if (user && !canPrint) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-8 w-8 text-[#8B4513]" />
+        <ShieldAlert className="h-8 w-8 text-[#953002]" />
         <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
         <p className="max-w-md text-sm text-muted-foreground">
           This report is restricted to Head Office and Board Secretariat personnel.
@@ -80,7 +80,7 @@ export default function DormantApprovalListPrintPage() {
       <div className="no-print mb-4 flex justify-end">
         <button
           onClick={() => window.print()}
-          className="rounded bg-[#8B4513] px-4 py-2 text-sm text-white"
+          className="rounded bg-[#953002] px-4 py-2 text-sm text-white"
         >
           Print
         </button>

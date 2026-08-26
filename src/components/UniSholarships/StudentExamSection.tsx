@@ -5,6 +5,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { universityScholarshipSchema } from "@/lib/validators/universityscholarship.schema";
 import { Button } from "../ui/button";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { Input } from "../ui/input";
 import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
@@ -1459,32 +1468,6 @@ export default function StudentExamSection() {
   const formatDate = (date?: string | null) =>
     date ? new Date(date).toLocaleDateString() : "-";
 
-  const getStatusColor = (value?: string | null) => {
-    if (!value) return "bg-yellow-100 border-yellow-200 text-yellow-500";
-
-    const statusLower = value.toLowerCase().replace(/[\s_]+/g, "");
-
-    if (statusLower === "new") {
-      return "bg-blue-100 border-blue-200 text-blue-500";
-    } else if (statusLower === "incomplete") {
-      return "bg-pink-100 border-pink-200 text-pink-500";
-    } else if (statusLower === "approved") {
-      return "bg-green-100 border-green-200 text-green-500";
-    } else if (statusLower === "rejected") {
-      return "bg-red-100 border-red-200 text-red-500";
-    } else if (statusLower === "submittedforcommitteeapproval") {
-      return "bg-purple-100 border-purple-200 text-purple-500";
-    } else if (statusLower === "submittedfornormalboardapproval" || statusLower === "submittedfordeviationboardapproval") {
-      return "bg-amber-100 border-amber-200 text-amber-600";
-    } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
-      return "bg-emerald-100 border-emerald-200 text-emerald-600";
-    } else if (statusLower === "inactive") {
-      return "bg-gray-100 border-gray-200 text-gray-500";
-    }
-
-    return "bg-yellow-100 border-yellow-200 text-yellow-500";
-  };
-
   const formatStatusLabel = (value?: string | null) => {
     if (!value) return "-";
 
@@ -1661,7 +1644,7 @@ export default function StudentExamSection() {
             {isApprovedDetailsEditMode && (
               <Button
                 type="button"
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleUpdateApprovedDetails}
                 disabled={!hasApprovedDetailChanges}
               >
@@ -1692,7 +1675,7 @@ export default function StudentExamSection() {
                 <Button
                   type="submit"
                   disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
-                  className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
                 >
                   {isSubmitting ? "Submitting..." : "Submit"}
                 </Button>
@@ -2180,7 +2163,7 @@ export default function StudentExamSection() {
                             href={previewUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                            className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2700]"
                           >
                             Preview
                           </a>
@@ -2245,7 +2228,7 @@ export default function StudentExamSection() {
 
                 <Button
                   type="button"
-                  className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                   onClick={handleNewFundRequest}
                   disabled={!canAddFundRequest}
                 >
@@ -2254,52 +2237,66 @@ export default function StudentExamSection() {
               </div>
 
               <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Fund Request ID</th>
-                      <th className="px-4 py-3 font-medium">Requested Date</th>
-                      <th className="px-4 py-3 font-medium">Requested Period</th>
-                      <th className="px-4 py-3 font-medium">Requested Amount</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                      {[
+                        "Fund Request ID",
+                        "Requested Date",
+                        "Requested Period",
+                        "Requested Amount",
+                        "Status",
+                      ].map((h) => (
+                        <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                          {h}
+                        </TableHead>
+                      ))}
+                      <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {fundRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-10 text-center text-neutral-500">
                           No fund requests have been created for this scholarship.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : (
                       fundRequests.map((fundRequest) => (
-                        <tr key={fundRequest.requestId || fundRequest.id} className="border-t text-gray-600">
-                          <td className="px-4 py-3 font-medium text-gray-800">
+                        <TableRow
+                          key={fundRequest.requestId || fundRequest.id}
+                          className="hover:bg-neutral-50"
+                        >
+                          <TableCell className="px-4 py-4 font-medium">
                             {fundRequest.requestId || fundRequest.id}
-                          </td>
-                          <td className="px-4 py-3">{formatDate(fundRequest.requestedDate)}</td>
-                          <td className="px-4 py-3">{fundRequest.requestedPeriod || "-"}</td>
-                          <td className="px-4 py-3">{formatCurrency(fundRequest.requestedAmount)}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(fundRequest.status)}`}>
-                              {formatStatusLabel(fundRequest.status)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                            {formatDate(fundRequest.requestedDate)}
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {fundRequest.requestedPeriod || "-"}
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
+                            {formatCurrency(fundRequest.requestedAmount)}
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
+                            <StatusBadge status={fundRequest.status} vocabulary="scholarship" />
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-right">
                             <Button
                               type="button"
                               variant="outline"
+                              size="sm"
                               onClick={() => handleOpenFundRequest(fundRequest)}
                             >
                               Open
                             </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </section>
           </TabsContent>
@@ -2367,7 +2364,7 @@ export default function StudentExamSection() {
                 <Button
                   type="button"
                   onClick={() => setShowExamNoPopup(false)}
-                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
                 >
                   OK
                 </Button>
@@ -2427,7 +2424,7 @@ export default function StudentExamSection() {
                 type="button"
                 onClick={executeStatusChange}
                 disabled={!statusChangeTarget || isChangingStatus}
-                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
               >
                 {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
@@ -2470,7 +2467,7 @@ export default function StudentExamSection() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
                   onClick={executeSubmit}
                   disabled={isSubmitting}
                 >
@@ -2580,49 +2577,57 @@ export default function StudentExamSection() {
             </div>
 
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-600">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Request ID</th>
-                    <th className="px-4 py-3 font-medium">Student Name</th>
-                    <th className="px-4 py-3 font-medium">University</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="border-collapse">
+                <TableHeader>
+                  <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                    {["Request ID", "Student Name", "University", "Status"].map((h) => (
+                      <TableHead key={h} className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                        {h}
+                      </TableHead>
+                    ))}
+                    <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {memberScholarships.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-10 text-center text-neutral-500">
                         No university scholarships found.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     memberScholarships.map((scholarship) => (
-                      <tr key={scholarship.requestId || scholarship.id} className="border-t">
-                        <td className="px-4 py-3 font-medium">{scholarship.requestId || "-"}</td>
-                        <td className="px-4 py-3">{scholarship.studentName || "-"}</td>
-                        <td className="px-4 py-3">{scholarship.universityName || "-"}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(scholarship.status)}`}>
-                            {formatStatusLabel(scholarship.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
+                      <TableRow
+                        key={scholarship.requestId || scholarship.id}
+                        className="hover:bg-neutral-50"
+                      >
+                        <TableCell className="px-4 py-4 font-medium">
+                          {scholarship.requestId || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">
+                          {scholarship.studentName || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">
+                          {scholarship.universityName || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-4">
+                          <StatusBadge status={scholarship.status} vocabulary="scholarship" />
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-right">
                           <button
                             type="button"
-                            className="text-[#953002] transition-colors hover:text-[#c44515]"
+                            className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                             onClick={() => handleOpenScholarshipFromHistory(scholarship)}
                             aria-label="View scholarship"
                           >
-                            <Eye size={18} />
+                            <Eye size={16} />
                           </button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         </div>

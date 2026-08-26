@@ -7,9 +7,14 @@ import { Button } from "@/src/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Input } from "@/src/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/src/components/ui/table";
+import {
+  TablePagination,
+  clampPage,
+  pageSlice,
+} from "@/src/components/ui/table-pagination";
 import { Badge } from "@/src/components/ui/badge";
 import { Checkbox } from "@/src/components/ui/checkbox";
-import { AlertTriangle, CircleDollarSign, Pencil, ChevronDown, ShieldAlert, X, } from "lucide-react";
+import { AlertTriangle, CircleDollarSign, Lock, Pencil, ChevronDown, ShieldAlert, X, } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { SRI_LANKAN_DISTRICTS } from "@/lib/districts";
 import { useAuth } from "@/lib/auth-context";
@@ -98,17 +103,32 @@ type TerminationRequestApiResponse =
   };
 
 type RequestType = "termination" | "retirement" | "member_deaths" | "all";
-type StatusType = | "new" | "submitted_for_approval" | "added_to_approval_list" | "approved" | "rejected" | "incomplete"
-  | "pending_review" | "approved_by_board" | "disbursement_initiated" | "disbursement_completed"
-  | "awaiting_nominee_confirmation" | "on_hold" | "district-committee" | "pnd-committee" | "inactive";
+/*
+ * The union of TerminationRequestStatus, RetirementRequestStatus and
+ * MemberDeathRecordStatus - nothing else.
+ *
+ * Six members used to live here that exist in no backend enum and in no part of
+ * Requirement 03: Pending Review, Approved by Board, Awaiting Nominee Confirmation,
+ * Disbursement Initiated, Disbursement Completed and On Hold. They were offered in the
+ * "All" filter, and because the search compares status names as plain strings they
+ * raised no error - they simply returned nothing, every time.
+ */
+type StatusType =
+  | "new"
+  | "incomplete"
+  | "submitted_for_approval"
+  | "added_to_approval_list"
+  | "district-committee"
+  | "pnd-committee"
+  | "approved"
+  | "rejected"
+  | "inactive";
 
 type DateFilterType = "all_days" | "this_month" | "this_and_last_month" | "date_period";
 type SortBy = "requestedDate" | "status" | "memberId";
 type SortOrder = "asc" | "desc";
 
 const TODAY = new Date().toISOString().split("T")[0];
-
-
 const filterSchema = z
   .object({
     dateFilter: z.string(),
@@ -158,17 +178,49 @@ const filterSchema = z
       });
     }
   });
-  
-const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval",];
-const DEFAULT_TERMINATION_STATUSES: StatusType[] = ["submitted_for_approval", "rejected", "added_to_approval_list",];
 
-// Committee statuses will be selected." Those are the four that still need somebody to act on them.
+// MMT13: "By default, New and Submitted for Approval statuses will be selected."
+const DEFAULT_RETIREMENT_STATUSES: StatusType[] = ["new", "submitted_for_approval"];
+// MMT02: "By default, New, Submitted for Approval, and Added to Termination Approval
+// List statuses will be selected." origin/dev still listed Rejected in place of New,
+// which hid every freshly raised termination request until the user widened the filter.
+const DEFAULT_TERMINATION_STATUSES: StatusType[] = [
+  "new",
+  "submitted_for_approval",
+  "added_to_approval_list",
+];
+// MMT19: "By default, New, Submitted for Approval, District Committee and P&D
+// Committee statuses will be selected." Those are the four that still need
+// somebody to act on them.
 const DEFAULT_MEMBER_DEATH_STATUSES: StatusType[] = [
   "new",
   "submitted_for_approval",
   "district-committee",
   "pnd-committee",
 ];
+/**
+ * The statuses selected by default for a given Type (MMT02 / MMT13 / MMT19).
+ *
+ * Both the initial state and handleRequestTypeChange go through this. They used to
+ * decide independently and disagreed: the screen opened on Type "All" while seeding
+ * retirement's defaults, so on first load a termination sitting at "Added to Termination
+ * Approval List" was hidden - exactly the rows MMT05 asks a Head Office user to select.
+ *
+ * "All" seeds nothing, which the search reads as no status filter at all.
+ */
+function defaultStatusesFor(type: RequestType): StatusType[] {
+  switch (type) {
+    case "termination":
+      return DEFAULT_TERMINATION_STATUSES;
+    case "retirement":
+      return DEFAULT_RETIREMENT_STATUSES;
+    case "member_deaths":
+      return DEFAULT_MEMBER_DEATH_STATUSES;
+    case "all":
+      return [];
+  }
+}
+
 const TERMINATION_STATUS_LABELS: Record<string, string> = {
   NEW: "New",
   SUBMITTED_FOR_APPROVAL: "Submitted for Approval",
@@ -187,6 +239,11 @@ const NON_EDITABLE_STATUSES: TerminationRequest["status"][] = ["SUBMITTED_FOR_AP
 const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: string }[]> = {
   termination: [
     { value: "new", label: "New" },
+    // MMT02's list omits Incomplete, but MMT01 defines the Incomplete button, MMT04's
+    // transition table has an Incomplete row, and TerminationRequestStatus carries the
+    // value - so without this entry a request marked Incomplete could not be retrieved
+    // by any filter combination. Retirement and Member Death both list it.
+    { value: "incomplete", label: "Incomplete" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
     { value: "added_to_approval_list", label: "Added to Termination Approval List" },
     { value: "approved", label: "Approved" },
@@ -211,19 +268,20 @@ const STATUS_OPTIONS_BY_TYPE: Record<RequestType, { value: StatusType; label: st
     { value: "approved", label: "Approved" },
     { value: "inactive", label: "Inactive" },
   ],
+  // "All" is not one of MMT02's three Type values; it is ours, so its status list is
+  // simply the union of the three real ones. A status only one type can hold is still
+  // offered here - it just narrows the result to that type, which is what a user
+  // picking "Added to Termination Approval List" under All is asking for.
   all: [
     { value: "new", label: "New" },
+    { value: "incomplete", label: "Incomplete" },
     { value: "submitted_for_approval", label: "Submitted for Approval" },
     { value: "added_to_approval_list", label: "Added to Termination Approval List" },
+    { value: "district-committee", label: "District Committee" },
+    { value: "pnd-committee", label: "P&D Committee" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
-    { value: "incomplete", label: "Incomplete" },
-    { value: "pending_review", label: "Pending Review" },
-    { value: "approved_by_board", label: "Approved by Board" },
-    { value: "awaiting_nominee_confirmation", label: "Awaiting Nominee Confirmation" },
-    { value: "disbursement_initiated", label: "Disbursement Initiated" },
-    { value: "disbursement_completed", label: "Disbursement Completed" },
-    { value: "on_hold", label: "On Hold" },
+    { value: "inactive", label: "Inactive" },
   ],
 };
 
@@ -272,7 +330,7 @@ function StatusMultiSelect({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002]"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -366,9 +424,9 @@ function LocationMultiSelect({
         disabled={disabled}
         title={disabled ? "You can only view your own district's requests." : undefined}
         className={cn(
-          "w-full px-3 py-2 text-left border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] focus:border-transparent flex items-center justify-between",
+          "flex h-9 w-full items-center justify-between rounded-md border border-gray-300 px-3 text-left shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002]",
           disabled
-            ? "bg-gray-100 text-gray-600 cursor-not-allowed"
+            ? "cursor-not-allowed bg-gray-100 text-gray-600"
             : "bg-white hover:bg-gray-50"
         )}
       >
@@ -465,16 +523,28 @@ export default function TerminationPage() {
 
 
   const isMemberDeathOnlyUser = hasRole(user?.role, MEMBER_DEATH_ONLY_ROLES);
+
+  /*
+   * MMT02 / MMT13 / MMT19: "If the logged in user has only access to the current
+   * district location, this field will be un-editable and the current location will be
+   * auto selected. By default, for District Locations the current location will be
+   * selected and for Head Office, 'All' will be selected."
+   *
+   * The server already pins a District Office caller to their own district
+   * (resolveVisibleLocations, in all three services), so this is not what keeps the data
+   * separate - it is what stops the screen lying about it. Before this, the filter said
+   * "All Locations" and let a district user pick any other district, then returned their
+   * own district's rows with nothing to explain why.
+   */
   const canViewTerminationsAndRetirements = hasRole(user?.role, TERMINATION_VIEW_ROLES);
   const canViewMemberDeaths = hasRole(user?.role, MEMBER_DEATH_VIEW_ROLES);
   const canEditMemberDeaths = hasRole(user?.role, MEMBER_DEATH_ENTRY_ROLES);
 
   //Fiter state value
-  const [requestType, setRequestType] = useState<RequestType>(
-    isMemberDeathOnlyUser ? "member_deaths" : "all"
-  );
-  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(
-    isMemberDeathOnlyUser ? DEFAULT_MEMBER_DEATH_STATUSES : DEFAULT_RETIREMENT_STATUSES
+  const initialRequestType: RequestType = isMemberDeathOnlyUser ? "member_deaths" : "all";
+  const [requestType, setRequestType] = useState<RequestType>(initialRequestType);
+  const [selectedStatuses, setSelectedStatuses] = useState<StatusType[]>(() =>
+    defaultStatusesFor(initialRequestType)
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -489,6 +559,7 @@ export default function TerminationPage() {
   const [sortBy, setSortBy] = useState<SortBy>("requestedDate");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [requests, setRequests] = useState<TerminationRequest[]>([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState("");
@@ -508,6 +579,23 @@ export default function TerminationPage() {
     requestType === "termination" && hasRole(user?.role, TERMINATION_BOARD_ROLES);
   const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
 
+  /*
+   * Ten rows a page, the same TablePagination the Directory, New Registrations and the
+   * approval lists use.
+   *
+   * Clamped on every render rather than only when the user pages: a fresh Retrieve can
+   * return fewer rows than the page they were on, which would otherwise leave an empty
+   * table on a page that no longer exists.
+   */
+  const safePage = clampPage(page, requests.length);
+  const pagedRequests = pageSlice(requests, safePage);
+
+  /*
+   * Selection deliberately spans the whole result set, not the visible page: MMT05 says
+   * "By selecting the 'select all' check box, the user will select all the retrieved
+   * records as bulk", and paging is a display concern. So the header checkbox reads and
+   * writes every selectable retrieved row, and a selection survives paging away.
+   */
   const selectableRowIds = requests
     .filter(
       (row) =>
@@ -563,15 +651,7 @@ export default function TerminationPage() {
   // Handle request type change - reset selected statuses
   const handleRequestTypeChange = (newType: RequestType) => {
     setRequestType(newType);
-    setSelectedStatuses(
-      newType === "retirement"
-        ? DEFAULT_RETIREMENT_STATUSES
-        : newType === "termination"
-          ? DEFAULT_TERMINATION_STATUSES
-          : newType === "member_deaths"
-            ? DEFAULT_MEMBER_DEATH_STATUSES
-            : []
-    );
+    setSelectedStatuses(defaultStatusesFor(newType));
   };
 
 
@@ -697,7 +777,11 @@ export default function TerminationPage() {
     params.append("sortBy", sortBy);
     params.append("sortOrder", sortOrder);
 
-
+    // "All Locations" means no restriction, so it is not sent. The server overrides it
+    // entirely for District Office users, who are pinned to their assigned district
+    // whatever they ask for - see resolveVisibleLocations in TerminationService,
+    // RetirementService and MemberDeathRecordService. All three enforce it now;
+    // retirement did not accept the parameter at all until this was wired up.
     selectedLocations
       .filter((location) => location !== ALL_LOCATIONS_OPTION.id)
       .forEach((location) => params.append("locations", location));
@@ -762,6 +846,9 @@ export default function TerminationPage() {
     try {
       setLoading(true);
       setError("");
+      // Every retrieve starts at page 1 - success, empty or error alike. Set here rather
+      // than beside setRequests so the early returns on date validation are covered too.
+      setPage(1);
 
       let retrievedRequests: TerminationRequest[];
 
@@ -1006,7 +1093,7 @@ export default function TerminationPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Termination & Retirement Requests</h1>
         {showApprovalListActions && (
           <div className="flex items-center gap-2">
             <Button
@@ -1017,7 +1104,7 @@ export default function TerminationPage() {
               View Approval Lists
             </Button>
             <Button
-              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              className="bg-[#ffb401] hover:bg-[#c99500] text-white"
               disabled={selectedTerminationCount === 0}
               onClick={handleOpenBoardMeetingModal}
             >
@@ -1028,71 +1115,92 @@ export default function TerminationPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <h2 className="text-lg font-semibold text-[#953002] mb-4">
-          Search & Filter
-        </h2>
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h2 className="text-lg font-bold text-[#953002] mb-6">Search Criteria</h2>
 
-
-        <div className="grid grid-cols-4 gap-4">
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Location</label>
-            <LocationMultiSelect
-              selectedLocations={selectedLocations}
-              availableLocations={availableLocations}
-              onLocationChange={setSelectedLocations}
-              disabled={locationRestricted}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Type</label>
-            <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {canViewTerminationsAndRetirements && (
-                  <>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="termination">Termination</SelectItem>
-                    {canViewRetirement && (
-                      <SelectItem value="retirement">Retirement</SelectItem>
-                    )}
-                  </>
+        {/* Same arrangement as the profile changes and directory screens: the four
+            filters on one row (where, what, when, which status), the date pair only
+            when a period is chosen, then search with sort and Retrieve. Previously this
+            was a single flex-wrap row of fixed-width fields, so the fields reflowed into
+            ragged rows at different widths and Retrieve landed wherever the wrap left it. */}
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center justify-between text-xs font-medium text-gray-600">
+                <span>Location</span>
+                {locationRestricted && (
+                  <span className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                    <Lock size={10} /> Locked to Branch
+                  </span>
                 )}
-                {canViewMemberDeaths && (
-                  <SelectItem value="member_deaths">Member Deaths</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+              </label>
+              {locationRestricted ? (
+                <div className="flex h-9 w-full cursor-not-allowed items-center justify-between rounded-md border border-gray-300 bg-neutral-100 px-3 text-sm text-neutral-800">
+                  <span className="font-semibold">{user?.assignedDistrict ?? "—"}</span>
+                  <Lock size={13} className="text-neutral-400" />
+                </div>
+              ) : (
+                <LocationMultiSelect
+                  selectedLocations={selectedLocations}
+                  availableLocations={availableLocations}
+                  onLocationChange={setSelectedLocations}
+                />
+              )}
+            </div>
 
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Request Received On</label>
-            <Select
-              value={dateFilter}
-              onValueChange={(value) => {
-                setDateFilter(value as DateFilterType);
-                setFieldErrors({});
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select date range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all_days">All Days</SelectItem>
-                <SelectItem value="this_month">This Month</SelectItem>
-                <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
-                <SelectItem value="date_period">Date Period</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Request Type</label>
+              <Select value={requestType} onValueChange={(value) => handleRequestTypeChange(value as RequestType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {canViewTerminationsAndRetirements && (
+                    <>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="termination">Termination</SelectItem>
+                      {/* RET_REQUEST_VIEW gate, brought over from origin/dev. */}
+                      {canViewRetirement && (
+                        <SelectItem value="retirement">Retirement</SelectItem>
+                      )}
+                    </>
+                  )}
+                  {canViewMemberDeaths && (
+                    <SelectItem value="member_deaths">Member Deaths</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Request Received On</label>
+              <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilterType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select date range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_days">All Days</SelectItem>
+                  <SelectItem value="this_month">This Month</SelectItem>
+                  <SelectItem value="this_and_last_month">This and Last Month</SelectItem>
+                  <SelectItem value="date_period">Date Period</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Status</label>
+              <StatusMultiSelect
+                selectedStatuses={selectedStatuses}
+                onStatusChange={setSelectedStatuses}
+                statusOptions={currentStatusOptions}
+              />
+            </div>
           </div>
 
           {dateFilter === "date_period" && (
-            <>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">From Date</label>
                 <Input
                   type="date"
                   value={fromDate}
@@ -1113,8 +1221,8 @@ export default function TerminationPage() {
                   <p className="text-sm text-red-500 mt-1">{fieldErrors.fromDate}</p>
                 )}
               </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">To Date</label>
                 <Input
                   type="date"
                   value={toDate}
@@ -1130,60 +1238,56 @@ export default function TerminationPage() {
                   <p className="text-sm text-red-500 mt-1">{fieldErrors.toDate}</p>
                 )}
               </div>
-            </>
+            </div>
           )}
 
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Status</label>
-            <StatusMultiSelect
-              selectedStatuses={selectedStatuses}
-              onStatusChange={setSelectedStatuses}
-              statusOptions={currentStatusOptions}
-            />
+          <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-4">
+            <div className="flex flex-col gap-1 md:col-span-2">
+              <label className="text-xs font-medium text-gray-600">Search Member</label>
+              <Input
+                type="text"
+                placeholder="Name, NIC, ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Sort By</label>
+              <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select sort option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="requestedDate">Requested Date</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="memberId">Member ID</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Sort Order</label>
+              <div className="flex items-center gap-2">
+                <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select order" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="asc">Ascending</SelectItem>
+                    <SelectItem value="desc">Descending</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={handleRetrieve}
+                  className="whitespace-nowrap bg-[#953002] hover:bg-[#7a2700] text-white"
+                >
+                  Retrieve
+                </Button>
+              </div>
+            </div>
           </div>
-
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Search Member</label>
-            <Input
-              type="text"
-              placeholder="Name, NIC, ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select sort option" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="requestedDate">Requested Date</SelectItem>
-                <SelectItem value="status">Status</SelectItem>
-                <SelectItem value="memberId">Member ID</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort Order</label>
-            <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select order" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asc">Ascending</SelectItem>
-                <SelectItem value="desc">Descending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="flex justify-end mt-4">
-          <Button onClick={handleRetrieve} className="bg-[#8B4513] hover:bg-[#A0522D] text-white px-6">Retrieve</Button>
         </div>
       </div>
 
@@ -1230,7 +1334,7 @@ export default function TerminationPage() {
                 </TableCell>
               </TableRow>
             ) : requests.length > 0 ? (
-              requests.map((request) => (
+              pagedRequests.map((request) => (
                 <TableRow className="h-12" key={request.id}>
                   {showApprovalListActions && (
                     <TableCell className="px-4">
@@ -1247,7 +1351,7 @@ export default function TerminationPage() {
                     <button
                       type="button"
                       onClick={() => handleOpenRequest(request)}
-                      className="font-medium text-[#8B4513] hover:underline"
+                      className="font-medium text-[#953002] hover:underline"
                     >
                       {request.requestId}
                     </button>
@@ -1313,10 +1417,14 @@ export default function TerminationPage() {
         </Table>
       </div>
 
-      {requests.length > 0 && (
-        <div className="text-sm text-muted-foreground">
-          Showing {requests.length} request(s)
-        </div>
+      {!loading && requests.length > 0 && (
+        <TablePagination
+          page={safePage}
+          total={requests.length}
+          onPageChange={setPage}
+          // Member Deaths are records, not requests - the SRS is consistent about that.
+          itemLabel={requestType === "member_deaths" ? "record" : "request"}
+        />
       )}
 
       {showBoardMeetingModal && (
@@ -1404,7 +1512,7 @@ export default function TerminationPage() {
               <div className="mt-6 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  className="bg-[#ffb401] text-white hover:bg-[#c99500]"
                   onClick={handleCloseCreationConfirmModal}
                 >
                   No

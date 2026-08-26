@@ -170,28 +170,63 @@ export async function updateMemberApplicationStatus(
   return data;
 }
 
-export interface ApplicationSearchParams {
+/** Filter shared by the paged search and the selectable-ids lookup. */
+export interface ApplicationSearchFilters {
   query?: string;
   statuses?: ApplicationStatus[];
   locations?: string[];
   receivedFrom?: string;
   receivedTo?: string;
+}
+
+export interface ApplicationSearchParams extends ApplicationSearchFilters {
   sortBy?: "applied-date" | "status" | "district" | "zone";
   sortDirection?: "asc" | "desc";
+  /** Zero-based. */
+  page?: number;
+  size?: number;
+}
+
+export interface ApplicationSearchPage {
+  content: MemberApplicationDTO[];
+  /** Zero-based, and not necessarily the page asked for: the server clamps a page
+   *  that has fallen past the end of a shrunken result set. */
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  /** Matching rows in a status the operator may tick, across every page. */
+  selectableCount: number;
+}
+
+/** Repeat keys for arrays (statuses=A&statuses=B) so Spring binds List<T>. */
+const repeatArrayKeys = { indexes: null } as const;
+
+/**
+ * One page of applications, filtered, sorted and sliced by the database.
+ *
+ * The whole result set never reaches the browser — the page footer's totals come
+ * from the envelope rather than from counting rows that were downloaded only to be
+ * hidden. Applications already converted to Members are excluded by the backend.
+ */
+export async function searchMemberApplications(params: ApplicationSearchParams) {
+  const { data } = await apiClient.get<ApplicationSearchPage>(`${BASE_PATH}/search`, {
+    params,
+    paramsSerializer: repeatArrayKeys,
+  });
+  return data;
 }
 
 /**
- * Server-side filtered/sorted search. Replaces fetching every application and
- * filtering in the browser. Applications already converted to Members are excluded
- * by the backend.
+ * Application IDs the select-all checkbox covers, for the given filter.
+ *
+ * Selection spans the whole result rather than the visible page, so this answers
+ * "which rows would select-all tick" without pulling the records behind them.
  */
-export async function searchMemberApplications(params: ApplicationSearchParams) {
-  const { data } = await apiClient.get<MemberApplicationDTO[]>(`${BASE_PATH}/search`, {
+export async function getSelectableApplicationIds(params: ApplicationSearchFilters) {
+  const { data } = await apiClient.get<string[]>(`${BASE_PATH}/search/selectable-ids`, {
     params,
-    paramsSerializer: {
-      // Repeat keys for arrays (statuses=A&statuses=B) so Spring binds List<T>.
-      indexes: null,
-    },
+    paramsSerializer: repeatArrayKeys,
   });
   return data;
 }

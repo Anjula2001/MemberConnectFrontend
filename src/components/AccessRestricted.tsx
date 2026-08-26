@@ -34,7 +34,7 @@ export default function AccessRestricted({
       <p className="mt-2 max-w-md text-sm text-neutral-500">{message}</p>
       <button
         onClick={() => router.push(fallbackHref)}
-        className="mt-6 flex items-center gap-2 rounded-lg bg-[#9e3600] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
+        className="mt-6 flex items-center gap-2 rounded-lg bg-[#953002] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
       >
         {fallbackLabel}
       </button>

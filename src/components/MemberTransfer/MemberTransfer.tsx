@@ -8,6 +8,14 @@ import { Trash2, UploadCloud, Check, AlertCircle, Info } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "../ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
 import { memberTransferSchema, type MemberTransferFormData, } from "@/lib/validators/membertransfer.schema";
 import { authFetch } from "@/lib/api/authFetch";
 import { useAuth } from "@/lib/auth-context";
@@ -1363,37 +1371,41 @@ export default function ChangeMemberTransferForm() {
 
               {documentFiles.length > 0 && (
                 <div className="overflow-x-auto rounded border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-left">
-                      <tr>
-                        <th className="px-3 py-2">Document Type</th>
-                        <th className="px-3 py-2">File Name</th>
-                        {!isInputsDisabled && <th className="px-3 py-2">Action</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="border-collapse">
+                    <TableHeader>
+                      <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                        <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">Document Type</TableHead>
+                        <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">File Name</TableHead>
+                        {!isInputsDisabled && (
+                          <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Action</TableHead>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {documentFiles.map((item, index) => (
-                        <tr key={`${item.file.name}-${index}`} className="border-t">
-                          <td className="px-3 py-2">
+                        <TableRow key={`${item.file.name}-${index}`} className="hover:bg-neutral-50">
+                          <TableCell className="px-4 py-4 text-neutral-700">
                             {requiredDocumentTypes.find((t) => t.documentType === item.documentType)?.displayName || item.documentType}
-                          </td>
-                          <td className="px-3 py-2 font-medium text-gray-700">{item.file.name}</td>
+                          </TableCell>
+                          <TableCell className="px-4 py-4 font-medium">{item.file.name}</TableCell>
                           {!isInputsDisabled && (
-                            <td className="px-3 py-2">
+                            <TableCell className="px-4 py-4 text-right">
                               <Button
                                 type="button"
                                 variant="ghost"
+                                size="icon"
+                                aria-label="Remove document"
                                 onClick={() => setDocumentFiles((prev) => prev.filter((_, i) => i !== index))}
-                                className="text-red-600"
+                                className="text-red-600 hover:text-red-800"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                            </td>
+                            </TableCell>
                           )}
-                        </tr>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </div>
@@ -1430,7 +1442,7 @@ export default function ChangeMemberTransferForm() {
                           href={previewUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2700]"
                         >
                           Preview
                         </a>
@@ -1542,7 +1554,7 @@ export default function ChangeMemberTransferForm() {
                 <Button
                   type="button"
                   onClick={() => setShowPopup(false)}
-                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
                 >
                   OK
                 </Button>
@@ -1602,7 +1614,7 @@ export default function ChangeMemberTransferForm() {
                 type="button"
                 onClick={executeStatusChange}
                 disabled={!statusChangeTarget || isChangingStatus}
-                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
               >
                 {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
@@ -1645,7 +1657,7 @@ export default function ChangeMemberTransferForm() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm"
                   onClick={executeSubmit}
                 >
                   Submit

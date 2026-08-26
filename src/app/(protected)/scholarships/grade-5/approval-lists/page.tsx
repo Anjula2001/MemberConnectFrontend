@@ -4,7 +4,15 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/src/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
-import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X, ChevronDown } from "lucide-react";
+import { Printer, Trash2, FileText, Search, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Info, X, Loader2 } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
 import { useAuth } from "@/lib/auth-context";
 import { canDeleteGrade5List, hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
@@ -431,6 +439,11 @@ export default function Grade5ApprovalListsPage() {
   // Print list
   const handlePrint = () => {
     if (!selectedListId) return;
+    /*
+     * Opens the report route rather than printing this page. window.print() here put
+     * the sidebar, the tab bar and the search panel on the sheet - a screenshot of the
+     * application, not a board report.
+     */
     router.push(
       `/scholarships/grade-5/approval-lists/print/${encodeURIComponent(selectedListId)}`
     );
@@ -594,7 +607,7 @@ export default function Grade5ApprovalListsPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[350px_1fr]">
 
         {/* Left Panel: Approval Lists Card */}
-        <Card className="rounded-xl py-0 shadow-sm">
+        <Card className="overflow-hidden rounded-xl py-0 shadow-sm">
           <CardHeader className="px-5 pt-5 pb-3">
             <CardTitle className="text-lg font-bold text-[#953002]">Approval Lists</CardTitle>
             <p className="text-xs text-muted-foreground">Select a list to view details</p>
@@ -657,8 +670,12 @@ export default function Grade5ApprovalListsPage() {
           </CardContent>
         </Card>
 
+        {/* min-w-0 is what stops this card blowing past the viewport. A grid item
+            defaults to min-width:auto, so without it the column refuses to shrink below
+            the table's intrinsic width and the whole card grows instead of the table
+            scrolling inside it — clipping the action buttons and the last column. */}
         {/* Right Panel: Applications Details Card */}
-        <Card className="rounded-xl py-0 shadow-sm">
+        <Card className="min-w-0 rounded-xl py-0 shadow-sm">
           <CardHeader className="px-5 pt-5 pb-3">
             <div className="flex items-center justify-between">
               <div>
@@ -740,25 +757,48 @@ export default function Grade5ApprovalListsPage() {
                 )}
 
                 {/* Applications Table */}
-                <div id="printable-section" className="overflow-x-auto border rounded-lg">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Request No</th>
-                        <th className="px-4 py-3 text-left">Student Name</th>
-                        <th className="px-4 py-3 text-left">Member ID</th>
-                        <th className="px-4 py-3 text-left">Marks Obtained</th>
-                        <th className="px-4 py-3 text-left">Disbursement</th>
-                        <th className="px-4 py-3 text-left min-w-[210px]">Approve / Reject</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="w-full overflow-x-auto rounded-lg border">
+                  <Table className="border-collapse">
+                    <TableHeader>
+                      <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                        {[
+                          "Request ID",
+                          "Member ID",
+                          "Student Name",
+                          "Marks Obtained",
+                          "Disbursement",
+                        ].map((h) => (
+                          <TableHead
+                            key={h}
+                            className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
+                        <TableHead className="w-40 px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                          Decision
+                        </TableHead>
+                        <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                          Reason (If Reject)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {requestsLoading ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                            Retrieving requests...
-                          </td>
-                        </tr>
+                        <TableRow>
+                          <TableCell colSpan={7} className="py-12 text-center">
+                            <div className="flex items-center justify-center gap-2 text-neutral-500">
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              <span>Retrieving requests…</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : requests.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="py-10 text-center text-neutral-500">
+                            This list holds no requests.
+                          </TableCell>
+                        </TableRow>
                       ) : (
                         requests.map((r) => {
                           const rowDecision = decisions[r.requestNo] || { status: "APPROVED", rejectReason: "" };
@@ -767,91 +807,63 @@ export default function Grade5ApprovalListsPage() {
                             selectedList?.status === "PROCESSED" || !canProcessList;
 
                           return (
-                            <tr key={r.id} className="border-t hover:bg-gray-50/50 transition-colors">
-                              <td className="px-4 py-2.5 font-medium">
+                            <TableRow key={r.id} className="hover:bg-neutral-50">
+                              <TableCell className="px-4 py-4 font-medium">
                                 <button
                                   onClick={() =>
                                     router.push(
                                       `/membership/directory/grade5-scholarship?memberId=${r.memberId}&requestId=${r.id}&mode=view`
                                     )
                                   }
-                                  className="text-blue-600 hover:underline font-semibold text-left"
+                                  className="text-left text-[#953002] hover:underline"
                                   type="button"
                                 >
                                   {r.requestNo}
                                 </button>
-                              </td>
-                              <td className="px-4 py-2.5 text-gray-700">{r.studentName}</td>
-                              <td className="px-4 py-2.5 text-gray-500">{r.memberId}</td>
-                              <td className="px-4 py-2.5 text-center font-medium text-gray-800">{r.marksObtained}</td>
-                              <td className="px-4 py-2.5">
-                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-neutral-100 text-neutral-800 border">
+                              </TableCell>
+                              <TableCell className="px-4 py-4 text-neutral-700">{r.memberId}</TableCell>
+                              <TableCell className="px-4 py-4 text-neutral-700">{r.studentName}</TableCell>
+                              <TableCell className="px-4 py-4 font-medium text-neutral-700 tabular-nums">
+                                {r.marksObtained}
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <span className="rounded border bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-800">
                                   {r.disbursementOption?.replace(/_/g, " ")}
                                 </span>
-                              </td>
-                              <td className="px-4 py-2.5">
-                                {isProcessed ? (
-                                  // show decision badge
-                                  <div className="flex flex-col gap-1">
-                                    <span
-                                      className={`w-fit rounded border px-2 py-0.5 text-[11px] font-semibold ${
-                                        rowDecision.status === "APPROVED"
-                                          ? "border-green-200 bg-green-50 text-green-700"
-                                          : "border-red-200 bg-red-50 text-red-700"
-                                      }`}
-                                    >
-                                      {rowDecision.status === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
-                                    </span>
-                                    {rowDecision.status === "REJECTED" && rowDecision.rejectReason && (
-                                      <p className="mt-0.5 text-[10px] font-medium text-gray-500 italic">
-                                        Reason: {rowDecision.rejectReason}
-                                      </p>
-                                    )}
-                                  </div>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <select
+                                  disabled={isProcessed}
+                                  value={rowDecision.status}
+                                  onChange={(e) =>
+                                    handleDecisionChange(r.requestNo, e.target.value as "APPROVED" | "REJECTED")
+                                  }
+                                  className="h-9 w-full rounded-md border bg-white px-2 text-xs font-medium disabled:bg-gray-100 disabled:text-gray-700"
+                                >
+                                  <option value="APPROVED">Approve</option>
+                                  <option value="REJECTED">Reject</option>
+                                </select>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                {rowDecision.status === "REJECTED" ? (
+                                  <input
+                                    type="text"
+                                    disabled={isProcessed}
+                                    placeholder="Enter reason..."
+                                    value={rowDecision.rejectReason}
+                                    onChange={(e) => handleRejectReasonChange(r.requestNo, e.target.value)}
+                                    className="w-full rounded border border-red-300 bg-white px-2 py-1 text-xs disabled:bg-gray-100 disabled:text-gray-700"
+                                  />
                                 ) : (
-                                  <div className="flex min-w-[190px] flex-col gap-1.5">
-                                    <div className="relative">
-                                      <select
-                                        value={rowDecision.status}
-                                        onChange={(e) =>
-                                          handleDecisionChange(
-                                            r.requestNo,
-                                            e.target.value as "APPROVED" | "REJECTED"
-                                          )
-                                        }
-                                        className={`w-full appearance-none rounded-md border px-2 py-1.5 pr-7 text-xs font-semibold shadow-sm transition-colors focus:ring-2 focus:ring-[#953002]/30 focus:outline-none ${
-                                          rowDecision.status === "APPROVED"
-                                            ? "border-green-300 bg-green-50 text-green-700"
-                                            : "border-red-300 bg-red-50 text-red-700"
-                                        }`}
-                                      >
-                                        <option value="APPROVED">{"✓ Approve"}</option>
-                                        <option value="REJECTED">{"✗ Reject"}</option>
-                                      </select>
-                                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
-                                    </div>
-
-                                    {/* rejection reason  */}
-                                    {rowDecision.status === "REJECTED" && (
-                                      <textarea
-                                        rows={2}
-                                        placeholder="Enter rejection reason (mandatory)…"
-                                        value={rowDecision.rejectReason}
-                                        onChange={(e) =>
-                                          handleRejectReasonChange(r.requestNo, e.target.value)
-                                        }
-                                        className="w-full resize-none rounded-md border border-red-200 bg-white px-2 py-1.5 text-xs text-gray-700 shadow-sm placeholder:text-gray-400 focus:ring-2 focus:ring-red-400/40 focus:outline-none"
-                                      />
-                                    )}
-                                  </div>
+                                  <span className="text-xs text-neutral-400">-</span>
                                 )}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           );
                         })
                       )}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
 
               </div>
@@ -977,7 +989,7 @@ export default function Grade5ApprovalListsPage() {
               </Button>
               <Button
                 onClick={handleConfirmProcess}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 Process
               </Button>
@@ -1010,7 +1022,7 @@ export default function Grade5ApprovalListsPage() {
               <Button
                 type="button"
                 onClick={handleConfirmDeleteList}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 OK
               </Button>
@@ -1035,7 +1047,7 @@ export default function Grade5ApprovalListsPage() {
               <Button
                 type="button"
                 onClick={closePopup}
-                className="bg-[#953002] text-white hover:bg-[#672102] min-w-[80px]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] min-w-[80px]"
               >
                 OK
               </Button>

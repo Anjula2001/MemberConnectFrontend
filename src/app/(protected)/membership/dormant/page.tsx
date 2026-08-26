@@ -95,6 +95,9 @@ interface BoardMeeting {
 
 type DateFilter = "all" | "thisMonth" | "thisAndLastMonth" | "datePeriod";
 
+/** MMD12's default Member Type. A data value, so callers must tolerate its absence. */
+const DEFAULT_MEMBER_TYPE = "Member";
+
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "SELECTED_FOR_DORMANT", label: "Selected for Dormant" },
   { value: "SENT_FOR_DORMANT_APPROVAL", label: "Sent for Dormant Approval" },
@@ -129,7 +132,9 @@ function MultiSelect({
   selected,
   onChange,
   allLabel = "All",
-  width = "w-64",
+  // Full width by default: every caller now places this in a grid cell, and a fixed
+  // w-64 inside a grid column made it narrower than the Selects beside it.
+  width = "w-full",
   disabled = false,
 }: {
   label: string;
@@ -171,10 +176,8 @@ function MultiSelect({
           .join(", ");
 
   return (
-    <div className={width}>
-      <label className="text-sm font-medium text-muted-foreground mb-2 block">
-        {label}
-      </label>
+    <div className={`flex flex-col gap-1 ${width}`}>
+      <label className="text-xs font-medium text-gray-600">{label}</label>
       <div className="relative" ref={ref}>
         <button
           type="button"
@@ -194,7 +197,7 @@ function MultiSelect({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
               onClick={() => onChange([])}
             >
-              <span className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#8B4513]" : ""}`} />
+              <span className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#953002]" : ""}`} />
               {allLabel}
             </button>
             {options.map((o) => (
@@ -206,7 +209,7 @@ function MultiSelect({
               >
                 <span
                   className={`flex h-4 w-4 items-center justify-center rounded border ${
-                    selected.includes(o.value) ? "bg-[#8B4513] text-white" : ""
+                    selected.includes(o.value) ? "bg-[#953002] text-white" : ""
                   }`}
                 >
                   {selected.includes(o.value) && (
@@ -256,7 +259,9 @@ export default function DormantMembersPage() {
 
   // Filters
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [memberType, setMemberType] = useState<string>("all");
+  // MMD12: "The Member Type can be selected from here. By default, 'Member' will be
+  // selected." This defaulted to "all", so the screen opened wider than the SRS asks.
+  const [memberType, setMemberType] = useState<string>(DEFAULT_MEMBER_TYPE);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -318,6 +323,17 @@ export default function DormantMembersPage() {
       ]);
       setLocationOptions(locations.data);
       setMemberTypeOptions(types.data);
+
+      /*
+       * The member types are whatever distinct Member.memberType values the data holds,
+       * so "Member" is not guaranteed to be one of them. Falling back to "all" keeps the
+       * Select from sitting on a value it cannot display, and keeps the filter from
+       * silently matching nothing on a database that names its ordinary type something
+       * else.
+       */
+      if (!types.data.includes(DEFAULT_MEMBER_TYPE)) {
+        setMemberType("all");
+      }
     } catch (error) {
       showBanner("error", getErrorMessage(error));
     }
@@ -591,7 +607,7 @@ export default function DormantMembersPage() {
       <html><head><title>${title}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#111}
-        h1{color:#8B4513;font-size:20px}
+        h1{color:#953002;font-size:20px}
         table{width:100%;border-collapse:collapse;margin-top:16px;font-size:12px}
         th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}
         th{background:#f3ede7}
@@ -628,7 +644,7 @@ export default function DormantMembersPage() {
   if (user && !canSeeDormant) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-8 w-8 text-[#8B4513]" />
+        <ShieldAlert className="h-8 w-8 text-[#953002]" />
         <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
         <p className="max-w-md text-sm text-muted-foreground">
           Dormant Membership Profiles are restricted to Head Office and Board
@@ -642,14 +658,14 @@ export default function DormantMembersPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#8B4513]">Dormant Members</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Dormant Members</h1>
         {/* MMD11 names an "Authorized Head Office System User" — narrower than
             the board list, so this is not gated on canManageLists. */}
         {canRunIdentification && (
           <Button
             onClick={handleRunIdentification}
             disabled={running}
-            className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
+            className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:opacity-50"
           >
             {running ? "Identifying Members..." : "Run Identification Process"}
           </Button>
@@ -679,7 +695,7 @@ export default function DormantMembersPage() {
       {/* Configuration */}
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">Dormant Configuration</CardTitle>
+          <CardTitle className="text-lg text-[#953002]">Dormant Configuration</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
           {!canEditConfig && (
@@ -689,69 +705,75 @@ export default function DormantMembersPage() {
             </p>
           )}
           {config ? (
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="w-40">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  Dormant Period (months)
+            /* The rule on one row, then what acts on it. Previously a single
+               flex-wrap row of six differently-sized controls, so the Save button
+               and the enable checkbox landed wherever the wrap left them. */
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">
+                    Dormant Period (months)
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={config.dormantPeriodMonths}
+                    disabled={!canEditConfig}
+                    onChange={(e) => setConfig({ ...config, dormantPeriodMonths: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">Schedule Day (1-28)</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={config.scheduleDayOfMonth}
+                    disabled={!canEditConfig}
+                    onChange={(e) => setConfig({ ...config, scheduleDayOfMonth: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">Hour (0-23)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={config.scheduleHour}
+                    disabled={!canEditConfig}
+                    onChange={(e) => setConfig({ ...config, scheduleHour: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">Minute (0-59)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={config.scheduleMinute}
+                    disabled={!canEditConfig}
+                    onChange={(e) => setConfig({ ...config, scheduleMinute: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-4 border-t border-neutral-200 pt-4">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox
+                    checked={config.enabled}
+                    disabled={!canEditConfig}
+                    onCheckedChange={(v) => setConfig({ ...config, enabled: Boolean(v) })}
+                  />
+                  Scheduled run enabled
                 </label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={config.dormantPeriodMonths}
-                  disabled={!canEditConfig}
-                  onChange={(e) => setConfig({ ...config, dormantPeriodMonths: Number(e.target.value) })}
-                />
+                <Button
+                  onClick={handleSaveConfig}
+                  disabled={!canEditConfig || savingConfig}
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:opacity-50"
+                >
+                  {savingConfig ? "Saving..." : "Save Configuration"}
+                </Button>
               </div>
-              <div className="w-36">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  Schedule Day (1-28)
-                </label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={28}
-                  value={config.scheduleDayOfMonth}
-                  disabled={!canEditConfig}
-                  onChange={(e) => setConfig({ ...config, scheduleDayOfMonth: Number(e.target.value) })}
-                />
-              </div>
-              <div className="w-28">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">Hour (0-23)</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={config.scheduleHour}
-                  disabled={!canEditConfig}
-                  onChange={(e) => setConfig({ ...config, scheduleHour: Number(e.target.value) })}
-                />
-              </div>
-              <div className="w-28">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">Minute (0-59)</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={config.scheduleMinute}
-                  disabled={!canEditConfig}
-                  onChange={(e) => setConfig({ ...config, scheduleMinute: Number(e.target.value) })}
-                />
-              </div>
-              <label className="flex items-center gap-2 pb-2 text-sm font-medium">
-                <Checkbox
-                  checked={config.enabled}
-                  disabled={!canEditConfig}
-                  onCheckedChange={(v) => setConfig({ ...config, enabled: Boolean(v) })}
-                />
-                Scheduled run enabled
-              </label>
-              <Button
-                onClick={handleSaveConfig}
-                disabled={!canEditConfig || savingConfig}
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
-              >
-                {savingConfig ? "Saving..." : "Save Configuration"}
-              </Button>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading configuration...</p>
@@ -762,124 +784,131 @@ export default function DormantMembersPage() {
       {/* Filters */}
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">Search Dormant Members</CardTitle>
+          <CardTitle className="text-lg text-[#953002]">Search Dormant Members</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="flex flex-wrap items-end gap-4">
-            {/* SRS 4.2.3: un-editable when the user only has access to their
-                own district. The server pins it regardless — this just stops the
-                filter implying a choice that does not exist. */}
-            <MultiSelect
-              label="Location"
-              options={locationSelectOptions}
-              selected={selectedLocations}
-              onChange={setSelectedLocations}
-              allLabel={readOnly ? user?.assignedDistrict ?? "Your district" : "All"}
-              disabled={readOnly}
-            />
+          {/* Same arrangement as the Termination and Profile Changes screens: the
+              four filters on one row (where, what, when, which status), the date pair
+              only when a period is chosen, then search with sort and Retrieve. */}
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              {/* SRS 4.2.3: un-editable when the user only has access to their
+                  own district. The server pins it regardless — this just stops the
+                  filter implying a choice that does not exist. */}
+              <MultiSelect
+                label="Location"
+                options={locationSelectOptions}
+                selected={selectedLocations}
+                onChange={setSelectedLocations}
+                allLabel={readOnly ? user?.assignedDistrict ?? "Your district" : "All"}
+                disabled={readOnly}
+              />
 
-            <div className="w-48">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Member Type</label>
-              <Select value={memberType} onValueChange={setMemberType}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Member type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {memberTypeOptions.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Member Type</label>
+                <Select value={memberType} onValueChange={setMemberType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Member type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {memberTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="w-56">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Selected for Dormant On
-              </label>
-              <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Date filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Days</SelectItem>
-                  <SelectItem value="thisMonth">This Month</SelectItem>
-                  <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
-                  <SelectItem value="datePeriod">Date Period</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">
+                  Selected for Dormant On
+                </label>
+                <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Date filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Days</SelectItem>
+                    <SelectItem value="thisMonth">This Month</SelectItem>
+                    <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
+                    <SelectItem value="datePeriod">Date Period</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {dateFilter === "datePeriod" && (
-              <>
-                <div className="w-44">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">From Date</label>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-                </div>
-                <div className="w-44">
-                  <label className="text-sm font-medium text-muted-foreground mb-2 block">To Date</label>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-                </div>
-              </>
-            )}
-
-            <MultiSelect
-              label="Status"
-              options={STATUS_OPTIONS}
-              selected={selectedStatuses}
-              onChange={setSelectedStatuses}
-              allLabel="Default"
-              width="w-72"
-            />
-
-            <div className="w-64">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Search (name / member no / NIC)
-              </label>
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search..."
-                onKeyDown={(e) => e.key === "Enter" && handleRetrieve()}
+              <MultiSelect
+                label="Status"
+                options={STATUS_OPTIONS}
+                selected={selectedStatuses}
+                onChange={setSelectedStatuses}
+                allLabel="Default"
               />
             </div>
 
-            <div className="w-44">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort By</label>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lastActivity">Last Activity</SelectItem>
-                  <SelectItem value="membershipDate">Membership Date</SelectItem>
-                  <SelectItem value="memberId">Member ID</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {dateFilter === "datePeriod" && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">From Date</label>
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600">To Date</label>
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+              </div>
+            )}
 
-            <div className="w-36">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Order</label>
-              <Select value={sortOrder} onValueChange={setSortOrder}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="desc">Descending</SelectItem>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-4">
+              <div className="flex flex-col gap-1 md:col-span-2">
+                <label className="text-xs font-medium text-gray-600">
+                  Search (name / member no / NIC)
+                </label>
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search..."
+                  onKeyDown={(e) => e.key === "Enter" && handleRetrieve()}
+                />
+              </div>
 
-            <Button
-              onClick={handleRetrieve}
-              disabled={loadingResults}
-              className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
-            >
-              {loadingResults ? "Retrieving..." : "Retrieve"}
-            </Button>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Sort By</label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lastActivity">Last Activity</SelectItem>
+                    <SelectItem value="membershipDate">Membership Date</SelectItem>
+                    <SelectItem value="memberId">Member ID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Order</label>
+                <div className="flex items-center gap-2">
+                  <Select value={sortOrder} onValueChange={setSortOrder}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="desc">Descending</SelectItem>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={handleRetrieve}
+                    disabled={loadingResults}
+                    className="whitespace-nowrap bg-[#953002] hover:bg-[#7a2700] text-white"
+                  >
+                    {loadingResults ? "Retrieving..." : "Retrieve"}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -888,7 +917,7 @@ export default function DormantMembersPage() {
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-lg text-[#8B4513]">Dormant Members</CardTitle>
+            <CardTitle className="text-lg text-[#953002]">Dormant Members</CardTitle>
             <div className="flex items-center gap-2">
               {canManageLists && (
                 <Link href="/membership/dormant/approval-lists">
@@ -900,7 +929,7 @@ export default function DormantMembersPage() {
               {canManageLists && selectedMemberIds.length > 0 && (
                 <Button
                   onClick={handleOpenCreate}
-                  className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white"
                   size="sm"
                 >
                   Create Inactivation Approval List ({selectedMemberIds.length})
@@ -962,7 +991,7 @@ export default function DormantMembersPage() {
                       <TableCell>
                         <Link
                           href={`/membership/directory/${m.id}`}
-                          className="font-medium text-[#8B4513] underline-offset-2 hover:underline"
+                          className="font-medium text-[#953002] underline-offset-2 hover:underline"
                         >
                           {m.memberId}
                         </Link>
@@ -1020,7 +1049,7 @@ export default function DormantMembersPage() {
       {createdListInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-[#8B4513]">Inactivation Approval List Created</h2>
+            <h2 className="text-lg font-semibold text-[#953002]">Inactivation Approval List Created</h2>
             <p className="mt-2 text-sm text-gray-700">
               The Inactivation Approval List for {createdListInfo.count} Dormant Member(s) has been
               created. Do you want to view the list?
@@ -1030,7 +1059,7 @@ export default function DormantMembersPage() {
                 No
               </Button>
               <Button
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                className="bg-[#953002] hover:bg-[#7a2700] text-white"
                 onClick={() => {
                   const listId = createdListInfo.list.listId;
                   setCreatedListInfo(null);

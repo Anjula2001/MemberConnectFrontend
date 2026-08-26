@@ -4,8 +4,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/src/components/ui/table';
+
 import { apiClient } from '@/lib/api/client';
-import { getMemberById } from '@/lib/api/member';
+import { resolveMember } from '@/lib/api/member';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import {
@@ -93,11 +102,12 @@ export default function RemittanceChangePage({
     let cancelled = false;
 
     /**
-     * The memberId prop is the Member table's numeric primary key — the member profile
-     * links here with its own route param, not with the membership number. Every
-     * request API is keyed by the membership number (MEM-2026-001), so the member is
-     * resolved first and its memberId used. Passing the route param straight through
-     * produced "No member found with membership number 1".
+     * The memberId prop is whichever identifier the caller had - the profile Actions
+     * menu passes the membership number (MEM-2026-001), older links passed the numeric
+     * primary key - so resolveMember picks the right lookup. Every request API is keyed
+     * by the membership number, so the member is resolved first and its memberId used.
+     * Passing the route param straight through produced "No member found with
+     * membership number 1".
      */
     const load = async (): Promise<RequestDTO> => {
       if (editId) {
@@ -109,7 +119,7 @@ export default function RemittanceChangePage({
         throw new Error('No member or request was specified.');
       }
 
-      const member = await getMemberById(Number(memberId));
+      const member = await resolveMember(memberId);
       if (!member?.memberId) {
         throw new Error('This member has no membership number yet.');
       }
@@ -293,7 +303,7 @@ export default function RemittanceChangePage({
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold leading-tight text-[#8B3205]">
+            <h1 className="text-2xl font-bold leading-tight text-[#953002]">
               {isEditMode
                 ? `Remittance Amount Change ${request?.requestNo ?? ''}`.trim()
                 : 'New Remittance Amount Change'}
@@ -318,7 +328,7 @@ export default function RemittanceChangePage({
               type="button"
               onClick={() => setIsEditing(true)}
               disabled={isSubmitting}
-              className="rounded-lg border border-[#8B3205] px-4 py-2 text-sm font-medium text-[#8B3205] transition-all hover:bg-[#8B3205]/5 disabled:opacity-60"
+              className="rounded-lg border border-[#953002] px-4 py-2 text-sm font-medium text-[#953002] transition-all hover:bg-[#953002]/5 disabled:opacity-60"
             >
               ✏️ Edit
             </button>
@@ -340,7 +350,7 @@ export default function RemittanceChangePage({
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-[#8B3205] px-6 py-2 font-bold text-white transition-all hover:bg-[#722904] disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-[#953002] px-6 py-2 font-bold text-white transition-all hover:bg-[#722904] disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               💾 Submit
@@ -381,7 +391,7 @@ export default function RemittanceChangePage({
 
       {/* Amounts */}
       <section className="rounded-xl border border-gray-200 bg-white p-6">
-        <h2 className="text-xl font-bold text-[#8B3205]">Remittance Amounts</h2>
+        <h2 className="text-xl font-bold text-[#953002]">Remittance Amounts</h2>
         <p className="mb-6 text-sm font-medium text-gray-500">
           Only the accounts this member may change are listed. Each amount is checked
           against its configured minimum on submit.
@@ -393,37 +403,31 @@ export default function RemittanceChangePage({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-700">
-                    Account
-                  </th>
-                  <th className="border-b border-gray-200 px-3 py-2 text-right font-semibold text-gray-700">
-                    Current Value
-                  </th>
-                  <th className="border-b border-gray-200 px-3 py-2 text-right font-semibold text-gray-700">
-                    New Value
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="border-collapse">
+              <TableHeader>
+                <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                  <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">Account</TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">Current Value</TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase text-right">New Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {lines.map((line) => {
                   const problem = problemFor(line);
                   return (
-                    <tr key={line.accountCode}>
-                      <td className="border-b border-gray-100 px-3 py-3">
-                        <span className="font-medium text-gray-800">{line.accountName}</span>
+                    <TableRow key={line.accountCode} className="hover:bg-neutral-50">
+                      <TableCell className="px-4 py-4">
+                        <span className="font-medium text-neutral-800">{line.accountName}</span>
                         {line.minimumAmount != null && (
-                          <span className="block text-[11px] text-gray-500">
+                          <span className="block text-[11px] text-neutral-500">
                             Minimum {money(line.minimumAmount)}
                           </span>
                         )}
-                      </td>
-                      <td className="border-b border-gray-100 px-3 py-3 text-right tabular-nums text-gray-600">
+                      </TableCell>
+                      <TableCell className="px-4 py-4 text-right tabular-nums text-neutral-700">
                         {money(line.oldAmount)}
-                      </td>
-                      <td className="border-b border-gray-100 px-3 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="px-4 py-4 text-right">
                         <input
                           type="number"
                           step="0.01"
@@ -440,21 +444,21 @@ export default function RemittanceChangePage({
                         {problem && !isLocked && (
                           <span className="mt-1 block text-[11px] text-red-600">{problem}</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="px-3 py-3 text-gray-800">Total</td>
-                  <td className="px-3 py-3 text-right tabular-nums text-gray-700">
+                <TableRow className="bg-[#fafafa] font-semibold hover:bg-[#fafafa]">
+                  <TableCell className="px-4 py-4 text-neutral-800">Total</TableCell>
+                  <TableCell className="px-4 py-4 text-right tabular-nums text-neutral-700">
                     {money(totalOld)}
-                  </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-gray-900">
+                  </TableCell>
+                  <TableCell className="px-4 py-4 text-right tabular-nums text-neutral-900">
                     {money(totalNew)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>

@@ -1,193 +1,158 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
-import { Users, GraduationCap, XCircle, HeartHandshake, LucideIcon } from "lucide-react"
-import { apiClient } from "@/lib/api/client"
-import { getMembers } from "@/lib/api/member"
-import { searchDeathDonationRequests } from "@/lib/api/deathDonation"
-import { useAuth, type UserRole } from "@/lib/auth-context"
-import { REGISTRATION_ROLES, hasPermission, hasRole } from "@/lib/permissions"
+import { ArrowRight } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
+import { queuesForRole, type QueueDef } from "./queues"
 
 /**
- * Dashboard metrics.
+ * The top row: what this role has waiting on it.
  *
- * Every card here counts rows in the table it names. The previous version called only
- * getMembers() and getMemberApplications(), then derived the other three numbers from
- * the applications list with string heuristics — "Death Donations" rendered the member
- * application count outright, and "Pending Scholarships" counted any application whose
- * scholarshipDeathDonationPensionAmount was non-zero, which is a membership
- * contribution amount present on nearly every application. Both reported 1 against a
- * database holding zero scholarship and zero death donation requests.
+ * Replaces four fixed counters (Members / Scholarships / Terminations / Death
+ * Donations) that were gated on REGISTRATION_ROLES and so rendered one card or none
+ * for five of the nine roles. Every card here is a queue the signed-in role owns and
+ * links to the screen that clears it - see queues.ts for the role mapping.
  *
- * Cards are also filtered by role. The endpoints behind them are permission-gated
- * (Grade 5 needs G5_REQUEST_VIEW), so fetching unconditionally produces guaranteed
- * 403s for roles like DEATH_DONATION_OFFICER — the same failure the New Registrations
- * page hit with board meetings. A role that cannot see a metric does not get the card.
+ * Counts that fail to load render as an em dash rather than 0: a real zero means
+ * "nothing waiting", and showing that when the request 403'd or timed out is worse
+ * than admitting the number is unknown.
  */
 
-type StatCardProps = {
-  title: string
-  value: number | string
-  subtitle: string
-  icon: LucideIcon
+type Counts = Record<string, number | null>
+
+/**
+ * A queue that never answers must not hold the whole row on "Loading".
+ *
+ * Every card resolves from one Promise.allSettled, so a single request that never
+ * settles freezes all of them — not just its own. Most loaders go through apiClient,
+ * which times out after 15s, but searchMemberDeathRecords and searchDeathDonationRequests
+ * use fetch directly and have no timeout at all; between them they back three of Super
+ * Admin's cards. This bounds every queue regardless of how it fetches, so a slow one
+ * degrades to a single "—" instead of stalling the dashboard.
+ */
+function withTimeout<T>(promise: Promise<T>, ms = 15000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Queue count timed out")), ms)
+    ),
+  ])
 }
 
-function StatCard({ title, value, subtitle, icon: Icon }: StatCardProps) {
+function QueueCard({
+  queue,
+  value,
+  loading,
+}: {
+  queue: QueueDef
+  value: number | null
+  loading: boolean
+}) {
+  const isClear = value === 0
+
   return (
-    <div style={{
-      flex: 1,
-      minWidth: '200px',
-      borderRadius: '12px',
-      padding: '20px 24px',
-      border: '1px solid #e5e7eb',
-      backgroundColor: '#ffffff',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <p style={{ fontSize: '13px', fontWeight: 500, color: '#953002', margin: 0 }}>{title}</p>
-        <Icon style={{ width: '16px', height: '16px', color: '#9ca3af', flexShrink: 0 }} />
+    <Link
+      href={queue.href}
+      className="group flex min-w-[220px] flex-1 flex-col gap-1 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm transition-colors hover:border-[#953002]/40 hover:bg-[#fff9f6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#953002] dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-900"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-medium text-[#953002]">{queue.label}</p>
+        <ArrowRight
+          size={14}
+          className="shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#953002]"
+        />
       </div>
-      <p style={{ fontSize: '32px', fontWeight: 700, color: '#111827', margin: 0, lineHeight: 1.1 }}>{value}</p>
-      <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>{subtitle}</p>
-    </div>
+
+      <p
+        className={
+          "text-[32px] font-bold leading-none " +
+          (loading
+            ? "text-neutral-300"
+            : isClear
+              ? "text-neutral-400"
+              : "text-neutral-900 dark:text-neutral-50")
+        }
+      >
+        {loading ? "…" : (value ?? "—")}
+      </p>
+
+      <p className="text-[13px] text-neutral-500">
+        {loading ? "Loading" : isClear ? "Nothing waiting" : queue.hint}
+      </p>
+    </Link>
   )
-}
-
-// Statuses that mean "waiting on a decision", per the request status enums.
-const SCHOLARSHIP_PENDING = [
-  "SUBMITTED_FOR_NORMAL_APPROVAL",
-  "SUBMITTED_FOR_DEVIATION_APPROVAL",
-]
-const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL"]
-
-// Death Donation is its own module with its own officer role, so it does not follow
-// REGISTRATION_ROLES.
-const DEATH_DONATION_ROLES: UserRole[] = [
-  "SUPER_ADMIN",
-  "HEAD_OFFICE",
-  "BOARD_SECRETARY",
-  "DISTRICT_OFFICE",
-  "DEATH_DONATION_OFFICER",
-]
-
-/** A count that failed to load stays null, so the card shows "—" rather than a wrong 0. */
-type Counts = {
-  members: number | null
-  scholarships: number | null
-  terminations: number | null
-  deathDonations: number | null
 }
 
 export default function StatsCards() {
   const { user } = useAuth()
   const role = user?.role
 
-  const canSeeMembers = hasRole(role, REGISTRATION_ROLES)
-  const canSeeScholarships = hasPermission(role, "G5_REQUEST_VIEW")
-  const canSeeTerminations = hasRole(role, REGISTRATION_ROLES)
-  const canSeeDeathDonations = hasRole(role, DEATH_DONATION_ROLES)
+  // District Office sees its own district; every other role sees the institute.
+  // getMembers()/getMemberApplications() had no scoping at all, so a Colombo clerk's
+  // dashboard reported national totals - the opposite of MR02/MR13, where a District
+  // Location defaults to its own location.
+  const district = role === "DISTRICT_OFFICE" ? (user?.assignedDistrict ?? null) : null
 
-  const [counts, setCounts] = useState<Counts>({
-    members: null,
-    scholarships: null,
-    terminations: null,
-    deathDonations: null,
-  })
+  const queues = queuesForRole(role)
+  const [counts, setCounts] = useState<Counts>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
 
-    // allSettled, not all: one failing metric must not blank out the other three.
     async function load() {
       setLoading(true)
 
-      const [members, scholarships, terminations, deathDonations] = await Promise.allSettled([
-        canSeeMembers ? getMembers() : Promise.resolve(null),
+      // allSettled, not all: one denied or slow queue must not blank the whole row.
+      try {
+        const results = await Promise.allSettled(
+          queues.map((q) => withTimeout(q.load({ district })))
+        )
 
-        canSeeScholarships
-          ? apiClient
-              .get<unknown[]>("/api/grade5/requests/search", {
-                params: { statuses: SCHOLARSHIP_PENDING },
-              })
-              .then((res) => res.data)
-          : Promise.resolve(null),
+        if (!mounted) return
 
-        canSeeTerminations
-          ? apiClient
-              .get<unknown[]>("/api/termination-requests", {
-                params: { statuses: TERMINATION_PENDING },
-              })
-              .then((res) => res.data)
-          : Promise.resolve(null),
+        const next: Counts = {}
+        queues.forEach((queue, index) => {
+          const result = results[index]
+          next[queue.id] = result.status === "fulfilled" ? result.value : null
+        })
 
-        canSeeDeathDonations ? searchDeathDonationRequests() : Promise.resolve(null),
-      ])
-
-      if (!mounted) return
-
-      const count = (result: PromiseSettledResult<unknown[] | null>) => {
-        if (result.status !== "fulfilled" || result.value === null) return null
-        return Array.isArray(result.value) ? result.value.length : 0
+        setCounts(next)
+      } finally {
+        // Cleared here rather than after setCounts, so no unexpected throw can leave
+        // the row spinning forever.
+        if (mounted) setLoading(false)
       }
+    }
 
-      setCounts({
-        members: count(members),
-        scholarships: count(scholarships),
-        terminations: count(terminations),
-        deathDonations: count(deathDonations),
-      })
+    if (queues.length === 0) {
       setLoading(false)
+      return
     }
 
     void load()
     return () => {
       mounted = false
     }
-  }, [canSeeMembers, canSeeScholarships, canSeeTerminations, canSeeDeathDonations])
+    // queues is derived from role, so role is the real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, district])
 
-  const show = (value: number | null) => (loading ? "…" : value ?? "—")
+  if (queues.length === 0) {
+    return null
+  }
 
   return (
-    <div className="flex flex-row gap-4 w-full overflow-x-auto">
-      {canSeeMembers && (
-        <StatCard
-          title="Total Members"
-          value={show(counts.members)}
-          subtitle={loading ? "Loading" : `${counts.members ?? 0} total`}
-          icon={Users}
+    <div className="flex flex-wrap gap-4">
+      {queues.map((queue) => (
+        <QueueCard
+          key={queue.id}
+          queue={queue}
+          value={counts[queue.id] ?? null}
+          loading={loading}
         />
-      )}
-
-      {canSeeScholarships && (
-        <StatCard
-          title="Pending Scholarships"
-          value={show(counts.scholarships)}
-          subtitle="Requires Approval"
-          icon={GraduationCap}
-        />
-      )}
-
-      {canSeeTerminations && (
-        <StatCard
-          title="Pending Terminations"
-          value={show(counts.terminations)}
-          subtitle="In Review"
-          icon={XCircle}
-        />
-      )}
-
-      {canSeeDeathDonations && (
-        <StatCard
-          title="Death Donations"
-          value={show(counts.deathDonations)}
-          subtitle="Total requests"
-          icon={HeartHandshake}
-        />
-      )}
+      ))}
     </div>
   )
 }

@@ -79,6 +79,10 @@ export default function NavigationSideBar() {
    * Previously District Office and Head Office had no Scholarships menu at all, while
    * Death Donation Officer got the whole thing by falling through a catch-all branch.
    * That is backwards: those first two are the SRS's named actors for both modules.
+   *
+   * Grade 5 Exam & Cut-offs deliberately is not here. It maintains the exam dates and
+   * district cut-off marks that decide who qualifies, which is configuration rather than
+   * casework, so it sits under Administration and is Super Admin's alone.
    */
   const buildScholarshipsMenu = (role: UserRole | undefined): MenuItem | null => {
     const subMenu: SubMenuItem[] = [];
@@ -201,6 +205,11 @@ export default function NavigationSideBar() {
         ...([buildScholarshipsMenu(role)].filter(
           Boolean
         ) as MenuItem[]),
+        // District Office is in REGISTRATION_ROLES and DISPATCH_ROLES, so it is
+        // entitled to the Member Profile Search (5.4) and Dispatch (5.5) reports.
+        // Every other role menu already offered Reports; this one did not, leaving
+        // the page reachable only by typing the URL.
+        { title: "Reports", icon: BarChart, url: "/reports" },
       ];
     }
 
@@ -510,37 +519,47 @@ export default function NavigationSideBar() {
                         <SidebarMenu className="gap-1">
                           {item.subMenu.map((subItem) => (
                             <SidebarMenuItem key={subItem.title}>
-                              {/** Only this entry should wrap to two lines, matching the reference. */}
-                              {(() => {
-                                const isTwoLineItem =
-                                  subItem.url === "/membership/termination";
-
-                                return (
-                                  <SidebarMenuButton
-                                    asChild
-                                    isActive={isItemActive(subItem.url)}
-                                    className={cn(
-                                      "rounded-lg pr-2.5 text-[14px] font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
-                                      isTwoLineItem
-                                        ? "h-11 leading-4 [&>span:last-child]:whitespace-normal [&>span:last-child]:wrap-break-word"
-                                        : "h-9 leading-4 [&>span:last-child]:truncate [&>span:last-child]:whitespace-nowrap",
-                                      subItem.icon ? "pl-8" : "pl-10",
-                                      isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"
+                              {/*
+                               * Any label may wrap, rather than one hard-coded URL being
+                               * allowed to. The rule used to be
+                               * `subItem.url === "/membership/termination"`, so that one
+                               * entry got two lines and every other long name was
+                               * truncated — "Print Membership Ca…", "Documentation Disp…".
+                               *
+                               * min-h-9 keeps single-line rows exactly the height they
+                               * were; only a row that actually needs a second line grows.
+                               * items-center keeps the icon aligned with the first line.
+                               */}
+                              <SidebarMenuButton
+                                asChild
+                                isActive={isItemActive(subItem.url)}
+                                className={cn(
+                                  "h-auto min-h-9 items-center rounded-lg py-1.5 pr-2.5 text-[14px] leading-4 font-medium text-[#333333] transition-colors duration-200 hover:bg-[#fdf5f2]/50 hover:text-[#953002] data-[active=true]:bg-[#fdf5f2] data-[active=true]:text-[#953002]",
+                                  /*
+                                   * SidebarMenuButton's base classes include
+                                   * [&>span:last-child]:truncate, which is shorthand for
+                                   * overflow-hidden + text-ellipsis + whitespace-nowrap.
+                                   * All three are overridden explicitly rather than
+                                   * trusting Tailwind's utility ordering to win.
+                                   */
+                                  "[&>span:last-child]:overflow-visible [&>span:last-child]:text-clip [&>span:last-child]:whitespace-normal [&>span:last-child]:wrap-break-word",
+                                  subItem.icon ? "pl-8" : "pl-10",
+                                  isItemActive(subItem.url) && "bg-[#fdf5f2] text-[#953002]"
+                                )}
+                              >
+                                {/* title= is cheap insurance: if a name ever outgrows two
+                                    lines, hovering still reveals it in full. */}
+                                <Link href={subItem.url} title={subItem.title}>
+                                  <span className="inline-flex w-4 shrink-0 items-center justify-center">
+                                    {subItem.icon ? (
+                                      <subItem.icon className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
                                     )}
-                                  >
-                                    <Link href={subItem.url}>
-                                      <span className="inline-flex w-4 items-center justify-center">
-                                        {subItem.icon ? (
-                                          <subItem.icon className="h-4 w-4" />
-                                        ) : (
-                                          <ChevronRight className="h-4 w-4" />
-                                        )}
-                                      </span>
-                                      <span className="ml-2">{subItem.title}</span>
-                                    </Link>
-                                  </SidebarMenuButton>
-                                );
-                              })()}
+                                  </span>
+                                  <span className="ml-2">{subItem.title}</span>
+                                </Link>
+                              </SidebarMenuButton>
                             </SidebarMenuItem>
                           ))}
                         </SidebarMenu>

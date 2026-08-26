@@ -2,48 +2,22 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { Button } from "@/src/components/ui/button"
-import { Activity, ClipboardList } from "lucide-react"
-import { apiClient } from "@/lib/api/client"
+import { Activity, BarChart3 } from "lucide-react"
 import { getRecentActivity, AuditDTO } from "@/lib/api/audit"
-import { getMemberApplications, MemberApplicationDTO } from "@/lib/api/memberApplications"
-import { getMembers, MemberDTO } from "@/lib/api/member"
+import { apiClient } from "@/lib/api/client"
 import { useAuth, type UserRole } from "@/lib/auth-context"
 import { REGISTRATION_ROLES, hasRole } from "@/lib/permissions"
 
 /**
- * Dashboard lower row: Recent Activity and Pending Tasks.
+ * Dashboard lower row: Recent Activity and At a glance.
  *
- * Rebuilt because both cards previously derived everything from one call to
- * getMemberApplications(). "Recent Activity" listed the newest member applications
- * under the subtitle "latest actions across the system", and "Termination Requests"
- * counted applications whose boardDecisionReason contained the substring
- * "termination" — a heuristic the label itself admitted to with "(detected)".
- *
- * Both now read the tables they name: the audit trail for activity, and
- * /api/termination-requests for terminations.
- *
- * Role handling matters here. MemberController, MemberApplicationController and
- * AuditController are all restricted, so the old unconditional fetches meant
- * SCHOLARSHIP_OFFICER and DEATH_DONATION_OFFICER landed on the home page and saw two
- * "You do not have permission" boxes. Each query is now gated on the caller's role and
- * each card is hidden when there is nothing it may show.
+ * "Pending Tasks" used to live here and was mostly not tasks - Total Members and Total
+ * Applications are metrics, and Total Members was already a stat card directly above.
+ * The actionable items moved up into the queue row (StatsCards + queues.ts); what is
+ * left here is the reference totals, stated once.
  */
 
-const cardStyle: React.CSSProperties = {
-  borderRadius: '16px',
-  padding: '24px',
-  border: '1px solid #e5e7eb',
-  backgroundColor: '#ffffff',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-  alignSelf: 'start',
-  display: 'flex',
-  flexDirection: 'column',
-  maxHeight: '520px',
-  overflow: 'hidden',
-}
-
-// AuditController's own @PreAuthorize list — ACCOUNTS is included there because it can
+// AuditController's own @PreAuthorize list - ACCOUNTS is included there because it can
 // edit remittance details and so appears in the trail.
 const AUDIT_ROLES: UserRole[] = [
   "DISTRICT_OFFICE",
@@ -53,14 +27,31 @@ const AUDIT_ROLES: UserRole[] = [
   "SUPER_ADMIN",
 ]
 
-const TERMINATION_PENDING = ["SUBMITTED_FOR_APPROVAL"]
+/**
+ * Totals come from a COUNT endpoint, not from measuring a downloaded table.
+ *
+ * These two cards used to call getMembers() and getMemberApplications(), each of which
+ * returns every row with no parameters - a 37-field DTO per member - so that .length
+ * could produce a single integer.
+ */
+async function countOf(path: string, locations: string[] | null): Promise<number | null> {
+  try {
+    const { data } = await apiClient.get<{ count?: number }>(path, {
+      params: locations && locations.length > 0 ? { locations } : undefined,
+    })
+    return typeof data?.count === "number" ? data.count : null
+  } catch {
+    return null
+  }
+}
 
-/** Null means "not loaded" — rendered as "—" so it is never mistaken for a real zero. */
+const cardClass =
+  "flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950"
+
 type Data = {
   activity: AuditDTO[] | null
-  applications: MemberApplicationDTO[] | null
-  members: MemberDTO[] | null
-  pendingTerminations: number | null
+  totalMembers: number | null
+  totalApplications: number | null
 }
 
 export default function BottomSection() {
@@ -70,11 +61,16 @@ export default function BottomSection() {
   const canSeeMemberData = hasRole(role, REGISTRATION_ROLES)
   const canSeeActivity = hasRole(role, AUDIT_ROLES)
 
+  // Scoped the same way as the queue row above: a District Office user's totals cover
+  // their own district. Previously these two cards were the one place on the dashboard
+  // that still reported national figures to a district clerk.
+  const district = role === "DISTRICT_OFFICE" ? (user?.assignedDistrict ?? null) : null
+  const locations = district ? [district] : null
+
   const [data, setData] = useState<Data>({
     activity: null,
-    applications: null,
-    members: null,
-    pendingTerminations: null,
+    totalMembers: null,
+    totalApplications: null,
   })
   const [loading, setLoading] = useState(true)
 
@@ -84,19 +80,10 @@ export default function BottomSection() {
     async function load() {
       setLoading(true)
 
-      // allSettled, not all: a single denied or failing endpoint must not blank the
-      // whole row, which is what the previous shared `error` state did.
-      const [activity, applications, members, terminations] = await Promise.allSettled([
+      const [activity, members, applications] = await Promise.allSettled([
         canSeeActivity ? getRecentActivity(5) : Promise.resolve(null),
-        canSeeMemberData ? getMemberApplications() : Promise.resolve(null),
-        canSeeMemberData ? getMembers() : Promise.resolve(null),
-        canSeeMemberData
-          ? apiClient
-              .get<unknown[]>("/api/termination-requests", {
-                params: { statuses: TERMINATION_PENDING },
-              })
-              .then((res) => res.data)
-          : Promise.resolve(null),
+        canSeeMemberData ? countOf("/api/members/count", locations) : Promise.resolve(null),
+        canSeeMemberData ? countOf("/api/applications/count", locations) : Promise.resolve(null),
       ])
 
       if (!mounted) return
@@ -104,13 +91,10 @@ export default function BottomSection() {
       const value = <T,>(result: PromiseSettledResult<T | null>): T | null =>
         result.status === "fulfilled" ? result.value : null
 
-      const terminationRows = value(terminations)
-
       setData({
         activity: value(activity),
-        applications: value(applications),
-        members: value(members),
-        pendingTerminations: Array.isArray(terminationRows) ? terminationRows.length : null,
+        totalMembers: value(members),
+        totalApplications: value(applications),
       })
       setLoading(false)
     }
@@ -119,120 +103,110 @@ export default function BottomSection() {
     return () => {
       mounted = false
     }
-  }, [canSeeActivity, canSeeMemberData])
+  }, [canSeeActivity, canSeeMemberData, district])
 
-  const applications = data.applications ?? []
-  const totalMembers = data.members?.length ?? null
-  const totalApplications = data.applications?.length ?? null
-  const pendingApplications = data.applications
-    ? applications.filter((a) => a.status === 'NEW' || a.status === 'SUBMITTED_FOR_APPROVAL').length
-    : null
+  const show = (value: number | null) => (loading ? "…" : (value ?? "—"))
 
-  const show = (value: number | null) => (loading ? '…' : value ?? '—')
-
-  // Nothing this role may see — render nothing rather than a row of error boxes.
+  // Nothing this role may see - render nothing rather than a row of error boxes.
   if (!canSeeActivity && !canSeeMemberData) {
     return null
   }
 
-  const gridColumns = canSeeActivity && canSeeMemberData ? '1fr 1fr' : '1fr'
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: gridColumns, gap: '16px', marginTop: '24px' }}>
-
-      {/* Recent Activity — the audit trail, which is the only record of actions from
-          every module rather than member applications alone. */}
+    <div
+      className={
+        "mt-6 grid gap-4 " +
+        (canSeeActivity && canSeeMemberData ? "lg:grid-cols-2" : "grid-cols-1")
+      }
+    >
+      {/* Recent Activity - the audit trail, the only record that spans every module. */}
       {canSeeActivity && (
-        <div style={cardStyle}>
-          <div className="flex items-center gap-2 mb-1">
+        <div className={cardClass}>
+          <div className="mb-1 flex items-center gap-2">
             <Activity className="h-5 w-5 text-[#953002]" />
             <h2 className="text-lg font-semibold text-[#953002]">Recent Activity</h2>
           </div>
-          <p className="text-sm text-muted-foreground mb-4">Latest actions across the system</p>
+          <p className="mb-4 text-sm text-neutral-500">Latest actions across the system</p>
 
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
+            <p className="text-sm text-neutral-500">Loading…</p>
           ) : data.activity === null ? (
-            <p className="text-sm text-muted-foreground">Activity could not be loaded</p>
+            <p className="text-sm text-neutral-500">Activity could not be loaded</p>
           ) : data.activity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No recent activity</p>
+            <p className="text-sm text-neutral-500">No recent activity</p>
           ) : (
-            <div className="space-y-4" style={{ overflowY: 'auto' }}>
+            <ul className="max-h-[380px] space-y-4 overflow-y-auto">
               {data.activity.map((entry, index) => (
-                <div key={entry.id ?? index} className="flex gap-3 items-start">
-                  <div className="h-2 w-2 rounded-full bg-blue-500 mt-[5px] flex-shrink-0" />
-                  <div style={{ minWidth: 0 }}>
-                    <p className="font-medium text-sm">{entry.actionName ?? 'Action'}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {entry.moduleName?.replace(/_/g, ' ') ?? '—'}
-                      {entry.actionBy ? ` · ${entry.actionBy}` : ''}
+                <li key={entry.id ?? index} className="flex items-start gap-3">
+                  <span
+                    aria-hidden
+                    className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-[#953002]"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {entry.actionName ?? "Action"}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {entry.actionAt ? new Date(entry.actionAt).toLocaleString() : '—'}
+                    <p className="text-sm text-neutral-500">
+                      {entry.moduleName?.replace(/_/g, " ") ?? "—"}
+                      {entry.actionBy ? ` · ${entry.actionBy}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-neutral-400">
+                      {entry.actionAt ? new Date(entry.actionAt).toLocaleString() : "—"}
                     </p>
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       )}
 
-      {/* Pending Tasks */}
+      {/* At a glance - reference totals, not work items. */}
       {canSeeMemberData && (
-        <div style={cardStyle}>
-          <div className="flex items-center gap-2 mb-1">
-            <ClipboardList className="h-5 w-5 text-[#953002]" />
-            <h2 className="text-lg font-semibold text-[#953002]">Pending Tasks</h2>
+        <div className={cardClass}>
+          <div className="mb-1 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-[#953002]" />
+            <h2 className="text-lg font-semibold text-[#953002]">At a glance</h2>
           </div>
-          <p className="text-sm text-muted-foreground mb-4">Action items requiring your attention</p>
+          <p className="mb-4 text-sm text-neutral-500">
+            {district ? `Totals for ${district}, for reference` : "Totals across the institute, for reference"}
+          </p>
 
-          <div className="space-y-3">
-            <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
-              <div style={{ minWidth: 0 }}>
-                <p className="font-medium text-sm">Total Members</p>
-                <p className="text-sm text-muted-foreground">{show(totalMembers)} member(s)</p>
+          <dl className="space-y-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+              <div className="min-w-0">
+                <dt className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Members
+                </dt>
+                <dd className="text-sm text-neutral-500">{show(data.totalMembers)} on record</dd>
               </div>
-              <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
-                <Link href="/membership/directory">View</Link>
-              </Button>
+              <Link
+                href="/membership/directory"
+                className="shrink-0 rounded-lg bg-[#953002] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#7a2700]"
+              >
+                View
+              </Link>
             </div>
 
-            <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
-              <div style={{ minWidth: 0 }}>
-                <p className="font-medium text-sm">New Member Applications</p>
-                <p className="text-sm text-muted-foreground">{show(pendingApplications)} application(s) waiting for review.</p>
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+              <div className="min-w-0">
+                <dt className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Registrations
+                </dt>
+                <dd className="text-sm text-neutral-500">
+                  {show(data.totalApplications)} submitted to date
+                </dd>
               </div>
-              <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
-                <Link href="/membership/new-registrations">View</Link>
-              </Button>
+              <Link
+                href="/membership/new-registrations"
+                className="shrink-0 rounded-lg bg-[#953002] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#7a2700]"
+              >
+                View
+              </Link>
             </div>
-
-            <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
-              <div style={{ minWidth: 0 }}>
-                <p className="font-medium text-sm">Total Applications</p>
-                <p className="text-sm text-muted-foreground">{show(totalApplications)} submitted</p>
-              </div>
-              <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
-                <Link href="/membership/new-registrations">View</Link>
-              </Button>
-            </div>
-
-            {/* Counts termination_request rows, not applications whose text happens to
-                contain "termination". */}
-            <div className="flex justify-between items-center border rounded-xl p-3 gap-4">
-              <div style={{ minWidth: 0 }}>
-                <p className="font-medium text-sm">Termination Requests</p>
-                <p className="text-sm text-muted-foreground">{show(data.pendingTerminations)} awaiting approval</p>
-              </div>
-              <Button asChild size="sm" style={{ backgroundColor: "#953002", borderRadius: "8px", flexShrink: 0 }}>
-                <Link href="/membership/termination">View</Link>
-              </Button>
-            </div>
-          </div>
+          </dl>
         </div>
       )}
-
     </div>
   )
 }

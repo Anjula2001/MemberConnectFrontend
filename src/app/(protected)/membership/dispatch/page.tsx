@@ -196,7 +196,7 @@ export default function MemberDocumentationDispatchPage() {
                 type="button"
                 onClick={handleDispatch}
                 disabled={selected.length === 0 || dispatching}
-                className="h-8 bg-[#9e3600] px-3 text-white hover:bg-[#8b2f00]"
+                className="h-8 bg-[#953002] px-3 text-white hover:bg-[#7a2700]"
               >
                 {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Update Dispatch {selected.length > 0 ? `(${selected.length})` : ""}
@@ -213,7 +213,7 @@ export default function MemberDocumentationDispatchPage() {
                         checked={allChecked}
                         onCheckedChange={(c) => setSelected(c ? selectableIds : [])}
                         disabled={selectableIds.length === 0}
-                        className="data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                        className="data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                       />
                     </TableHead>
                     <TableHead>Member ID</TableHead>
@@ -233,7 +233,7 @@ export default function MemberDocumentationDispatchPage() {
                               c ? [...prev, m.id as number] : prev.filter((x) => x !== m.id)
                             )
                           }
-                          className="data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                          className="data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                         />
                       </TableCell>
                       <TableCell className="font-medium">{m.memberId ?? "—"}</TableCell>

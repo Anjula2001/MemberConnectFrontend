@@ -79,8 +79,8 @@ export default function MultiSelect({
   };
 
   return (
-    <div className="space-y-2" ref={boxRef}>
-      <label className="text-sm font-semibold text-gray-600">{label}</label>
+    <div className="flex flex-col gap-1" ref={boxRef}>
+      <label className="text-xs font-medium text-gray-600">{label}</label>
       <div className="relative">
         <button
           type="button"
@@ -88,7 +88,7 @@ export default function MultiSelect({
           aria-haspopup="listbox"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white p-2.5 text-left text-sm disabled:bg-gray-100 disabled:text-gray-400"
+          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-white px-3 py-1 text-left text-sm shadow-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
         >
           <span className={isAll || selected.length === 0 ? 'text-gray-500' : 'text-gray-900'}>
             {summary()}
@@ -154,7 +154,7 @@ function Option({
     >
       <span
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-          checked ? 'border-[#8B3205] bg-[#8B3205]' : 'border-gray-300 bg-white'
+          checked ? 'border-[#953002] bg-[#953002]' : 'border-gray-300 bg-white'
         }`}
       >
         {checked && <Check size={12} className="text-white" strokeWidth={3} />}

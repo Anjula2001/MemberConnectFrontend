@@ -8,6 +8,16 @@ import { Input } from "@/src/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, } from "@/src/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/src/components/ui/select";
 import { Checkbox } from "@/src/components/ui/checkbox";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import { TablePagination, clampPage, pageSlice } from "@/src/components/ui/table-pagination";
 import { Search, RotateCcw, ArrowUp, ChevronDown, Pencil, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -46,6 +56,7 @@ export default function Page() {
 
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [displayed, setDisplayed] = useState<RequestRow[]>([]);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -104,20 +115,6 @@ export default function Page() {
   const showNormalApprovalBtn = hasRights && selectedRequests.length > 0 && selectedRequests.every(item => (item.status || "").toUpperCase() === "SUBMITTED_FOR_NORMAL_BOARD_APPROVAL");
   const showDeviationApprovalBtn = hasRights && selectedRequests.length > 0 && selectedRequests.every(item => (item.status || "").toUpperCase() === "SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL");
 
-  // Convert a date string in YYYY-MM-DD format to a Date object 
-  const parseYMD = (input?: string | null) => {
-    if (!input) return null;
-    const s = String(input);
-    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return null;
-    const y = Number(m[1]);
-    const mo = Number(m[2]) - 1;
-    const d = Number(m[3]);
-    const dt = new Date(y, mo, d);
-    dt.setHours(0, 0, 0, 0);
-    return dt;
-  };
-
   const [locationOptions, setLocationOptions] = useState<
     { value: string; label: string }[]
   >([]);
@@ -157,144 +154,25 @@ export default function Page() {
   ];
 
   // Function to get status colors based on status value
-  const getStatusColor = (status?: string) => {
-    if (!status) return "bg-yellow-100 border-yellow-200 text-yellow-500";
-
-    const statusLower = status.toLowerCase().replace(/[\s_]+/g, "");
-
-    if (statusLower === "new") {
-      return "bg-blue-100 border-blue-200 text-blue-500";
-    } else if (statusLower === "incomplete") {
-      return "bg-pink-100 border-pink-200 text-pink-500";
-    } else if (statusLower === "approved") {
-      return "bg-green-100 border-green-200 text-green-500";
-    } else if (statusLower === "rejected") {
-      return "bg-red-100 border-red-200 text-red-500";
-    } else if (statusLower === "submittedforcommitteeapproval") {
-      return "bg-purple-100 border-purple-200 text-purple-500";
-    } else if (statusLower === "submittedfornormalboardapproval" || statusLower === "submittedfordeviationboardapproval") {
-      return "bg-amber-100 border-amber-200 text-amber-600";
-    } else if (statusLower === "addedtonormalboardapprovallist" || statusLower === "addedtodeviationboardapprovallist" || statusLower === "addedtonormalapprovallist") {
-      return "bg-emerald-100 border-emerald-200 text-emerald-600";
-    } else {
-      return "bg-yellow-100 border-yellow-200 text-yellow-500";
-    }
-  };
-
-  const formatStatusLabel = (status?: string) => {
-    if (!status) return "";
-    const statusUpper = status.toUpperCase().replace(/[\s_]+/g, "");
-    switch (statusUpper) {
-      case "NEW": return "New";
-      case "INCOMPLETE": return "Incomplete";
-      case "SUBMITTEDFORCOMMITTEEAPPROVAL": return "Submitted for Committee Approval";
-      case "SUBMITTEDFORNORMALBOARDAPPROVAL": return "Submitted for Normal Board Approval";
-      case "SUBMITTEDFORDEVIATIONBOARDAPPROVAL": return "Submitted for Deviation Board Approval";
-      case "ADDEDTONORMALBOARDAPPROVALIST":
-      case "ADDEDTONORMALBOARDAPPROVALLIST":
-      case "ADDEDTONORMALAPPROVALLIST":
-        return "Added to Normal Approval List";
-      case "ADDEDTODEVIATIONBOARDAPPROVALLIST": return "Added to Deviation Board Approval List";
-      case "APPROVED": return "Approved";
-      case "REJECTED": return "Rejected";
-      default: return status.replace(/_/g, " ");
-    }
-  };
-
   useEffect(() => {
 
   }, []);
 
-  // Real-time filtering as user changes filters
-  useEffect(() => {
-    if (requests.length === 0) return;
+  /*
+   * The client-side filter that used to live here is gone: Location, Status, Received
+   * On, the date period, Search and Sort are all applied by
+   * /api/university-scholarships/search, and `displayed` is set straight from the
+   * response in handleRetrieve.
+   *
+   * Location in particular must stay server-side - resolveLocationScope pins a District
+   * Office caller to their own district, which a browser filter cannot enforce.
+   */
 
-    let filtered = [...requests];
 
-    if (selectedLocations.length > 0) {
-      filtered = filtered.filter((r) => {
-        const requestLocation = (r.submissionLocation || "").toLowerCase().trim();
-        if (!requestLocation) {
-          return false;
-        }
-        return selectedLocations.some(
-          (loc) => requestLocation === loc.toLowerCase().trim()
-        );
-      });
-    }
-
-    // Filter by status
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((r) => {
-        if (!r.status) return false;
-        const normalizedStatus = r.status.toLowerCase().replace(/[\s_]+/g, "");
-        return selectedStatuses.includes(normalizedStatus);
-      });
-    }
-
-    // Filter by application received date
-    if (applicationReceivedOn !== "all") {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      filtered = filtered.filter((r) => {
-        if (!r.requestDate) return false;
-        const rDate = parseYMD(r.requestDate);
-        if (!rDate) return false;
-
-        if (applicationReceivedOn === "thisMonth") {
-          return rDate.getMonth() === today.getMonth() && rDate.getFullYear() === today.getFullYear();
-        } else if (applicationReceivedOn === "thisAndLastMonth") {
-          const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-          lastMonth.setHours(0, 0, 0, 0);
-          return rDate >= lastMonth && rDate <= today;
-        } else if (applicationReceivedOn === "datePeriod") {
-          if (fromDate && toDate) {
-            const start = parseYMD(fromDate);
-            const end = parseYMD(toDate);
-            if (!start || !end) return false;
-            return rDate >= start && rDate <= end;
-          }
-          return true;
-        }
-        return true;
-      });
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          (r.studentName && r.studentName.toLowerCase().includes(q)) ||
-          (r.memberName && r.memberName.toLowerCase().includes(q)) ||
-          (r.memberId && r.memberId.toLowerCase().includes(q)) ||
-          (r.requestId && r.requestId.toLowerCase().includes(q)) ||
-          (r.nic && r.nic.toLowerCase().includes(q)) ||
-          (r.examNumber && r.examNumber.toLowerCase().includes(q))
-      );
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "requested-date") {
-        cmp = (a.requestDate || "").localeCompare(b.requestDate || "");
-      } else if (sortBy === "status") {
-        cmp = (a.status || "").localeCompare(b.status || "");
-      } else if (sortBy === "member-id") {
-        cmp = (a.memberId || "").localeCompare(b.memberId || "");
-      } else if (sortBy === "scholarship-id") {
-        const aKey = a.requestId || String(a.id);
-        const bKey = b.requestId || String(b.id);
-        cmp = aKey.localeCompare(bKey);
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-
-    console.log("Final filtered results:", filtered.length, "records");
-    setDisplayed(filtered);
-  }, [requests, selectedLocations, selectedStatuses, applicationReceivedOn, fromDate, toDate, searchQuery, sortBy, sortAsc]);
+  // Clamped every render: the effect above re-filters on any criteria change, which can
+  // shrink the result set under whatever page the user was on.
+  const safePage = clampPage(page, displayed.length);
+  const pagedRequests = pageSlice(displayed, safePage);
 
   // MultiSelect component for location and status filters
   function MultiSelect({
@@ -436,15 +314,33 @@ export default function Page() {
     try {
       setIsLoading(true);
 
-      const res = await authFetch("http://localhost:8080/api/university-scholarships");
+      /*
+       * Every criterion goes to the server. This used to fetch
+       * /api/university-scholarships - every request in the caller's scope - and filter
+       * in the browser, so Retrieve re-downloaded the whole module on each press.
+       */
+      const params = new URLSearchParams();
+      selectedLocations.forEach((location) => params.append("locations", location));
+      selectedStatuses.forEach((status) => params.append("statuses", status));
+      params.append("receivedOn", applicationReceivedOn);
+      params.append("sortBy", sortBy);
+      params.append("sortDirection", sortAsc ? "asc" : "desc");
+      if (searchQuery.trim()) params.append("search", searchQuery.trim());
+      if (applicationReceivedOn === "datePeriod") {
+        if (fromDate) params.append("fromDate", fromDate);
+        if (toDate) params.append("toDate", toDate);
+      }
+
+      const res = await authFetch(
+        `http://localhost:8080/api/university-scholarships/search?${params.toString()}`
+      );
       const data = await res.json();
 
-      if (Array.isArray(data) && data.length > 0) {
-        setRequests(data);
-      } else {
-        setRequests([]);
-        setDisplayed([]);
-      }
+      // The server has already filtered and sorted, so displayed mirrors the response.
+      const rows = Array.isArray(data) ? data : [];
+      setRequests(rows);
+      setDisplayed(rows);
+      setPage(1);
       setHasRetrieved(true);
     } catch (error) {
       console.error("Failed to retrieve requests:", error);
@@ -547,13 +443,13 @@ export default function Page() {
 
         <div className="flex gap-2">
           {showNormalApprovalBtn && (
-            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(false)}>
+            <Button className="bg-[#ffb401] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(false)}>
               Create University Scholarship Normal Approval List ({selectedRequests.length})
             </Button>
           )}
 
           {showDeviationApprovalBtn && (
-            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
+            <Button className="bg-[#ffb401] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
               Create University Scholarship Deviation Approval List ({selectedRequests.length})
             </Button>
           )}
@@ -690,12 +586,13 @@ export default function Page() {
           </CardContent>
         </Card>
 
-        <div className="rounded-lg border bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-sm text-gray bold">
-                  <th className="py-4 px-4 font-medium w-10">
+        {/* Results - shadcn Table, matching the Membership Directory. */}
+        <Card className="overflow-hidden rounded-xl border-neutral-300 py-0 shadow-none">
+          <CardContent className="overflow-x-auto px-0">
+            <Table className="border-collapse">
+              <TableHeader>
+                <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                  <TableHead className="w-10 px-4 py-3">
                     <Checkbox
                       checked={
                         isAllSelectableSelected
@@ -708,32 +605,36 @@ export default function Page() {
                       disabled={selectableDisplayedRowIds.length === 0}
                       className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
                     />
-                  </th>
-                  <th className="py-4 px-4 font-medium">Request ID</th>
-                  <th className="py-4 px-4 font-medium">Student</th>
-                  <th className="py-4 px-4 font-medium">NIC</th>
-                  <th className="py-4 px-4 font-medium">Member</th>
-                  <th className="py-4 px-4 font-medium">Status</th>
-                  <th className="py-4 px-4 font-medium">Indicator</th>
-                  <th className="py-4 px-4 font-medium">Action</th>
-                </tr>
-              </thead>
+                  </TableHead>
+                  {["Request ID", "Student", "NIC", "Member", "Status", "Indicator"].map((h) => (
+                    <TableHead
+                      key={h}
+                      className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                    >
+                      {h}
+                    </TableHead>
+                  ))}
+                  <TableHead className="px-4 py-3 text-right text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
 
-              <tbody>
+              <TableBody>
                 {displayed.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-4 text-gray-500">
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-neutral-500">
                       No data available
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  displayed.map((item) => {
+                  pagedRequests.map((item) => {
                     const requestKey = item.requestId || String(item.id);
                     const isDeviation = (item.status || "").toUpperCase().includes("DEVIATION") || (item.approvalListId || "").startsWith("USDL-");
 
                     return (
-                      <tr key={item.id} className="border-t text-sm text-gray-600">
-                        <td className="py-4 px-4">
+                      <TableRow key={item.id} className="hover:bg-neutral-50">
+                        <TableCell className="px-4 py-4">
                           {isSelectable(item) ? (
                             <Checkbox
                               checked={selectedIds.includes(item.id)}
@@ -743,61 +644,69 @@ export default function Page() {
                           ) : (
                             <span className="size-4 block" />
                           )}
-                        </td>
-                        <td className="py-4 px-4">
+                        </TableCell>
+                        <TableCell className="px-4 py-4 font-medium">
                           <Link
                             href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                            className="text-[#953002] hover:underline font-medium"
+                            className="text-[#953002] hover:underline"
                           >
                             {requestKey}
                           </Link>
-                        </td>
-                        <td className="py-4 px-4 text-gray-600">{item.studentName}</td>
-                        <td className="py-4 px-4 text-gray-600">{item.nic}</td>
-                        <td className="py-4 px-4 text-gray-600">{item.memberName}</td>
-                        <td className="py-4 px-4">
-                          <span className={`px-2 py-1 rounded-full border text-[11px] ${getStatusColor(item.status)}`}>
-                            {formatStatusLabel(item.status)}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">{item.studentName}</TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">{item.nic}</TableCell>
+                        <TableCell className="px-4 py-4 text-neutral-700">{item.memberName}</TableCell>
+                        <TableCell className="px-4 py-4">
+                          <StatusBadge status={item.status} vocabulary="scholarship" />
+                        </TableCell>
+                        <TableCell className="px-4 py-4">
                           {isDeviation ? (
                             <span
                               title="Deviation Process"
-                              className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 font-semibold cursor-help"
+                              className="inline-flex cursor-help items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                             >
                               <AlertCircle size={12} />
                               Deviation
                             </span>
                           ) : (
-                            <span className="text-gray-300 text-xs">—</span>
+                            <span className="text-xs text-neutral-300">—</span>
                           )}
-                        </td>
-                        <td className="py-4 px-4">
+                        </TableCell>
+                        <TableCell className="px-4 py-4 text-right">
                           {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") ? (
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
-                              className="text-[#953002] hover:text-[#c44515] transition-colors"
+                              aria-label="Edit request"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                             >
-                              <Pencil size={18} />
+                              <Pencil size={16} />
                             </Link>
                           ) : (
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                              className="text-[#953002] hover:underline font-medium"
+                              className="text-sm font-medium text-[#953002] hover:underline"
                             >
                               Open
                             </Link>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </TableBody>
+            </Table>
+
+            {displayed.length > 0 && (
+              <TablePagination
+                page={safePage}
+                total={displayed.length}
+                onPageChange={setPage}
+                itemLabel="request"
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {showBoardMeetingModal && (

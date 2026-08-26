@@ -22,6 +22,10 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
+import {
+  TablePagination,
+  DEFAULT_PAGE_SIZE,
+} from "@/src/components/ui/table-pagination";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import {
   Card,
@@ -47,8 +51,10 @@ import {
 import { NewMemberRegistrationForm } from "./form-new";
 import {
   searchMemberApplications,
+  getSelectableApplicationIds,
   deleteMemberApplication,
   updateMemberApplicationStatus,
+  type ApplicationSearchParams,
   type ApplicationStatus,
   type MemberApplicationDTO,
 } from "@/lib/api/memberApplications";
@@ -192,15 +198,33 @@ export default function NewRegistrationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  // Spec MR02: "By default, 'New', 'Submitted for Approval', and 'Added to Board
+  // Approval List' statuses will be selected." Starting empty sent no status filter at
+  // all, so the first Retrieve also returned Rejected and Inactive applications - the
+  // two the default is meant to leave out.
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([
+    "new",
+    "submitted",
+    "board",
+  ]);
   const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sortBy, setSortBy] = useState("applied-date");
   const [sortAsc, setSortAsc] = useState(true);
+  // One page of rows, not the whole result set — see loadPage().
   const [displayData, setDisplayData] = useState<Registration[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectableCount, setSelectableCount] = useState(0);
+  // The filter the currently displayed rows were fetched with, frozen at Retrieve.
+  // Paging and post-action refreshes reuse it so that edits made to the criteria
+  // fields since — which are not meant to take effect until Retrieve is pressed —
+  // cannot silently change what page 2 contains.
+  const [activeSearch, setActiveSearch] = useState<ApplicationSearchParams | null>(null);
   const [hasRetrieved, setHasRetrieved] = useState(false);
   const [isRetrieving, setIsRetrieving] = useState(false);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
   const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
   const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
@@ -322,23 +346,25 @@ export default function NewRegistrationsPage() {
     };
   };
 
-  const selectableNewRowIds = displayData
-    .filter(
-      (row) => row.selectable &&
-        (row.status === "SUBMITTED_FOR_APPROVAL" || row.status === "REJECTED")
-    )
-    .map((row) => row.appId);
-
-  const selectedNewRowsCount = selectableNewRowIds.filter((id) =>
-    selectedRows.includes(id)
-  ).length;
+  // Select-all stays scoped to the whole filtered result rather than the visible
+  // page: the count beside "Add to Board Approval List" already reports how many
+  // are held, so a selection spanning pages is visible rather than silent, and an
+  // operator adding 23 applications to a list does not have to walk three pages to
+  // do it.
+  //
+  // displayData now holds one page, so neither the total nor the IDs can be derived
+  // from it. selectableCount rides along with each page as a database COUNT, and the
+  // IDs themselves are fetched only if the operator actually ticks the header box.
+  // Every ID in selectedRows is selectable by construction — the per-row checkbox is
+  // rendered for no other status — so comparing lengths is enough to tell "all" from
+  // "some".
+  const selectedNewRowsCount = selectedRows.length;
 
   const isAllNewRowsSelected =
-    selectableNewRowIds.length > 0 &&
-    selectedNewRowsCount === selectableNewRowIds.length;
+    selectableCount > 0 && selectedNewRowsCount === selectableCount;
 
   const isSomeNewRowsSelected =
-    selectedNewRowsCount > 0 && selectedNewRowsCount < selectableNewRowIds.length;
+    selectedNewRowsCount > 0 && selectedNewRowsCount < selectableCount;
 
   // The Location dropdown carries slug values ("nuwara-eliya"); the backend filters on
   // the stored district label ("Nuwara Eliya"), so translate before querying.
@@ -373,15 +399,33 @@ export default function NewRegistrationsPage() {
     );
   };
 
-  const toggleAllNewRows = (checked: boolean) => {
-    setSelectedRows((prev) => {
-      if (checked) {
-        const merged = new Set([...prev, ...selectableNewRowIds]);
-        return Array.from(merged);
-      }
+  const toggleAllNewRows = async (checked: boolean) => {
+    if (!checked) {
+      setSelectedRows([]);
+      return;
+    }
+    if (!activeSearch) return;
 
-      return prev.filter((id) => !selectableNewRowIds.includes(id));
-    });
+    // The IDs live behind the same filter as the rows, but on every page. Asking the
+    // server for them costs one single-column query; the alternative is downloading
+    // every matching application, which is exactly what this screen stopped doing.
+    setIsSelectingAll(true);
+    try {
+      const ids = await getSelectableApplicationIds({
+        query: activeSearch.query,
+        statuses: activeSearch.statuses,
+        locations: activeSearch.locations,
+        receivedFrom: activeSearch.receivedFrom,
+        receivedTo: activeSearch.receivedTo,
+      });
+      setSelectedRows(ids);
+    } catch (error) {
+      alert(
+        error instanceof Error ? error.message : "Failed to select all registrations"
+      );
+    } finally {
+      setIsSelectingAll(false);
+    }
   };
 
   /** Translates the "Application Received On" preset into a concrete date range. */
@@ -404,44 +448,82 @@ export default function NewRegistrationsPage() {
     return {};
   };
 
-  const handleRetrieve = async () => {
-    setIsRetrieving(true);
-    let filtered: Registration[] = [];
+  /** The criteria fields as the backend wants them, read at the moment Retrieve runs. */
+  const buildSearchParams = (): ApplicationSearchParams => ({
+    ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
+    ...(selectedStatuses.length > 0
+      ? {
+          statuses: selectedStatuses
+            .map((s) => statusFilterMap[s])
+            .filter((s): s is ApplicationStatus => Boolean(s) && s !== "PENDING"),
+        }
+      : {}),
+    ...(selectedLocations.length > 0
+      ? { locations: selectedLocations.map(locationValueToLabel) }
+      : {}),
+    ...resolveReceivedRange(),
+    sortBy: sortBy as "applied-date" | "status" | "district" | "zone",
+    sortDirection: sortAsc ? "asc" : "desc",
+  });
 
+  /**
+   * Fetches one page. Filtering, sorting, paging and both counts are the database's
+   * work — the browser receives ten rows and the totals to describe them, instead of
+   * the entire application table to slice ten rows out of.
+   */
+  const loadPage = async (search: ApplicationSearchParams, requestedPage: number) => {
+    setIsRetrieving(true);
     try {
-      // Filtering/sorting happens server-side — previously the entire application
-      // table was fetched and filtered in the browser, which does not scale.
-      const applications = await searchMemberApplications({
-        ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
-        ...(selectedStatuses.length > 0
-          ? {
-              statuses: selectedStatuses
-                .map((s) => statusFilterMap[s])
-                .filter((s): s is ApplicationStatus => Boolean(s) && s !== "PENDING"),
-            }
-          : {}),
-        ...(selectedLocations.length > 0
-          ? { locations: selectedLocations.map(locationValueToLabel) }
-          : {}),
-        ...resolveReceivedRange(),
-        sortBy: sortBy as "applied-date" | "status" | "district" | "zone",
-        sortDirection: sortAsc ? "asc" : "desc",
+      const result = await searchMemberApplications({
+        ...search,
+        page: requestedPage - 1,
+        size: DEFAULT_PAGE_SIZE,
       });
-      filtered = applications.map(mapToRegistration);
+
+      setDisplayData(result.content.map(mapToRegistration));
+      setTotalCount(result.totalElements);
+      setSelectableCount(result.selectableCount);
+      // Trust the server's page number over the requested one: deleting the last row
+      // of the last page leaves the request pointing past the end, and the backend
+      // answers with the page that now exists rather than an empty one.
+      setPage(result.page + 1);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to retrieve applications";
-      alert(message);
+      alert(
+        error instanceof Error ? error.message : "Failed to retrieve applications"
+      );
       setDisplayData([]);
+      setTotalCount(0);
+      setSelectableCount(0);
+      setPage(1);
+    } finally {
       setHasRetrieved(true);
       setIsRetrieving(false);
-      return;
     }
+  };
 
-    setDisplayData(filtered);
+  const handleRetrieve = async () => {
+    const search = buildSearchParams();
+    setActiveSearch(search);
     setSelectedRows([]);
-    setHasRetrieved(true);
-    setIsRetrieving(false);
+    await loadPage(search, 1);
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    if (!activeSearch || nextPage === page) return;
+    void loadPage(activeSearch, nextPage);
+  };
+
+  /**
+   * Re-reads the page the operator is on after a row was changed underneath them.
+   *
+   * The list used to be patched in place, which was the only option when the browser
+   * held every row. A page is ten rows, so re-reading it is cheap, and it keeps the
+   * footer total and the select-all count honest — a deleted row leaves a gap and a
+   * submitted one changes how many rows are tickable.
+   */
+  const refreshCurrentPage = async () => {
+    if (!activeSearch) return;
+    await loadPage(activeSearch, page);
   };
 
   const handleOpenBoardMeetingModal = () => {
@@ -473,13 +555,10 @@ export default function NewRegistrationsPage() {
       });
 
       setCreatedBoardApprovalList(createdList);
-      setDisplayData((prev) =>
-        prev.map((row) =>
-          selectedRows.includes(row.appId)
-            ? { ...row, status: "ADDED_TO_BOARD_APPROVAL_LIST", selectable: false }
-            : row
-        )
-      );
+      // Every selected row has just left the tickable statuses, so the selection and
+      // the counts behind it are both stale. Re-reading the page settles both.
+      setSelectedRows([]);
+      await refreshCurrentPage();
 
       setShowBoardMeetingModal(false);
       setSelectedBoardMeeting("");
@@ -521,8 +600,10 @@ export default function NewRegistrationsPage() {
     setIsDeletingApplication(true);
     try {
       await deleteMemberApplication(pendingDeleteRow.id);
-      setDisplayData((prev) => prev.filter((r) => r.appId !== pendingDeleteRow.appId));
       setSelectedRows((prev) => prev.filter((id) => id !== pendingDeleteRow.appId));
+      // The row is gone from the middle of a page, so the rows after it shift up a
+      // slot and the totals move. Refetch rather than patch the local copy.
+      await refreshCurrentPage();
       setShowDeleteModal(false);
       setPendingDeleteRow(null);
     } catch (error) {
@@ -536,13 +617,9 @@ export default function NewRegistrationsPage() {
     if (!row.id) return;
     try {
       await updateMemberApplicationStatus(row.id, "SUBMITTED_FOR_APPROVAL");
-      setDisplayData((prev) =>
-        prev.map((r) =>
-          r.appId === row.appId
-            ? { ...r, status: "SUBMITTED_FOR_APPROVAL", selectable: true }
-            : r
-        )
-      );
+      // Submitting makes the row tickable, which changes the select-all total the
+      // server owns. Refetching the page is what keeps that count in step.
+      await refreshCurrentPage();
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to submit application");
     }
@@ -591,7 +668,7 @@ export default function NewRegistrationsPage() {
         <div className="flex items-center gap-2">
           {!isDistrictOfficer && (
             <Button
-              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              className="bg-[#ffb401] hover:bg-[#c99500] text-white"
               disabled={selectedNewRowsCount === 0}
               onClick={handleOpenBoardMeetingModal}
             >
@@ -774,9 +851,9 @@ export default function NewRegistrationsPage() {
                         ? "indeterminate"
                         : false
                   }
-                  onCheckedChange={(checked) => toggleAllNewRows(checked === true)}
+                  onCheckedChange={(checked) => void toggleAllNewRows(checked === true)}
                   aria-label="Select all submitted or rejected status rows"
-                  disabled={selectableNewRowIds.length === 0}
+                  disabled={selectableCount === 0 || isSelectingAll || isRetrieving}
                   className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
                 />
               </TableHead>
@@ -893,6 +970,13 @@ export default function NewRegistrationsPage() {
             ))}
           </TableBody>
         </Table>
+
+        <TablePagination
+          page={page}
+          total={totalCount}
+          onPageChange={handlePageChange}
+          itemLabel="registration"
+        />
       </Card>
 
       {/* Fixed-position action dropdown — renders outside Card overflow */}
@@ -1096,7 +1180,7 @@ export default function NewRegistrationsPage() {
               <div className="mt-6 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  className="bg-[#ffb401] text-white hover:bg-[#c99500]"
                   onClick={handleCloseCreationConfirmModal}
                 >
                   No

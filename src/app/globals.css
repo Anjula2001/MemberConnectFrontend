@@ -4,10 +4,122 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────
+   UOM Project Style Guidelines — design tokens.
+
+   Single source of truth for colour. Before this, brand colour lived in ~700
+   hardcoded hex values across 81 files, in ten near-identical browns; the
+   shadcn tokens below were still default greyscale, so every Button, Badge and
+   Input rendered grey unless a caller overrode it inline.
+
+   Note on the two brand colours: the guide's colour page labels them crossed
+   ("Primary / #FFB401" under the brown swatch). #953002 is the brown and
+   #FFB401 the amber, and every other page — Buttons, Tags — renders Primary
+   brown and Secondary amber, so that is the reading used here.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --brand-primary: #953002;
+  --brand-primary-hover: #7a2700;   /* the guide's darker hover state */
+  --brand-secondary: #ffb401;
+  --brand-secondary-hover: #e2a001;
+
+  /* State */
+  --state-info: #2f80ed;
+  --state-success: #27ae60;
+  --state-warning: #e2b93b;
+  --state-error: #eb5757;
+
+  /* Black */
+  --black-1: #000000;
+  --black-2: #1d1d1d;
+  --black-3: #282828;
+  --white: #ffffff;
+
+  /* Spacing levels from the guide (8 → 120), for reference and for anywhere that
+     wants an exact guide value: var(--guide-space-24). Deliberately NOT named
+     --spacing-*, which Tailwind v4 would read as an override of its own scale. */
+  --guide-space-8: 8px;
+  --guide-space-16: 16px;
+  --guide-space-24: 24px;
+  --guide-space-32: 32px;
+  --guide-space-40: 40px;
+  --guide-space-56: 56px;
+  --guide-space-72: 72px;
+  --guide-space-80: 80px;
+  --guide-space-96: 96px;
+  --guide-space-120: 120px;
+
+  /* Grey */
+  --gray-1: #333333;
+  --gray-2: #4f4f4f;
+  --gray-3: #828282;
+  --gray-4: #b0b0b0;
+  --gray-5: #e0e0e0;
+}
+
+@theme {
+  /* Colour utilities: bg-brand-primary, text-gray-3, border-state-error, ... */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-hover: var(--brand-primary-hover);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-secondary-hover: var(--brand-secondary-hover);
+  --color-state-info: var(--state-info);
+  --color-state-success: var(--state-success);
+  --color-state-warning: var(--state-warning);
+  --color-state-error: var(--state-error);
+  --color-black-1: var(--black-1);
+  --color-black-2: var(--black-2);
+  --color-black-3: var(--black-3);
+  --color-gray-1: var(--gray-1);
+  --color-gray-2: var(--gray-2);
+  --color-gray-3: var(--gray-3);
+  --color-gray-4: var(--gray-4);
+  --color-gray-5: var(--gray-5);
+
+  /* Type scale. Headings are 1.1x font size, body 1.4x, per the guide. */
+  --text-h1: 56px;
+  --text-h1--line-height: 61.6px;
+  --text-h2: 48px;
+  --text-h2--line-height: 52.8px;
+  --text-h3: 40px;
+  --text-h3--line-height: 44px;
+  --text-h4: 32px;
+  --text-h4--line-height: 35.2px;
+  --text-h5: 24px;
+  --text-h5--line-height: 26.4px;
+  --text-h6: 20px;
+  --text-h6--line-height: 22px;
+  --text-body-lg: 20px;
+  --text-body-lg--line-height: 28px;
+  --text-body-md: 18px;
+  --text-body-md--line-height: 25.2px;
+  --text-body-base: 16px;
+  --text-body-base--line-height: 22.4px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 19.6px;
+
+  /* The guide's spacing levels are NOT declared here — see --guide-space-* in the
+     :root block above.
+
+     In Tailwind v4, a --spacing-<n> key inside @theme does not add a value, it
+     REPLACES that step of the spacing scale. Declaring --spacing-8: 8px redefines
+     h-8, w-8, p-8, m-8, gap-8 and every sibling utility from 32px to 8px, and the
+     same for 16, 24, 32, 40, 56, 72, 80, 96 and 120. This app is written against the
+     default scale, so that silently shrank every h-16 header row to 16px and every
+     h-8 pagination button to 8px. */
+
+  /* Grid frames from the guide's four breakpoints. */
+  --breakpoint-mobile: 320px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+  --breakpoint-desktop-hd: 1440px;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -55,18 +167,19 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
+  /* Brand-mapped so shadcn components inherit; previously default greyscale. */
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--white);
+  --secondary: var(--brand-secondary);
+  --secondary-foreground: var(--white);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --destructive: var(--state-error);
+  --border: var(--gray-5);
+  --input: var(--gray-5);
+  --ring: var(--brand-primary);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -74,12 +187,12 @@
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: hsl(0 0% 98%);
   --sidebar-foreground: hsl(240 5.3% 26.1%);
-  --sidebar-primary: hsl(240 5.9% 10%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--white);
   --sidebar-accent: hsl(240 4.8% 95.9%);
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --sidebar-ring: var(--brand-primary);
 }
 
 .dark {
@@ -89,10 +202,10 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--white);
+  --secondary: var(--brand-secondary);
+  --secondary-foreground: var(--white);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);

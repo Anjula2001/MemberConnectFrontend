@@ -26,6 +26,10 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
+import {
+  TablePagination,
+  DEFAULT_PAGE_SIZE,
+} from "@/src/components/ui/table-pagination";
 import { useRouter } from "next/navigation";
 import {
   Select,
@@ -36,7 +40,7 @@ import {
 } from "@/src/components/ui/select";
 import { createBoardMeeting, getBoardMeetings, updateBoardMeeting, deleteBoardMeeting, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
 import {
-  getBoardApprovalLists,
+  getCombinedApprovalListsPage,
   getBoardApprovalListByListId,
   deleteBoardApprovalList,
   getBoardApprovalListApplications,
@@ -44,12 +48,10 @@ import {
   getNomineeChangeRequestsByListId,
   processBoardApprovalList,
   type ProcessBoardApprovalListPayload,
+  type ApprovalListRowDTO,
   type BoardApprovalListDTO,
+  type MeetingDateRange,
 } from "@/lib/api/boardApprovalLists";
-import {
-  getTerminationApprovalLists,
-  type TerminationApprovalListDTO,
-} from "@/lib/api/terminationApprovalLists";
 import {
   getMemberApplicationById,
   updateMemberApplicationPartial,
@@ -73,18 +75,6 @@ type ApprovalListKind = "membership" | "termination";
  * list is still a membership-side board approval list.
  */
 type ApprovalListContent = "applications" | "name-change" | "nominee-change" | "termination";
-
-type ApprovalListRow = {
-  kind: ApprovalListKind;
-  /** Drives the badge and the count's noun; derived from the list's contents. */
-  content: ApprovalListContent;
-  listId: string;
-  status?: string;
-  boardMeetingId?: number;
-  boardMeetingDate?: string;
-  createdAt?: string;
-  itemCount: number;
-};
 
 const CONTENT_BADGES: Record<
   ApprovalListContent,
@@ -150,15 +140,29 @@ export default function BoardApprovalsPage() {
   const [selectedDate, setSelectedDate] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState<BoardMeeting[]>([]);
   const [dateFilter, setDateFilter] = useState("all");
+  // Bounds for the "Date Period" option. An empty side is open-ended, so a From
+  // with no To reads as "everything since that day", and a To with no From as
+  // "everything up to it".
+  const [listFromDate, setListFromDate] = useState("");
+  const [listToDate, setListToDate] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [isRetrievingLists, setIsRetrievingLists] = useState(false);
   const [isRetrievingApplications, setIsRetrievingApplications] = useState(false);
   const [isDeletingSelectedList, setIsDeletingSelectedList] = useState(false);
-  const [approvalLists, setApprovalLists] = useState<BoardApprovalListDTO[]>([]);
-  const [terminationApprovalLists, setTerminationApprovalLists] = useState<
-    TerminationApprovalListDTO[]
-  >([]);
+  // One page of the merged table, already ordered across both approval list tables
+  // by the server — the browser no longer holds either listing in full.
+  const [approvalRows, setApprovalRows] = useState<ApprovalListRowDTO[]>([]);
+  const [approvalTotal, setApprovalTotal] = useState(0);
+  // The full record behind the selected row. The page rows are a summary — enough to
+  // render the table, not enough for the process/delete panels, which read
+  // processedBy, actualMeetingDate, decision, rejectReason and boardRemarks. Fetched
+  // when the selection changes so it stays available whichever page it came from.
+  const [selectedApprovalList, setSelectedApprovalList] =
+    useState<BoardApprovalListDTO | null>(null);
+  // The period the visible rows were fetched with, frozen at Retrieve, so paging
+  // reuses it rather than whatever the date fields have been edited to since.
+  const [activeRange, setActiveRange] = useState<MeetingDateRange | null>(null);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState("");
   const [selectedListKind, setSelectedListKind] = useState<ApprovalListKind>("membership");
   const [applicationsRetrieved, setApplicationsRetrieved] = useState(false);
@@ -234,22 +238,20 @@ export default function BoardApprovalsPage() {
     };
 
     fetchMeetings();
-    // If a listId query param is present, auto-open it after lists are loaded
+    // A ?listId= param deep-links straight to one list. Ask for that list by id
+    // rather than downloading every list to find it — the effect that follows loads
+    // its detail, so this only has to confirm the id exists.
     const params = new URLSearchParams(window.location.search);
-    const listIdParam = params.get('listId');
+    const listIdParam = params.get("listId");
     if (listIdParam) {
       (async () => {
         try {
-          const lists = await getBoardApprovalLists();
-          setApprovalLists(lists);
-          if (lists && lists.length > 0) {
-            const found = lists.find(l => l.listId === listIdParam);
-            if (found) {
-              setSelectedApprovalListId(found.listId ?? '');
-            }
+          const found = await getBoardApprovalListByListId(listIdParam);
+          if (found?.listId) {
+            setSelectedApprovalListId(found.listId);
           }
-        } catch (e) {
-          // ignore
+        } catch {
+          // The link points at a list that no longer exists; leave nothing selected.
         }
       })();
     }
@@ -266,11 +268,25 @@ export default function BoardApprovalsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [showProcessToast]);
 
-  const selectedApprovalList = useMemo(
-    () =>
-      approvalLists.find((item) => item.listId === selectedApprovalListId) ?? null,
-    [approvalLists, selectedApprovalListId]
-  );
+  // Loads the selected membership list's full record. Termination lists have their
+  // own detail endpoint and their own panels, so they do not populate this.
+  useEffect(() => {
+    if (!selectedApprovalListId || selectedListKind !== "membership") {
+      setSelectedApprovalList(null);
+      return;
+    }
+    let cancelled = false;
+    getBoardApprovalListByListId(selectedApprovalListId)
+      .then((detail) => {
+        if (!cancelled) setSelectedApprovalList(detail);
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedApprovalList(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApprovalListId, selectedListKind]);
 
   const selectedProcessedState = useMemo<ProcessedListState | null>(() => {
     if (selectedApprovalListId && processedLists[selectedApprovalListId]) {
@@ -295,7 +311,7 @@ export default function BoardApprovalsPage() {
       rejectReason: selectedApprovalList.rejectReason ?? "",
       boardRemarks: selectedApprovalList.boardRemarks ?? "",
     };
-  }, [approvalLists, processedLists, selectedApprovalList, selectedApprovalListId]);
+  }, [processedLists, selectedApprovalList, selectedApprovalListId]);
 
   const isSelectedListProcessed =
     selectedApprovalList?.status === "PROCESSED" || Boolean(selectedProcessedState);
@@ -438,77 +454,56 @@ export default function BoardApprovalsPage() {
     }
   };
 
-  const combinedApprovalLists = useMemo<ApprovalListRow[]>(() => {
-    const membershipRows: ApprovalListRow[] = approvalLists
-      .filter((item) => Boolean(item.listId))
-      .map((item) => {
-        // A list holds one kind of record - MMC08 and MMC21 only allow a homogeneous
-        // selection - so the first non-empty collection identifies it. Counting the
-        // matching collection also fixes name and nominee lists showing no count at
-        // all, because only applicationIds was ever counted.
-        const names = item.nameChangeRequestIds?.length ?? 0;
-        const nominees = item.nomineeChangeRequestIds?.length ?? 0;
-        const applications = item.applicationIds?.length ?? 0;
+  // The merge that used to live here — pairing membership and termination lists into
+  // one ordered table, and working out each row's kind and item count — now happens on
+  // the server. It has to: page 2 of the combined order is not page 2 of either source,
+  // so the two can only be sliced after they have been merged.
 
-        const content: ApprovalListContent =
-          names > 0 ? "name-change" : nominees > 0 ? "nominee-change" : "applications";
-
-        return {
-          kind: "membership" as const,
-          content,
-          listId: item.listId as string,
-          status: item.status,
-          boardMeetingId: item.boardMeetingId,
-          boardMeetingDate: item.boardMeetingDate,
-          createdAt: item.createdAt,
-          itemCount: names > 0 ? names : nominees > 0 ? nominees : applications,
-        };
-      });
-
-    const terminationRows: ApprovalListRow[] = terminationApprovalLists
-      .filter((item) => Boolean(item.listId))
-      .map((item) => ({
-        kind: "termination" as const,
-        content: "termination" as const,
-        listId: item.listId as string,
-        status: item.status,
-        boardMeetingId: item.boardMeetingId,
-        boardMeetingDate: item.boardMeetingDate,
-        createdAt: item.createdAt,
-        itemCount: item.requestNos?.length ?? 0,
-      }));
-
-    return [...membershipRows, ...terminationRows].sort((left, right) => {
-      const leftDate = left.createdAt ?? left.boardMeetingDate ?? "";
-      const rightDate = right.createdAt ?? right.boardMeetingDate ?? "";
-      return rightDate.localeCompare(leftDate);
-    });
-  }, [approvalLists, terminationApprovalLists]);
-
-  const filteredApprovalLists = useMemo(() => {
-    if (dateFilter === "all") return combinedApprovalLists;
+  /**
+   * The Board Meeting date period the dropdown currently describes, in the form the
+   * server expects. "All" sends neither bound.
+   *
+   * Formatted from the local calendar fields rather than toISOString(): this runs in
+   * UTC+5:30, where local midnight on the 1st is the previous month in UTC, so
+   * toISOString() would silently send the wrong month boundary.
+   *
+   * Every option now measures the same thing - boardMeetingDate. This Month and Last
+   * Month previously measured createdAt while Date Period measured the meeting date,
+   * so one dropdown answered two different questions depending on which row you picked.
+   */
+  const meetingDateRange = useMemo((): { from?: string; to?: string } => {
+    const iso = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+        date.getDate()
+      ).padStart(2, "0")}`;
 
     const now = new Date();
-    return combinedApprovalLists.filter((item) => {
-      const itemDate = new Date(item.createdAt ?? item.boardMeetingDate ?? "");
-      if (dateFilter === "thisMonth") {
-        return (
-          itemDate.getFullYear() === now.getFullYear() &&
-          itemDate.getMonth() === now.getMonth()
-        );
-      }
 
-      if (dateFilter === "lastMonth") {
-        const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        return (
-          itemDate.getFullYear() === lastMonthDate.getFullYear() &&
-          itemDate.getMonth() === lastMonthDate.getMonth()
-        );
-      }
+    if (dateFilter === "thisMonth") {
+      return {
+        from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      };
+    }
 
-      return true;
-    });
-  }, [combinedApprovalLists, dateFilter]);
+    if (dateFilter === "lastMonth") {
+      return {
+        from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+      };
+    }
+
+    if (dateFilter === "datePeriod") {
+      return { from: listFromDate || undefined, to: listToDate || undefined };
+    }
+
+    return {};
+  }, [dateFilter, listFromDate, listToDate]);
+
+  // `approvalRows` is already the page the server returned and `listPage` is the page
+  // number it reported, so there is nothing left to slice or clamp here. Retrieve
+  // resets to page 1 from inside loadApprovalPage.
+  const [listPage, setListPage] = useState(1);
 
   const actualMeetingDateOptions = useMemo(() => {
     const unique = new Map<string, { value: string; label: string }>();
@@ -530,54 +525,63 @@ export default function BoardApprovalsPage() {
   const approvedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Approve").length;
   const rejectedCount = selectedListApplications.filter(app => (applicationDecisions[app.id]?.decision || "Approve") === "Reject").length;
 
-  const handleRetrieveApprovalLists = async () => {
+  /**
+   * Fetches one page of the merged table.
+   *
+   * Filtering, merging, ordering and slicing are the server's work now; the browser
+   * receives ten rows and the total to describe them, instead of both listings in
+   * full with every list's contents attached.
+   */
+  const loadApprovalPage = async (range: MeetingDateRange, requestedPage: number) => {
     try {
       setIsRetrievingLists(true);
-      const [membershipResult, terminationResult] = await Promise.allSettled([
-        getBoardApprovalLists(),
-        getTerminationApprovalLists(),
-      ]);
-
-      if (membershipResult.status === "fulfilled") {
-        setApprovalLists(membershipResult.value);
-      } else {
-        console.error("Error retrieving board approval lists:", membershipResult.reason);
-      }
-
-      if (terminationResult.status === "fulfilled") {
-        setTerminationApprovalLists(terminationResult.value);
-      } else {
-        console.error(
-          "Error retrieving termination approval lists:",
-          terminationResult.reason
-        );
-      }
-
-      const membershipFailed = membershipResult.status === "rejected";
-      const terminationFailed = terminationResult.status === "rejected";
-      if (membershipFailed || terminationFailed) {
-        setToastMessage(
-          membershipFailed && terminationFailed
-            ? "Failed to retrieve approval lists"
-            : membershipFailed
-              ? "Failed to retrieve membership approval lists"
-              : "Failed to retrieve termination approval lists"
-        );
-        setShowProcessToast(true);
-      }
-
-      setSelectedApprovalListId("");
-      setSelectedListKind("membership");
-      setApplicationsRetrieved(false);
-      setSelectedListApplications([]);
-      setSelectedListNameChangeRequests([]);
-      setSelectedListNomineeChangeRequests([]);
-      setSelectedListNameChangeDecisions({});
-      setSelectedListNomineeChangeDecisions({});
-      setApplicationDecisions({});
+      const result = await getCombinedApprovalListsPage(
+        range,
+        requestedPage - 1,
+        DEFAULT_PAGE_SIZE
+      );
+      setApprovalRows(result.content);
+      setApprovalTotal(result.totalElements);
+      // Trust the server's page number: it answers with the last page that exists
+      // when the request points past the end of a shrunken result.
+      setListPage(result.page + 1);
+    } catch (error) {
+      console.error("Error retrieving approval lists:", error);
+      setApprovalRows([]);
+      setApprovalTotal(0);
+      setListPage(1);
+      setToastMessage("Failed to retrieve approval lists");
+      setShowProcessToast(true);
     } finally {
       setIsRetrievingLists(false);
     }
+  };
+
+  const handleRetrieveApprovalLists = async () => {
+    const range = meetingDateRange;
+    setActiveRange(range);
+
+    setSelectedApprovalListId("");
+    setSelectedListKind("membership");
+    setApplicationsRetrieved(false);
+    setSelectedListApplications([]);
+    setSelectedListNameChangeRequests([]);
+    setSelectedListNomineeChangeRequests([]);
+    setSelectedListNameChangeDecisions({});
+    setSelectedListNomineeChangeDecisions({});
+    setApplicationDecisions({});
+
+    await loadApprovalPage(range, 1);
+  };
+
+  const handleListPageChange = (nextPage: number) => {
+    if (nextPage === listPage) return;
+    void loadApprovalPage(activeRange ?? meetingDateRange, nextPage);
+  };
+
+  /** Re-reads the page in place after a row changed underneath it. */
+  const refreshApprovalPage = async () => {
+    await loadApprovalPage(activeRange ?? meetingDateRange, listPage);
   };
 
   const handleRetrieveApplications = async () => {
@@ -666,9 +670,10 @@ export default function BoardApprovalsPage() {
       setIsDeletingSelectedList(true);
       await deleteBoardApprovalList(selectedApprovalListId);
 
-      setApprovalLists((prev) =>
-        prev.filter((item) => item.listId !== selectedApprovalListId)
-      );
+      // The row is gone from the middle of a page, so the rows after it shift up and
+      // the total moves. Refetch rather than patch a local copy that is now one page
+      // of a larger result.
+      await refreshApprovalPage();
       setProcessedLists((prev) => {
         const next = { ...prev };
         delete next[selectedApprovalListId];
@@ -752,6 +757,34 @@ export default function BoardApprovalsPage() {
             ? "Approve"
             : "Reject";
 
+      /*
+       * The list-level reject reason.
+       *
+       * The board approval list stores ONE reason, while this screen captures one per
+       * application. listDecision only becomes "Reject" when every application in the
+       * list is rejected - and in exactly that case the backend requires the list-level
+       * reason, which was never put in the payload. So rejecting a whole list always
+       * failed with "Reject reason is required when rejecting applications", while
+       * rejecting only some applications worked (the list then resolves to "Approve").
+       *
+       * One shared reason is sent as itself; differing reasons are attributed per
+       * application so the single stored string stays readable.
+       */
+      const rejectedApplications = selectedListApplications.filter(
+        (app) => (applicationDecisions[app.id]?.decision || "Approve") === "Reject"
+      );
+      const reasonFor = (id: number) => (applicationDecisions[id]?.rejectReason ?? "").trim();
+      const distinctRejectReasons = Array.from(
+        new Set(rejectedApplications.map((app) => reasonFor(app.id)).filter(Boolean))
+      );
+      const listRejectReason =
+        distinctRejectReasons.length === 1
+          ? distinctRejectReasons[0]
+          : rejectedApplications
+              .map((app) => (reasonFor(app.id) ? `${app.name}: ${reasonFor(app.id)}` : null))
+              .filter((entry): entry is string => entry !== null)
+              .join("; ");
+
       // MMC12 / MMC25: each change request carries its own decision and reason.
       const nameChangeDecisions = selectedListNameChangeRequests
         .map((ncr) => {
@@ -790,6 +823,14 @@ export default function BoardApprovalsPage() {
         return;
       }
 
+      // Applications were never covered by the guard above, so a rejection with a blank
+      // reason reached the server and came back as a raw validation error.
+      if (rejectedApplications.some((app) => !reasonFor(app.id))) {
+        setToastMessage("Enter a reject reason for every rejected application before proceeding.");
+        setShowProcessToast(true);
+        return;
+      }
+
       // Upload the scanned, signed approval sheet first (if attached) so the stored
       // key can be saved alongside the decision. A failed upload must not lose the
       // board's decision, so fall back to recording the filename.
@@ -814,6 +855,7 @@ export default function BoardApprovalsPage() {
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
         ...(listDecision ? { decision: listDecision } : {}),
+        ...(listDecision === "Reject" && listRejectReason ? { rejectReason: listRejectReason } : {}),
         boardRemarks,
         processedBy: "Super Admin User",
         ...(approvedListDocument ? { approvedListDocument } : {}),
@@ -825,6 +867,12 @@ export default function BoardApprovalsPage() {
 
       let approveToastMessage: string | null = null;
       const memberCreationErrors: string[] = [];
+      // A failed rejection used to be logged to the console and nothing else: the list
+      // still reported success, and because the application was never actually set to
+      // REJECTED it came back showing "Approve" - the board's decision silently flipped.
+      const rejectionErrors: string[] = [];
+      // Ids whose decision never reached the server, so the row must keep its old status.
+      const failedApplicationIds = new Set<number>();
       let newMembersCount = 0;
 
       await Promise.allSettled(
@@ -880,6 +928,7 @@ export default function BoardApprovalsPage() {
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : "Unknown error";
               memberCreationErrors.push(`${app.appId}: ${msg}`);
+              failedApplicationIds.add(app.id);
             }
           } else {
             try {
@@ -888,18 +937,55 @@ export default function BoardApprovalsPage() {
                 boardDecisionReason: appDecisionState?.rejectReason || ""
               });
             } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Unknown error";
               console.error("Failed to reject application", app.id, err);
+              rejectionErrors.push(`${app.appId}: ${msg}`);
+              failedApplicationIds.add(app.id);
             }
           }
         })
       );
 
-      if (memberCreationErrors.length > 0) {
-        console.warn("Some members could not be created:", memberCreationErrors);
-        approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
+      if (memberCreationErrors.length > 0 || rejectionErrors.length > 0) {
+        const parts: string[] = [];
+        if (memberCreationErrors.length > 0) {
+          console.warn("Some members could not be created:", memberCreationErrors);
+          parts.push(`${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`);
+        }
+        if (rejectionErrors.length > 0) {
+          console.warn("Some applications could not be rejected:", rejectionErrors);
+          parts.push(`${rejectionErrors.length} application(s) could not be rejected and still show as Approve: ${rejectionErrors.join("; ")}`);
+        }
+        approveToastMessage = `List processed but ${parts.join(". ")}`;
       } else {
         approveToastMessage = `Board approval list processed. ${newMembersCount} member(s) approved and created with INACTIVE status.`;
       }
+
+      /*
+       * Write the outcome onto the rows themselves.
+       *
+       * Once a list is processed the Decision and Reason columns stop reading the
+       * dropdown and render from application.status / .boardDecisionReason instead.
+       * Those come from the server-loaded array, which processing never updated - so a
+       * freshly rejected row fell through to the "Approved" branch and showed a green
+       * badge with "-" for its reason, until a refetch corrected it on reload.
+       *
+       * Applications whose decision failed to save keep their previous status, so the
+       * screen carries on disagreeing with the server only where the server disagrees.
+       */
+      setSelectedListApplications((prev) =>
+        prev.map((app) => {
+          if (failedApplicationIds.has(app.id)) return app;
+          const decision = applicationDecisions[app.id]?.decision || "Approve";
+          return decision === "Reject"
+            ? {
+                ...app,
+                status: "REJECTED",
+                boardDecisionReason: applicationDecisions[app.id]?.rejectReason || "",
+              }
+            : { ...app, status: "APPROVED" };
+        })
+      );
 
       setProcessedLists((prev) => ({
         ...prev,
@@ -908,18 +994,14 @@ export default function BoardApprovalsPage() {
           processedAt: formatted,
           actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
           decision: listDecision ?? "Approve",
-          rejectReason: "",
+          rejectReason: listDecision === "Reject" ? listRejectReason : "",
           boardRemarks: processedList.boardRemarks ?? boardRemarks,
         },
       }));
 
-      setApprovalLists((prev) =>
-        prev.map((item) =>
-          item.listId === selectedApprovalListId
-            ? { ...item, status: "PROCESSED", ...processedList }
-            : item
-        )
-      );
+      // The row's status changed; re-read the page so the table and its total agree
+      // with the server rather than with a patched local copy.
+      await refreshApprovalPage();
 
       setIsEditingProcessedList(false);
       setShowConfirmModal(false);
@@ -951,7 +1033,7 @@ export default function BoardApprovalsPage() {
         </p>
         <button
           onClick={() => router.push("/membership/new-registrations")}
-          className="mt-6 flex items-center gap-2 rounded-lg bg-[#9e3600] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
+          className="mt-6 flex items-center gap-2 rounded-lg bg-[#953002] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
         >
           Go to New Registrations
         </button>
@@ -991,10 +1073,12 @@ export default function BoardApprovalsPage() {
       </div>
 
       {activeTab === "meetings" ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        /* items-start: without it the grid stretches both cards to the taller one, so
+           the Create panel grew a large empty area whenever the meetings list was long. */
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Create Board Meeting
               </CardTitle>
               <p className="text-sm text-muted-foreground">Schedule new meetings</p>
@@ -1028,7 +1112,7 @@ export default function BoardApprovalsPage() {
 
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Board Meetings Created
               </CardTitle>
             </CardHeader>
@@ -1042,11 +1126,19 @@ export default function BoardApprovalsPage() {
                   No meetings added yet.
                 </div>
               ) : (
-                <div className="flex flex-col gap-2">
+                /*
+                 * Fixed height with the list scrolling inside, so the card stays the same
+                 * size whatever it holds. Left to grow, a busy year of meetings stretched
+                 * this card far past the Create panel beside it and pushed everything
+                 * below off screen. ~5 rows is what fits before scrolling starts.
+                 *
+                 * pr-1 keeps the scrollbar off the row borders.
+                 */
+                <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
                   {createdMeetings.map((meeting) => (
                     <div
                       key={meeting.id}
-                      className="flex items-center justify-between rounded-lg border px-4 py-3"
+                      className="flex shrink-0 items-center justify-between rounded-lg border px-4 py-3"
                     >
                       <div className="flex items-center gap-3">
                         <Button
@@ -1092,7 +1184,7 @@ export default function BoardApprovalsPage() {
         <>
           <Card className="rounded-xl py-0 shadow-sm">
             <CardHeader className="px-5 pt-5 pb-3">
-              <CardTitle className="text-4 font-bold text-[#953002]">
+              <CardTitle className="text-lg font-bold text-[#953002]">
                 Search Approval Lists
               </CardTitle>
             </CardHeader>
@@ -1108,6 +1200,7 @@ export default function BoardApprovalsPage() {
                       <SelectItem value="all">All Dates</SelectItem>
                       <SelectItem value="thisMonth">This Month</SelectItem>
                       <SelectItem value="lastMonth">Last Month</SelectItem>
+                      <SelectItem value="datePeriod">Date Period</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -1120,13 +1213,66 @@ export default function BoardApprovalsPage() {
                   </Button>
                 </div>
               </div>
+
+              {dateFilter === "datePeriod" && (
+                <div className="mt-3 max-w-md">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1">
+                      <label
+                        htmlFor="board-list-from-date"
+                        className="text-xs font-medium text-gray-600"
+                      >
+                        From Date
+                      </label>
+                      <Input
+                        id="board-list-from-date"
+                        type="date"
+                        value={listFromDate}
+                        onChange={(event) => {
+                          const nextFrom = event.target.value;
+                          setListFromDate(nextFrom);
+                          // The To picker below only offers days from From onward,
+                          // so a To carried over from an earlier range can be left
+                          // outside what that picker can still reach. Clearing it
+                          // keeps the visible pair and the filtered result in
+                          // agreement.
+                          if (nextFrom && listToDate && listToDate < nextFrom) {
+                            setListToDate("");
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label
+                        htmlFor="board-list-to-date"
+                        className="text-xs font-medium text-gray-600"
+                      >
+                        To Date
+                      </label>
+                      <Input
+                        id="board-list-to-date"
+                        type="date"
+                        value={listToDate}
+                        // Greys out every day before From in the native picker, so
+                        // the period can only ever run forwards from the day chosen
+                        // there.
+                        min={listFromDate || undefined}
+                        onChange={(event) => setListToDate(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Leave either side empty for an open-ended range.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
             <Card className="rounded-xl py-0 shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
-                <CardTitle className="text-4 font-bold text-[#953002]">Approval Lists</CardTitle>
+                <CardTitle className="text-lg font-bold text-[#953002]">Approval Lists</CardTitle>
                 <p className="text-sm text-muted-foreground">Select a list to view details</p>
               </CardHeader>
               <CardContent className="px-0 pb-4">
@@ -1136,12 +1282,12 @@ export default function BoardApprovalsPage() {
                     <span>Status</span>
                   </div>
 
-                  {filteredApprovalLists.length === 0 ? (
+                  {approvalRows.length === 0 ? (
                     <div className="px-5 py-8 text-center text-sm text-muted-foreground">
                       No approval lists found.
                     </div>
                   ) : (
-                    filteredApprovalLists.map((item) => (
+                    approvalRows.map((item) => (
                       <button
                         key={`${item.kind}-${item.listId}`}
                         type="button"
@@ -1183,6 +1329,13 @@ export default function BoardApprovalsPage() {
                   )}
                 </div>
 
+                <TablePagination
+                  page={listPage}
+                  total={approvalTotal}
+                  onPageChange={handleListPageChange}
+                  itemLabel="list"
+                />
+
                 <div className="px-3 pt-3">
                   <Button
                     type="button"
@@ -1204,9 +1357,11 @@ export default function BoardApprovalsPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl py-0 shadow-sm">
+            {/* min-w-0: the table below carries min-w-[560px], and without this the
+                grid column would grow to fit it instead of the table scrolling inside. */}
+            <Card className="min-w-0 rounded-xl py-0 shadow-sm">
               <CardHeader className="px-5 pt-5 pb-3">
-                <CardTitle className="text-4 font-bold text-[#953002]">
+                <CardTitle className="text-lg font-bold text-[#953002]">
                   {selectedListKind === "termination" && selectedApprovalListId
                     ? "Termination Requests"
                     : "Applications"}
@@ -1286,7 +1441,7 @@ export default function BoardApprovalsPage() {
                       </div>
                     )}
 
-                    <div className="overflow-x-auto">
+                    <div className="w-full overflow-x-auto">
                         {selectedListNameChangeRequests.length > 0 && (
                           <div className="mb-4">
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Name Change Requests in this list</h3>
@@ -1413,6 +1568,15 @@ export default function BoardApprovalsPage() {
                             </div>
                           </div>
                         )}
+                      {/*
+                        * Only render the applications table when there are applications.
+                        * A Name Change or Nominee Change list has none — its requests are
+                        * the cards above — so this used to leave a bare header row
+                        * (App ID / Name / Decision / Reason / Action) under them with
+                        * nothing beneath it. The same happened for an empty membership
+                        * list; the "Showing 0 applications" line above already says so.
+                        */}
+                      {selectedListApplications.length > 0 && (
                       <table className="w-full min-w-[560px] text-sm">
                         <thead>
                           <tr className="border-b text-left text-xs font-semibold text-gray-500">
@@ -1534,6 +1698,7 @@ export default function BoardApprovalsPage() {
                           ))}
                         </tbody>
                       </table>
+                      )}
                     </div>
 
                     {(!selectedProcessedState || isEditingProcessedList) && (
@@ -1824,7 +1989,7 @@ export default function BoardApprovalsPage() {
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => setApprovalSheetFile(e.target.files?.[0] ?? null)}
-                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#9e3600] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#8b2f00]"
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#953002] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#7a2700]"
                 />
                 {approvalSheetFile && (
                   <p className="text-xs text-gray-500">

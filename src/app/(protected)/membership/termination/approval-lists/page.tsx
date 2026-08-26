@@ -20,6 +20,20 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import {
+  TablePagination,
+  clampPage,
+  pageSlice,
+} from "@/src/components/ui/table-pagination";
 import {
   Select,
   SelectContent,
@@ -81,6 +95,11 @@ export default function TerminationApprovalListsPage() {
   const initialListId = searchParams.get("listId") ?? "";
 
   const [dateFilter, setDateFilter] = useState("all");
+  // Bounds for the "Date Period" option. An empty side is open-ended, so a From
+  // with no To reads as "everything since that day", and a To with no From as
+  // "everything up to it".
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [approvalLists, setApprovalLists] = useState<TerminationApprovalListDTO[]>([]);
   const [selectedApprovalListId, setSelectedApprovalListId] = useState(initialListId);
   const [requestsRetrieved, setRequestsRetrieved] = useState(false);
@@ -132,9 +151,41 @@ export default function TerminationApprovalListsPage() {
         );
       }
 
+      if (dateFilter === "datePeriod") {
+        // Filter on the board meeting date - that is the date shown against each
+        // row, and the one an operator has in mind when they type a period.
+        // createdAt is when the list was drawn up, usually weeks before the meeting
+        // it is for, so keying off it silently hides meetings that sit inside the
+        // chosen window. createdAt is only a fallback for a list with no meeting
+        // date yet. Both are cut back to YYYY-MM-DD so each bound stays inclusive
+        // and no timezone shift can move a record into the neighbouring day.
+        const meetingDay = (item.boardMeetingDate ?? item.createdAt ?? "").slice(0, 10);
+        if (!meetingDay) return false;
+        if (fromDate && meetingDay < fromDate) return false;
+        if (toDate && meetingDay > toDate) return false;
+        return true;
+      }
+
       return true;
     });
-  }, [approvalLists, dateFilter]);
+  }, [approvalLists, dateFilter, fromDate, toDate]);
+
+  const [listPage, setListPage] = useState(1);
+
+  // Narrowing the filter, or retrieving a fresh set, can leave the stored page
+  // beyond the end of the new result - page 3 of a list that now has four rows
+  // renders as empty rather than as "no matches". Going back to the first page
+  // whenever the criteria change is what keeps the panel showing the top of the
+  // result the user just asked for.
+  useEffect(() => {
+    setListPage(1);
+  }, [approvalLists, dateFilter, fromDate, toDate]);
+
+  const safeListPage = clampPage(listPage, filteredApprovalLists.length);
+  const pagedApprovalLists = useMemo(
+    () => pageSlice(filteredApprovalLists, listPage),
+    [filteredApprovalLists, listPage]
+  );
 
   const mapRequestToRow = (request: TerminationRequestResponse): ApprovalRequestRow => ({
     id: request.id ?? 0,
@@ -382,7 +433,7 @@ export default function TerminationApprovalListsPage() {
     <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
       <Link
         href="/membership/termination"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Termination Requests
@@ -410,6 +461,7 @@ export default function TerminationApprovalListsPage() {
                   <SelectItem value="all">All Dates</SelectItem>
                   <SelectItem value="thisMonth">This Month</SelectItem>
                   <SelectItem value="lastMonth">Last Month</SelectItem>
+                  <SelectItem value="datePeriod">Date Period</SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -423,6 +475,57 @@ export default function TerminationApprovalListsPage() {
               </Button>
             </div>
           </div>
+
+          {dateFilter === "datePeriod" && (
+            <div className="mt-3 max-w-md">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="termination-list-from-date"
+                    className="text-xs font-medium text-gray-600"
+                  >
+                    From Date
+                  </label>
+                  <Input
+                    id="termination-list-from-date"
+                    type="date"
+                    value={fromDate}
+                    onChange={(event) => {
+                      const nextFrom = event.target.value;
+                      setFromDate(nextFrom);
+                      // The To picker below only offers days from From onward, so a
+                      // To carried over from an earlier range can be left outside
+                      // what that picker can still reach. Clearing it here is what
+                      // keeps the visible pair and the filtered result in agreement.
+                      if (nextFrom && toDate && toDate < nextFrom) {
+                        setToDate("");
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="termination-list-to-date"
+                    className="text-xs font-medium text-gray-600"
+                  >
+                    To Date
+                  </label>
+                  <Input
+                    id="termination-list-to-date"
+                    type="date"
+                    value={toDate}
+                    // Greys out every day before From in the native picker, so the
+                    // period can only ever run forwards from the day chosen there.
+                    min={fromDate || undefined}
+                    onChange={(event) => setToDate(event.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Leave either side empty for an open-ended range.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -444,7 +547,7 @@ export default function TerminationApprovalListsPage() {
                   No approval lists found.
                 </div>
               ) : (
-                filteredApprovalLists.map((item) => (
+                pagedApprovalLists.map((item) => (
                   <button
                     key={item.listId ?? item.id}
                     type="button"
@@ -474,6 +577,13 @@ export default function TerminationApprovalListsPage() {
               )}
             </div>
 
+            <TablePagination
+              page={safeListPage}
+              total={filteredApprovalLists.length}
+              onPageChange={setListPage}
+              itemLabel="list"
+            />
+
             <div className="px-3 pt-3">
               <Button
                 type="button"
@@ -487,7 +597,12 @@ export default function TerminationApprovalListsPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl py-0 shadow-sm">
+        {/* min-w-0 is what stops this card blowing past the viewport. A grid item
+            defaults to min-width:auto, so without it the column refuses to shrink below
+            the table's min-w-[680px] and the whole card grows instead of the table
+            scrolling inside it — clipping Print, Delete List, the last column and
+            Proceed. Same fix as the two scholarship approval-list screens. */}
+        <Card className="min-w-0 rounded-xl py-0 shadow-sm">
           <CardHeader className="px-5 pt-5 pb-3">
             <CardTitle className="text-base font-bold text-[#953002]">Termination Requests</CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -548,7 +663,7 @@ export default function TerminationApprovalListsPage() {
                 {/* Once processed there is no Print and no Process — the meeting
                     the sheet was printed for is over. */}
                 {!isSelectedListProcessed && (
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -581,25 +696,29 @@ export default function TerminationApprovalListsPage() {
                   </div>
                 )}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-xs font-semibold text-gray-500">
-                        <th className="pb-2 pr-3">Request ID</th>
-                        <th className="pb-2 pr-3">Member ID</th>
-                        <th className="pb-2 pr-3">Name</th>
-                        <th className="pb-2 pr-3">Indicators</th>
-                        <th className="pb-2 pr-3">Decision</th>
-                        <th className="pb-2 pr-3">Reason (If Reject)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="w-full overflow-x-auto">
+                  <Table className="min-w-[680px] border-collapse">
+                    <TableHeader>
+                      <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                        {["Request ID", "Member ID", "Name", "Indicators", "Decision", "Reason (If Reject)"].map(
+                          (h) => (
+                            <TableHead
+                              key={h}
+                              className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
+                            >
+                              {h}
+                            </TableHead>
+                          ),
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {selectedListRequests.map((request) => (
-                        <tr key={request.requestNo} className="align-top">
-                          <td className="py-3 pr-3 font-medium text-gray-800">
+                        <TableRow key={request.requestNo} className="align-top hover:bg-neutral-50">
+                          <TableCell className="px-4 py-4 font-medium">
                             {request.requestNo}
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             <button
                               type="button"
                               className="font-medium text-[#953002] hover:underline"
@@ -611,9 +730,11 @@ export default function TerminationApprovalListsPage() {
                             >
                               {request.memberId}
                             </button>
-                          </td>
-                          <td className="py-3 pr-3 text-gray-700">{request.memberName}</td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {request.memberName}
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             <div className="flex items-center gap-2">
                               {request.hasLoanBalance && (
                                 <CircleDollarSign className="h-4 w-4 text-amber-600" />
@@ -622,17 +743,13 @@ export default function TerminationApprovalListsPage() {
                                 <AlertTriangle className="h-4 w-4 text-red-600" />
                               )}
                             </div>
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             {isSelectedListProcessed ? (
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${request.status === "REJECTED"
-                                    ? "bg-rose-600"
-                                    : "bg-green-600"
-                                  }`}
-                              >
-                                {request.status === "REJECTED" ? "Rejected" : "Approved"}
-                              </span>
+                              <StatusBadge
+                                status={request.status === "REJECTED" ? "REJECTED" : "APPROVED"}
+                                vocabulary="request"
+                              />
                             ) : (
                               <Select
                                 value={requestDecisions[request.id]?.decision || "Approve"}
@@ -655,14 +772,14 @@ export default function TerminationApprovalListsPage() {
                                 </SelectContent>
                               </Select>
                             )}
-                          </td>
-                          <td className="py-3 pr-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-4">
                             {isSelectedListProcessed ? (
                               <span
                                 className={
                                   request.status === "REJECTED"
                                     ? "text-rose-600"
-                                    : "text-gray-500"
+                                    : "text-neutral-500"
                                 }
                               >
                                 {request.status === "REJECTED"
@@ -685,11 +802,11 @@ export default function TerminationApprovalListsPage() {
                                 placeholder="Reason required..."
                               />
                             )}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {!isSelectedListProcessed && (

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Badge } from "@/src/components/ui/badge";
+import { StatusBadge } from "@/src/components/ui/status-badge";
 import { MarkIncompleteModal } from "@/src/components/ui/grade5schoolarship/MarkIncomplete";
 import {
   SubmitConfirmationModal,
@@ -104,24 +105,6 @@ function formatAmount(value?: number | string | null) {
 function formatStatus(status?: string) {
   if (!status) return "New";
   return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
-}
-
-function getStatusBadgeClass(status?: string) {
-  switch (status) {
-    case "NEW":
-      return "bg-blue-100 text-blue-800";
-    case "SUBMITTED_FOR_APPROVAL":
-    case "DISTRICT_COMMITTEE":
-    case "PD_COMMITTEE":
-      return "bg-yellow-100 text-yellow-800";
-    case "APPROVED":
-      return "bg-green-100 text-green-800";
-    case "INCOMPLETE":
-    case "REJECTED":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
 }
 
 export default function RecordMemberDeathPage() {
@@ -651,7 +634,7 @@ export default function RecordMemberDeathPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-[#8B4513]" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#953002]" />
       </div>
     );
   }
@@ -675,14 +658,12 @@ export default function RecordMemberDeathPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-[#8B4513]">Record Member Death</h1>
+            <h1 className="text-2xl font-bold text-[#953002]">Record Member Death</h1>
             <p className="mt-1 text-sm text-gray-500">Create and manage member death records</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Badge className={`${getStatusBadgeClass(status)} px-3 py-1`}>
-            {formatStatus(status)}
-          </Badge>
+          <StatusBadge status={status} vocabulary="donation" />
           <span className="text-xs text-gray-500">
             Record ID: {recordNo ?? "NEW"}
           </span>
@@ -735,7 +716,7 @@ export default function RecordMemberDeathPage() {
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+          <div className="h-6 w-2 rounded-sm bg-[#953002]" />
           <h2 className="text-lg font-semibold text-gray-800">Member Details</h2>
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -760,7 +741,7 @@ export default function RecordMemberDeathPage() {
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+          <div className="h-6 w-2 rounded-sm bg-[#953002]" />
           <h2 className="text-lg font-semibold text-gray-800">Death Information</h2>
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -798,7 +779,7 @@ export default function RecordMemberDeathPage() {
               disabled={!isEditable}
               value={form.causeOfDeathId}
               onChange={(e) => setForm({ ...form, causeOfDeathId: e.target.value })}
-              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
             >
               <option value="">Select cause</option>
               {causeOptions.map((cause) => (
@@ -815,7 +796,7 @@ export default function RecordMemberDeathPage() {
               value={form.comment}
               onChange={(e) => setForm({ ...form, comment: e.target.value })}
               rows={3}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
             />
           </div>
           <div className="md:col-span-2">
@@ -830,7 +811,7 @@ export default function RecordMemberDeathPage() {
               value={form.concerns}
               onChange={(e) => setForm({ ...form, concerns: e.target.value })}
               rows={3}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
             />
             {!isEditable && canEditConcerns && (
               <p className="mt-1 text-xs text-gray-500">
@@ -843,7 +824,7 @@ export default function RecordMemberDeathPage() {
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+          <div className="h-6 w-2 rounded-sm bg-[#953002]" />
           <h2 className="text-lg font-semibold text-gray-800">Nominee Details</h2>
         </div>
         <div className="mb-6 grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -899,7 +880,7 @@ export default function RecordMemberDeathPage() {
               disabled={!isEditable}
               value={form.bankId}
               onChange={(e) => handleNomineeBankChange(e.target.value)}
-              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
             >
               <option value="">{banks.length === 0 ? "No banks available" : "Select Bank"}</option>
               {banks.map((bank) => (
@@ -922,7 +903,7 @@ export default function RecordMemberDeathPage() {
               disabled={!isEditable || !form.bankId}
               value={form.branchId}
               onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+              className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
             >
               <option value="">Select Branch</option>
               {nomineeBranches.map((branch) => (
@@ -949,7 +930,7 @@ export default function RecordMemberDeathPage() {
       {hasSavedRecord && (
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+            <div className="h-6 w-2 rounded-sm bg-[#953002]" />
             <h2 className="text-lg font-semibold text-gray-800">Death Donation Details</h2>
           </div>
 
@@ -1091,7 +1072,7 @@ export default function RecordMemberDeathPage() {
               <span className="font-semibold text-gray-800">
                 Disburse Death Donation Amount
               </span>
-              <span className="font-semibold text-[#8B4513]">
+              <span className="font-semibold text-[#953002]">
                 LKR {formatAmount(record?.disburseDonationAmount)}
               </span>
             </div>
@@ -1102,7 +1083,7 @@ export default function RecordMemberDeathPage() {
       {minorAccounts.length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+            <div className="h-6 w-2 rounded-sm bg-[#953002]" />
             <h2 className="text-lg font-semibold text-gray-800">Minor Savings Accounts</h2>
           </div>
           <div className="space-y-6">
@@ -1127,7 +1108,7 @@ export default function RecordMemberDeathPage() {
                       disabled={!isEditable}
                       value={acc.disbursementBankId ? String(acc.disbursementBankId) : ""}
                       onChange={(e) => handleMinorBankChange(index, e.target.value)}
-                      className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+                      className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
                     >
                       <option value="">Select Bank</option>
                       {banks.map((bank) => (
@@ -1152,7 +1133,7 @@ export default function RecordMemberDeathPage() {
                         };
                         setMinorDisbursements(updated);
                       }}
-                      className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:ring-2 focus:ring-[#8B4513] disabled:bg-gray-50"
+                      className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:ring-2 focus:ring-[#953002] disabled:bg-gray-50"
                     >
                       <option value="">Select Branch</option>
                       {(minorBranches[acc.minorAccountNo] ?? []).map((branch) => (
@@ -1194,7 +1175,7 @@ export default function RecordMemberDeathPage() {
       */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+          <div className="h-6 w-2 rounded-sm bg-[#953002]" />
           <h2 className="text-lg font-semibold text-gray-800">Required Documents</h2>
         </div>
         {hasSavedRecord && recordNo ? (
@@ -1215,7 +1196,7 @@ export default function RecordMemberDeathPage() {
       {hasSavedRecord && isLocked && (
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <div className="h-6 w-2 rounded-sm bg-[#8B4513]" />
+            <div className="h-6 w-2 rounded-sm bg-[#953002]" />
             <h2 className="text-lg font-semibold text-gray-800">Workflow Actions</h2>
           </div>
           <p className="mb-3 text-sm text-gray-600">
@@ -1308,7 +1289,7 @@ export default function RecordMemberDeathPage() {
                 className="flex-1"
               />
               <Button
-                className="bg-[#8B4513] text-white hover:opacity-90"
+                className="bg-[#953002] text-white hover:opacity-90"
                 onClick={handleForward}
                 disabled={deciding}
               >
@@ -1368,7 +1349,7 @@ export default function RecordMemberDeathPage() {
           <Button
             onClick={() => setOpenSubmitConfirm(true)}
             disabled={!canSubmitByLoans || submitting}
-            className="bg-[#8B4513] text-white hover:opacity-90 disabled:opacity-50"
+            className="bg-[#953002] text-white hover:opacity-90 disabled:opacity-50"
           >
             Submit
           </Button>

@@ -208,7 +208,7 @@ export default function ProfilePage() {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#9e3600] border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#953002] border-t-transparent" />
           <p className="text-sm font-medium text-neutral-500">Loading profile details...</p>
         </div>
       </div>
@@ -219,7 +219,7 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-5xl space-y-6 pb-12">
       {/* ── Page Header ────────────────────────────────────────────── */}
       <div className="border-b border-neutral-200 pb-4">
-        <h1 className="text-2xl font-bold text-[#9e3600]">My Profile & Settings</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">My Profile & Settings</h1>
         <p className="mt-1 text-sm text-neutral-500">
           Manage your account credentials, avatar picture, and password security.
         </p>
@@ -230,7 +230,7 @@ export default function ProfilePage() {
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
           {/* Avatar with upload overlay */}
           <div className="relative group">
-            <div className="relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#9e3600] text-2xl font-bold text-white shadow-md ring-4 ring-[#9e3600]/10">
+            <div className="relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#953002] text-2xl font-bold text-white shadow-md ring-4 ring-[#953002]/10">
               {profilePictureUrl ? (
                 <img
                   src={profilePictureUrl}
@@ -254,7 +254,7 @@ export default function ProfilePage() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingAvatar}
-              className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#9e3600] text-white shadow-md transition-transform hover:scale-110 hover:bg-[#b33f00] disabled:cursor-not-allowed"
+              className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#953002] text-white shadow-md transition-transform hover:scale-110 hover:bg-[#b33f00] disabled:cursor-not-allowed"
               title="Upload new photo"
             >
               <Camera className="h-4 w-4" />
@@ -275,7 +275,7 @@ export default function ProfilePage() {
               <h2 className="text-xl font-bold text-neutral-800">
                 {profile?.fullName || "Administrator"}
               </h2>
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#9e3600]/10 px-2.5 py-0.5 text-xs font-semibold text-[#9e3600]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#953002]/10 px-2.5 py-0.5 text-xs font-semibold text-[#953002]">
                 <Shield className="h-3 w-3" />
                 {profile?.role || "ADMIN"}
               </span>
@@ -326,7 +326,7 @@ export default function ProfilePage() {
         {/* ── Card 1: Personal Details ──────────────────────────────── */}
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-xs">
           <div className="mb-5 flex items-center gap-2.5 border-b border-neutral-100 pb-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#9e3600]/10 text-[#9e3600]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
               <User className="h-4 w-4" />
             </div>
             <div>
@@ -347,7 +347,7 @@ export default function ProfilePage() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Enter full name"
-                className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 bg-white px-3.5 text-sm text-neutral-800 outline-none transition-all focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 bg-white px-3.5 text-sm text-neutral-800 outline-none transition-all focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                 required
               />
             </div>
@@ -377,7 +377,7 @@ export default function ProfilePage() {
               </label>
               <div className="mt-1.5 flex h-10 w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-100 px-3.5 text-sm text-neutral-600">
                 <span>{profile?.role || "ADMIN"}</span>
-                <Shield className="h-4 w-4 text-[#9e3600]" />
+                <Shield className="h-4 w-4 text-[#953002]" />
               </div>
             </div>
 
@@ -387,7 +387,7 @@ export default function ProfilePage() {
                 id="save-profile-btn"
                 type="submit"
                 disabled={savingProfile}
-                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#9e3600] px-5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#b33f00] disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#953002] px-5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#b33f00] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingProfile ? (
                   <>
@@ -408,7 +408,7 @@ export default function ProfilePage() {
         {/* ── Card 2: Security & Password ──────────────────────────── */}
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-xs">
           <div className="mb-5 flex items-center gap-2.5 border-b border-neutral-100 pb-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#9e3600]/10 text-[#9e3600]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
               <KeyRound className="h-4 w-4" />
             </div>
             <div>
@@ -430,7 +430,7 @@ export default function ProfilePage() {
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Enter current password"
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                   required
                 />
                 <button
@@ -455,7 +455,7 @@ export default function ProfilePage() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="At least 6 characters"
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                   required
                 />
                 <button
@@ -483,7 +483,7 @@ export default function ProfilePage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-type new password"
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-3.5 pr-10 text-sm text-neutral-800 outline-none transition-all focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                   required
                 />
                 <button

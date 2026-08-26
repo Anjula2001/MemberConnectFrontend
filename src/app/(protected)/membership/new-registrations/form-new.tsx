@@ -6,6 +6,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/lib/toast-context";
 import { useAuth } from "@/lib/auth-context";
+import { INACTIVE_RIGHTS_ROLES, hasRole } from "@/lib/permissions";
 import {
   memberRegistrationSchema,
   type MemberRegistration,
@@ -168,11 +169,14 @@ function FormField({
   error,
   children,
   required = false,
+  hint,
 }: {
   label: string;
   error?: string;
   children: React.ReactNode;
   required?: boolean;
+  /** Explains why a field is restricted or disabled. Sits under the control. */
+  hint?: string;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -181,6 +185,7 @@ function FormField({
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
       {children}
+      {hint && !error && <span className="text-xs text-muted-foreground">{hint}</span>}
       {error && <span className="text-xs text-red-500">{error}</span>}
     </div>
   );
@@ -190,6 +195,28 @@ type NewMemberRegistrationFormProps = {
   applicationId?: number | null;
   readOnly?: boolean;
   onDone?: () => void;
+};
+
+/**
+ * MR04's status transition table, mirroring ApplicationStatusPolicy on the backend.
+ * Offering a status the server refuses with a 409 is worse than not offering it, so
+ * the two tables are deliberately kept identical.
+ *
+ * "Submitted for Approval" is absent as a target from New on purpose: that move
+ * belongs to the Submit button, which runs the mandatory-field, NIC-duplicate and
+ * age validation first. Reaching it from this dropdown would skip all three.
+ *
+ * "Added to Board Approval List", "Rejected" and "Approved" appear as targets
+ * nowhere at all - each is owned by the board flow (MR06 / MR10) and means a board
+ * record exists. Setting one here would describe a board decision that never
+ * happened.
+ */
+const STATUS_OVERRIDE_TARGETS: Record<string, string[]> = {
+  "New": ["Inactive"],
+  "Submitted for Approval": ["New", "Inactive"],
+  "Rejected": ["New", "Inactive"],
+  "Inactive": ["New"],
+  "Added to Board Approval List": [],
 };
 
 export function NewMemberRegistrationForm({
@@ -202,6 +229,12 @@ export function NewMemberRegistrationForm({
   const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
   const addToastRef = useRef(addToast);
   const isEditMode = !!applicationId;
+  // The status the record actually carries, which decides what the override field may
+  // offer. Held separately from the form value because the form value changes as the
+  // user picks, and the legal targets must stay anchored to what was loaded.
+  const [loadedStatus, setLoadedStatus] = useState<ApplicationStatus | undefined>(
+    undefined
+  );
   const [currentTab, setCurrentTab] = useState<"application" | "documents" | "progress">(
     "application"
   );
@@ -296,6 +329,26 @@ export function NewMemberRegistrationForm({
     if (value === "INACTIVE") return "Inactive";
     return "New";
   };
+
+  const canSetInactive = hasRole(user?.role, INACTIVE_RIGHTS_ROLES);
+
+  // What the record carries now, and therefore which moves MR04 permits out of it.
+  const currentStatusLabel = mapStatusToForm(loadedStatus);
+
+  const statusOverrideOptions = useMemo(() => {
+    // A new application is always created as New - there is nothing to override yet.
+    if (!isEditMode) return ["New"];
+
+    const targets = STATUS_OVERRIDE_TARGETS[currentStatusLabel] ?? [];
+    return [
+      currentStatusLabel,
+      ...targets.filter((target) => target !== "Inactive" || canSetInactive),
+    ];
+  }, [isEditMode, currentStatusLabel, canSetInactive]);
+
+  // Nothing left to choose: either the board flow holds the record, or the only other
+  // status is Inactive and this user has no Inactive rights.
+  const isStatusLocked = statusOverrideOptions.length <= 1;
 
   // Parse the stored identificationDetails JSON into selection state and input values.
   const parseIdentificationDetails = (
@@ -601,6 +654,7 @@ export function NewMemberRegistrationForm({
 
     if (!targetApplicationId) {
       setSavedApplicationId(null);
+      setLoadedStatus(undefined);
       setDocumentSummary(null);
       setBoardDecisionReason("");
       setCurrentTab("application");
@@ -615,6 +669,8 @@ export function NewMemberRegistrationForm({
       try {
         const data = await getMemberApplicationById(targetApplicationId);
         if (isCancelled) return;
+
+        setLoadedStatus(data.status);
 
         const parsedIdentificationDetails = parseIdentificationDetails(
           data.identificationDetails
@@ -1015,7 +1071,14 @@ export function NewMemberRegistrationForm({
                       )}
                     />
                   </FormField>
-                  <FormField label="Status (Override)">
+                  <FormField
+                    label="Status (Override)"
+                    hint={
+                      currentStatusLabel === "Added to Board Approval List"
+                        ? "Held by the board approval flow - delete or process the list to change it."
+                        : undefined
+                    }
+                  >
                     <Controller
                       name="statusOverride"
                       control={control}
@@ -1023,20 +1086,17 @@ export function NewMemberRegistrationForm({
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}
+                          disabled={isStatusLocked}
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select Status" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="New">New</SelectItem>
-                            <SelectItem value="Submitted for Approval">
-                              Submitted for Approval
-                            </SelectItem>
-                            <SelectItem value="Added to Board Approval List">
-                              Added to Board Approval List
-                            </SelectItem>
-                            <SelectItem value="Rejected">Rejected</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
+                            {statusOverrideOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       )}

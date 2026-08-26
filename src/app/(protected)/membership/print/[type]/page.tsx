@@ -2,9 +2,10 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2, Printer } from "lucide-react";
+import { Loader2, Printer, X } from "lucide-react";
 
 import { getMemberById, type MemberDTO } from "@/lib/api/member";
+import { getDocumentsByApplication } from "@/lib/api/documents";
 import { useAuth } from "@/lib/auth-context";
 import { CARD_PRINTING_ROLES, hasRole } from "@/lib/permissions";
 import MembershipCardTemplate from "@/src/components/membership/print-templates/MembershipCardTemplate";
@@ -20,6 +21,13 @@ const TITLES: Record<PrintType, string> = {
   "membership-card": "Membership Cards",
   "signature-card": "Signature Cards",
   passbook: "Passbooks",
+};
+
+/** The list screen each preview was opened from, for the Close fallback below. */
+const LIST_ROUTE: Record<PrintType, string> = {
+  "membership-card": "/membership/print-membership-cards",
+  "signature-card": "/membership/print-signature-cards",
+  passbook: "/membership/print-passbooks",
 };
 
 /** Persisted so the alignment only has to be dialled in once per installation. */
@@ -53,6 +61,9 @@ export default function MembershipDocumentPrintPage({
   );
 
   const [members, setMembers] = useState<MemberDTO[]>([]);
+  /** Member.id -> resolved PROFILE_PHOTO url. Membership cards only. */
+  const [photos, setPhotos] = useState<Record<number, string>>({});
+  const [preparing, setPreparing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +78,29 @@ export default function MembershipDocumentPrintPage({
       /* keep defaults */
     }
   }, []);
+
+  /**
+   * Closes the preview tab, or returns to its list screen if it cannot be closed.
+   *
+   * This used to call router.back(). The list opens each preview with
+   * window.open(url, "_blank"), so the tab starts with a single history entry and
+   * there is nothing behind it — history.back() could never do anything, whichever
+   * route it was on.
+   *
+   * Closing is the right action instead: the list tab is still open underneath with
+   * its filters, selection and page intact, so dropping this tab lands the operator
+   * exactly where they left off. The browser only permits close() on a
+   * script-opened window, which window.opener identifies (the list opens without
+   * noopener, so it is set). Reached any other way — a pasted URL, a bookmark — the
+   * call is refused, and the list route is the honest destination.
+   */
+  const handleClose = () => {
+    if (window.opener && !window.opener.closed) {
+      window.close();
+      return;
+    }
+    router.replace(LIST_ROUTE[printType] ?? "/membership/print-membership-cards");
+  };
 
   const updateOffset = (next: PassbookOffset) => {
     setOffset(next);
@@ -93,6 +127,84 @@ export default function MembershipDocumentPrintPage({
       cancelled = true;
     };
   }, [ids]);
+
+  /*
+   * Resolve each member's photograph from the PROFILE_PHOTO document.
+   *
+   * Member.profilePictureUrl is never populated - the photograph is uploaded as a
+   * document against the member's application. This mirrors exactly what the Member
+   * Profile does (drop orphaned "uploads/" paths, newest id wins), so a card shows the
+   * same photograph the profile shows.
+   *
+   * Membership cards only: the Signature Card is deliberately untouched.
+   */
+  useEffect(() => {
+    if (printType !== "membership-card" || members.length === 0) return;
+
+    let cancelled = false;
+
+    const resolve = async () => {
+      const resolved: Record<number, string> = {};
+
+      await Promise.all(
+        members.map(async (member) => {
+          if (!member.id || !member.applicationId) return;
+          try {
+            const docs = await getDocumentsByApplication(member.applicationId);
+            const photo = docs
+              .filter((d) => !(d.storagePath || "").startsWith("uploads/"))
+              .sort((a, b) => b.id - a.id)
+              .find((d) => d.documentType === "PROFILE_PHOTO");
+
+            if (photo?.storagePath) {
+              resolved[member.id] = `/api/documents/file/${photo.storagePath}`;
+            }
+          } catch {
+            // A member whose documents cannot be read still prints, with the
+            // silhouette — one unreadable record must not fail a batch.
+          }
+        })
+      );
+
+      if (cancelled) return;
+      setPhotos(resolved);
+    };
+
+    void resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [printType, members]);
+
+  /**
+   * Decode every photograph before opening the print dialog.
+   *
+   * The browser prints what is painted at that moment; an <img> still in flight leaves
+   * an empty box on the card. decode() resolves once the bitmap is ready, so the sheet
+   * is guaranteed to carry the photographs. A failure to decode is swallowed - that
+   * card simply prints its silhouette rather than blocking the batch.
+   */
+  const printSheet = async () => {
+    const urls = Object.values(photos);
+
+    if (urls.length > 0) {
+      setPreparing(true);
+      await Promise.all(
+        urls.map(
+          (url) =>
+            new Promise<void>((resolve) => {
+              const img = new window.Image();
+              img.onload = () => img.decode().then(() => resolve()).catch(() => resolve());
+              img.onerror = () => resolve();
+              img.src = url;
+            })
+        )
+      );
+      setPreparing(false);
+    }
+
+    window.print();
+  };
 
   if (user && !hasRole(user.role, CARD_PRINTING_ROLES)) {
     return (
@@ -143,10 +255,10 @@ export default function MembershipDocumentPrintPage({
       <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3 px-4 pt-4 md:px-6">
         <button
           type="button"
-          onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#9d3602]"
+          onClick={handleClose}
+          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#953002]"
         >
-          <ArrowLeft className="h-4 w-4" /> Back
+          <X className="h-4 w-4" /> Close
         </button>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -180,11 +292,22 @@ export default function MembershipDocumentPrintPage({
 
           <button
             type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-lg bg-[#9e3600] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8b2f00]"
+            onClick={() => void printSheet()}
+            disabled={preparing}
+            className="flex items-center gap-2 rounded-lg bg-[#953002] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7a2700] disabled:opacity-60"
           >
-            <Printer className="h-4 w-4" /> Print {members.length}{" "}
-            {TITLES[printType].toLowerCase()}
+            {preparing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="h-4 w-4" />
+            )}
+            {preparing ? (
+              "Preparing photographs…"
+            ) : (
+              <>
+                Print {members.length} {TITLES[printType].toLowerCase()}
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -201,7 +324,9 @@ export default function MembershipDocumentPrintPage({
       <div className="print-sheet flex flex-col items-center gap-6 px-4 pb-10 md:px-6">
         {members.map((m) => (
           <div key={m.id} className="print-item outline outline-1 outline-neutral-200">
-            {printType === "membership-card" && <MembershipCardTemplate member={m} />}
+            {printType === "membership-card" && (
+              <MembershipCardTemplate member={m} photoUrl={m.id ? photos[m.id] : undefined} />
+            )}
             {printType === "signature-card" && <SignatureCardTemplate member={m} />}
             {printType === "passbook" && (
               <PassbookTemplate member={m} offset={offset} showStockGuide={showStockGuide} />
