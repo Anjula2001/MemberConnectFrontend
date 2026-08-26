@@ -66,11 +66,11 @@ export default function RemittanceSavingsTab({ memberId }: { memberId: number })
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-[#b2410f]">Current Remittance Details</p>
+        <p className="text-sm font-semibold text-[#953002]">Current Remittance Details</p>
         {canEdit && (
           <Link
             href={`/admin/member-accounts?memberId=${memberId}`}
-            className="flex items-center gap-1 text-xs font-medium text-[#9e3600] hover:underline"
+            className="flex items-center gap-1 text-xs font-medium text-[#953002] hover:underline"
           >
             <Pencil className="h-3 w-3" /> Edit
           </Link>
@@ -103,7 +103,7 @@ export default function RemittanceSavingsTab({ memberId }: { memberId: number })
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-[#b2410f]">Operative Accounts</p>
+        <p className="text-sm font-semibold text-[#953002]">Operative Accounts</p>
         {data.awaitingFinanceIntegration && (
           <Badge className="border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-50">
             Awaiting Finance Module

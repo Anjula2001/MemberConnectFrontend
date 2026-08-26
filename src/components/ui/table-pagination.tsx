@@ -118,7 +118,7 @@ export function TablePagination({
                 className={cn(
                   "h-8 min-w-8 px-2 text-xs",
                   entry === safePage &&
-                    "border-[#9e3600] bg-[#9e3600] text-white hover:bg-[#9e3600] hover:text-white"
+                    "border-[#953002] bg-[#953002] text-white hover:bg-[#953002] hover:text-white"
                 )}
                 onClick={() => onPageChange(entry)}
                 aria-label={`Page ${entry}`}

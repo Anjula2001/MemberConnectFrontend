@@ -94,7 +94,7 @@ function Field({ label, value }: { label: string; value: string | undefined | nu
 }
 
 function SectionTitle({ title }: { title: string }) {
-	return <p className="text-sm font-semibold text-[#b2410f]">{title}</p>;
+	return <p className="text-sm font-semibold text-[#953002]">{title}</p>;
 }
 
 export default function MemberProfilePage({
@@ -518,7 +518,7 @@ export default function MemberProfilePage({
 	if (loading) {
 		return (
 			<div className="flex h-[50vh] items-center justify-center">
-				<Loader2 className="h-8 w-8 animate-spin text-[#9d3602]" />
+				<Loader2 className="h-8 w-8 animate-spin text-[#953002]" />
 			</div>
 		);
 	}
@@ -532,7 +532,7 @@ export default function MemberProfilePage({
 			<div className="flex items-center">
 				<Link
 					href="/membership/directory"
-					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
 				>
 					<ArrowLeft className="h-4 w-4" />
 					Back to List
@@ -552,7 +552,7 @@ export default function MemberProfilePage({
 						</div>
 						<div>
 							<div className="flex flex-wrap items-center gap-2">
-								<h1 className="text-2xl font-semibold text-[#9d3602]">{profile.fullName || profile.nameWithInitials}</h1>
+								<h1 className="text-2xl font-semibold text-[#953002]">{profile.fullName || profile.nameWithInitials}</h1>
 								{/* MR14 lists Status among the profile fields. It already decided which
 								    Actions were offered; showing it means a greyed-out action now has a
 								    visible reason instead of looking broken. */}
@@ -582,7 +582,7 @@ export default function MemberProfilePage({
 								{canRaiseProfileChange && (
 									<div className="border-b border-neutral-300 px-5 py-2">
 										<details className="group">
-											<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602] [&::-webkit-details-marker]:hidden">
+											<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
 												<span>Profile Changes</span>
 												<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
 											</summary>
@@ -601,7 +601,7 @@ export default function MemberProfilePage({
 															className={
 																isDisabled
 																	? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
-																	: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+																	: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
 															}
 														>
 															{item}
@@ -615,7 +615,7 @@ export default function MemberProfilePage({
 
 								<div className="border-b border-neutral-300 px-5 py-2">
 									<details className="group">
-										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602] [&::-webkit-details-marker]:hidden">
+										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
 											<span>Scholarship</span>
 											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
 										</summary>
@@ -634,7 +634,7 @@ export default function MemberProfilePage({
 														className={
 															isDisabled
 																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
-																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
 														}
 													>
 														{item}
@@ -671,7 +671,7 @@ export default function MemberProfilePage({
 														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
 														: item === "Member Termination"
 															? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
-															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#9d3602]"
+															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
 												}
 											>
 												{item}
@@ -725,7 +725,7 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-5 p-4">
 								<div>
-									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
 										Member Information
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Personal and official details</p>
@@ -810,7 +810,7 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-5 p-4">
 								<div>
-									<h2 className="text-3xl font-semibold leading-none text-[#9d3602] sm:text-2xl">
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
 										Uploaded Documents
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
@@ -829,9 +829,9 @@ export default function MemberProfilePage({
 											<button
 												type="button"
 												onClick={() => setSelectedDocType(AD_HOC_DOCUMENT_TYPE)}
-												className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-[#b2410f]/30 bg-[#fff9f6] p-6 transition-all hover:border-[#b2410f]/50 hover:shadow-sm"
+												className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-[#953002]/30 bg-[#fff9f6] p-6 transition-all hover:border-[#953002]/50 hover:shadow-sm"
 											>
-												<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#b2410f]/10 text-[#b2410f]">
+												<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
 													<Folder className="h-6 w-6" />
 												</div>
 												<div className="text-center">
@@ -857,9 +857,9 @@ export default function MemberProfilePage({
 													key={type}
 													type="button"
 													onClick={() => setSelectedDocType(type)}
-													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#b2410f]/30 hover:shadow-sm"
+													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#953002]/30 hover:shadow-sm"
 												>
-													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#b2410f]/10 text-[#b2410f]">
+													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
 														<Folder className="h-6 w-6" />
 													</div>
 													<div className="text-center">
@@ -877,7 +877,7 @@ export default function MemberProfilePage({
 										<button
 											type="button"
 											onClick={() => setSelectedDocType(null)}
-											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
 										>
 											<ArrowLeft className="h-4 w-4" />
 											Back to Document Types
@@ -891,7 +891,7 @@ export default function MemberProfilePage({
 												{adHocDocuments.map((doc) => (
 													<div
 														key={doc.id}
-														className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm"
+														className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm"
 													>
 														<div className="flex items-start justify-between gap-2">
 															<Badge
@@ -905,7 +905,7 @@ export default function MemberProfilePage({
 															</span>
 														</div>
 														<div className="flex items-center gap-2">
-															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#b2410f]/10 text-[#b2410f]">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
 																<FileText className="h-4 w-4" />
 															</div>
 															<div className="flex-1 overflow-hidden">
@@ -936,7 +936,7 @@ export default function MemberProfilePage({
 											{displayDocuments
 												.filter((d) => d.documentType === selectedDocType)
 												.map((doc) => (
-													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#b2410f]/30 hover:shadow-sm">
+													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm">
 														<div className="flex items-start justify-between gap-2">
 															<Badge className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200" variant="outline">
 																{doc.documentType.replace(/_/g, ' ')}
@@ -946,7 +946,7 @@ export default function MemberProfilePage({
 															</span>
 														</div>
 														<div className="flex items-center gap-2">
-															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#b2410f]/10 text-[#b2410f]">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
 																<FileText className="h-4 w-4" />
 															</div>
 															<div className="flex-1 overflow-hidden">
@@ -984,7 +984,7 @@ export default function MemberProfilePage({
 						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
 							<CardContent className="space-y-6 p-4">
 								<div>
-									<h2 className="text-xl font-semibold leading-none text-[#9d3602]">
+									<h2 className="text-xl font-semibold leading-none text-[#953002]">
 										Scholarship Details
 									</h2>
 									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
@@ -1003,7 +1003,7 @@ export default function MemberProfilePage({
 														<button
 															type="button"
 															onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
-															className="text-sm font-medium text-[#9d3602] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+															className="text-sm font-medium text-[#953002] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
 														>
 															{scholarship.requestNo}
 														</button>

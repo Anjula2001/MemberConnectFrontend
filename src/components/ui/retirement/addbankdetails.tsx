@@ -319,7 +319,7 @@ const AddBankDetails = forwardRef<AddBankDetailsRef, AddBankDetailsProps>(
             <Button
               type="button"
               onClick={submitBankForm}
-              className="bg-[#953002] text-white hover:bg-[#672102] min-w-30"
+              className="bg-[#953002] text-white hover:bg-[#7a2700] min-w-30"
               disabled={saving}
             >
               {saving ? "Saving..." : "Save"}

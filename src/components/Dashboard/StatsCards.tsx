@@ -21,6 +21,25 @@ import { queuesForRole, type QueueDef } from "./queues"
 
 type Counts = Record<string, number | null>
 
+/**
+ * A queue that never answers must not hold the whole row on "Loading".
+ *
+ * Every card resolves from one Promise.allSettled, so a single request that never
+ * settles freezes all of them — not just its own. Most loaders go through apiClient,
+ * which times out after 15s, but searchMemberDeathRecords and searchDeathDonationRequests
+ * use fetch directly and have no timeout at all; between them they back three of Super
+ * Admin's cards. This bounds every queue regardless of how it fetches, so a slow one
+ * degrades to a single "—" instead of stalling the dashboard.
+ */
+function withTimeout<T>(promise: Promise<T>, ms = 15000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Queue count timed out")), ms)
+    ),
+  ])
+}
+
 function QueueCard({
   queue,
   value,
@@ -86,18 +105,25 @@ export default function StatsCards() {
       setLoading(true)
 
       // allSettled, not all: one denied or slow queue must not blank the whole row.
-      const results = await Promise.allSettled(queues.map((q) => q.load({ district })))
+      try {
+        const results = await Promise.allSettled(
+          queues.map((q) => withTimeout(q.load({ district })))
+        )
 
-      if (!mounted) return
+        if (!mounted) return
 
-      const next: Counts = {}
-      queues.forEach((queue, index) => {
-        const result = results[index]
-        next[queue.id] = result.status === "fulfilled" ? result.value : null
-      })
+        const next: Counts = {}
+        queues.forEach((queue, index) => {
+          const result = results[index]
+          next[queue.id] = result.status === "fulfilled" ? result.value : null
+        })
 
-      setCounts(next)
-      setLoading(false)
+        setCounts(next)
+      } finally {
+        // Cleared here rather than after setCounts, so no unexpected throw can leave
+        // the row spinning forever.
+        if (mounted) setLoading(false)
+      }
     }
 
     if (queues.length === 0) {

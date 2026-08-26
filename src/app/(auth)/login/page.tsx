@@ -112,14 +112,14 @@ export default function LoginPage() {
 
         {/* Product lockup — the institute is the hero below, so this stays quiet. */}
         <div className="login-rise relative flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e3ac00]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ffb401]">
             <Shield className="h-5 w-5 text-[#4a2c00]" strokeWidth={2.2} />
           </div>
           <div className="leading-tight">
             <p className="text-[13px] font-bold tracking-wide text-white">
               MemberConnect
             </p>
-            <p className="text-[12px] font-medium text-[#e3ac00]">
+            <p className="text-[12px] font-medium text-[#ffb401]">
               Member Management System
             </p>
           </div>
@@ -148,7 +148,7 @@ export default function LoginPage() {
                 style={{ animationDelay: `${200 + i * 60}ms` }}
               >
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
-                  <Icon className="h-[15px] w-[15px] text-[#e3ac00]" />
+                  <Icon className="h-[15px] w-[15px] text-[#ffb401]" />
                 </span>
                 <span className="text-[14px] text-white/85">{label}</span>
               </li>
@@ -163,7 +163,7 @@ export default function LoginPage() {
           {/* Trust strip — what a financial sign-in reasonably asserts, and where the
               stray "Authorized personnel only" line now lives. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-white/10 pt-4">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-[#e3ac00]" />
+            <ShieldCheck className="h-4 w-4 shrink-0 text-[#ffb401]" />
             {ASSURANCES.map((item, i) => (
               <span key={item} className="flex items-center gap-3">
                 {i > 0 && (
@@ -194,14 +194,14 @@ export default function LoginPage() {
         <div className="login-rise relative w-full max-w-[400px]">
           {/* Compact identity for narrow screens, where the brand panel is hidden. */}
           <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3ac00]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ffb401]">
               <Shield className="h-5 w-5 text-[#4a2c00]" strokeWidth={2.2} />
             </div>
             <div className="leading-tight">
               <p className="text-sm font-bold tracking-wide text-white">
                 Financial Institute
               </p>
-              <p className="text-xs font-medium text-[#e3ac00]">MemberConnect</p>
+              <p className="text-xs font-medium text-[#ffb401]">MemberConnect</p>
             </div>
           </div>
 

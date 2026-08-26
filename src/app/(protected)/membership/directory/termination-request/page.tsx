@@ -498,7 +498,7 @@ export default function TerminationRequestPage() {
       <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
         <Link
           href={`/membership/directory/${selectedMemberId}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Member Profile
@@ -581,7 +581,7 @@ export default function TerminationRequestPage() {
                 <Button
                   onClick={handleSave}
                   disabled={!canModifyMember}
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Save
                 </Button>
@@ -604,7 +604,7 @@ export default function TerminationRequestPage() {
                       isSubmitBlockedByLoans ||
                       isIncompleteStatus
                     }
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Submit for Approval
                   </Button>

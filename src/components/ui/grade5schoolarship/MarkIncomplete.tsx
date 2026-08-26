@@ -100,7 +100,7 @@ export function MarkIncompleteModal({
             <Button
               type="submit"
               disabled={!isValid}
-              className="bg-[#953002] text-white hover:bg-[#672102]"
+              className="bg-[#953002] text-white hover:bg-[#7a2700]"
             >
               Confirm
             </Button>

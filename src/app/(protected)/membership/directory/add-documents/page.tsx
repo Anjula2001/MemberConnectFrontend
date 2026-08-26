@@ -220,7 +220,7 @@ export default function AddDocumentsPage() {
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#9d3602]">Add Documents</h1>
+          <h1 className="text-2xl font-bold text-[#953002]">Add Documents</h1>
           <p className="mt-1 text-sm text-neutral-500">
             {AD_HOC_DISPLAY_NAME}
             {memberId ? ` · Member ${memberId}` : ""}
@@ -252,7 +252,7 @@ export default function AddDocumentsPage() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!memberId || saving}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center transition-colors hover:border-[#9d3602]/50 hover:bg-[#fff9f6] disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center transition-colors hover:border-[#953002]/50 hover:bg-[#fff9f6] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <UploadCloud className="h-8 w-8 text-neutral-400" />
             <span className="text-sm font-medium text-neutral-700">
@@ -312,7 +312,7 @@ export default function AddDocumentsPage() {
                         <span className="inline-flex items-center gap-2">
                           {/* MMD09: an icon marks a document as new. */}
                           <Sparkles
-                            className="h-4 w-4 text-[#9d3602]"
+                            className="h-4 w-4 text-[#953002]"
                             aria-label="New document, not yet saved"
                           />
                           {item.file.name}
@@ -346,7 +346,7 @@ export default function AddDocumentsPage() {
                         <button
                           type="button"
                           onClick={() => void handleDownload(document)}
-                          className="inline-flex items-center gap-2 text-[#9d3602] hover:underline"
+                          className="inline-flex items-center gap-2 text-[#953002] hover:underline"
                         >
                           <FileText className="h-4 w-4 text-neutral-400" />
                           {document.fileName}
@@ -365,7 +365,7 @@ export default function AddDocumentsPage() {
                           type="button"
                           onClick={() => void handleDownload(document)}
                           aria-label={`Download ${document.fileName}`}
-                          className="inline-flex text-[#9d3602] transition-colors hover:text-[#c44515]"
+                          className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                         >
                           <Download size={16} />
                         </button>
@@ -386,7 +386,7 @@ export default function AddDocumentsPage() {
         <Button
           onClick={() => void handleSave()}
           disabled={staged.length === 0 || saving || !memberId}
-          className="bg-[#8B4513] text-white hover:bg-[#A0522D] disabled:opacity-50"
+          className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
         >
           {saving ? <Loader2 size={14} className="animate-spin" /> : null}
           {saving ? "Saving…" : `Save${staged.length > 0 ? ` (${staged.length})` : ""}`}

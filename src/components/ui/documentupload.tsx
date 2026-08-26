@@ -355,7 +355,7 @@ export default function DocumentUpload({
             type="button"
             onClick={handleAddClick}
             disabled={!canUpload}
-            className="bg-[#953002] text-white hover:bg-[#672102] px-6 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+            className="bg-[#953002] text-white hover:bg-[#7a2700] px-6 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
           >
             {uploading ? "Uploading..." : "Add"}
           </Button>
@@ -399,7 +399,7 @@ export default function DocumentUpload({
                         <button
                           type="button"
                           onClick={() => handleDownload(file.id, file.fileName)}
-                          className="text-[#9d3602] hover:underline"
+                          className="text-[#953002] hover:underline"
                         >
                           {file.fileName}
                         </button>

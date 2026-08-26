@@ -177,7 +177,7 @@ function LocationMultiSelect({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -257,7 +257,7 @@ function StatusMultiSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002]"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -494,13 +494,13 @@ export default function DeathDonationPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div>
-        <h1 className="text-2xl font-bold text-[#8B4513]">Death Donation Requests</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Death Donation Requests</h1>
         <p className="text-sm text-muted-foreground">MMD02 - Search existing Death Donation Requests</p>
       </div>
 
       <Card>
         <CardContent className="p-6">
-          <h2 className="mb-6 text-lg font-bold text-[#8B3205]">Search Criteria</h2>
+          <h2 className="mb-6 text-lg font-bold text-[#953002]">Search Criteria</h2>
 
           {/* Same arrangement as the Termination, Dormant and Profile Changes screens:
               the filters on one row (where, when, which status), the date pair only when
@@ -613,7 +613,7 @@ export default function DeathDonationPage() {
                   <Button
                     onClick={() => void handleRetrieve()}
                     disabled={loading}
-                    className="whitespace-nowrap bg-[#8B4513] text-white hover:bg-[#A0522D]"
+                    className="whitespace-nowrap bg-[#953002] text-white hover:bg-[#7a2700]"
                   >
                     {loading ? "Retrieving..." : "Retrieve"}
                   </Button>
@@ -661,7 +661,7 @@ export default function DeathDonationPage() {
                       <button
                         type="button"
                         onClick={() => openRequest(request)}
-                        className="font-medium text-[#8B4513] hover:underline"
+                        className="font-medium text-[#953002] hover:underline"
                       >
                         {request.requestNo}
                       </button>
@@ -676,7 +676,7 @@ export default function DeathDonationPage() {
                       <button
                         type="button"
                         onClick={() => openRequest(request)}
-                        className="font-medium text-[#8B4513] hover:underline"
+                        className="font-medium text-[#953002] hover:underline"
                       >
                         {request.memberId}
                       </button>

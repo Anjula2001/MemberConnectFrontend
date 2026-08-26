@@ -433,7 +433,7 @@ export default function TerminationApprovalListsPage() {
     <div className="flex flex-1 flex-col gap-4 px-10 pt-0">
       <Link
         href="/membership/termination"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Termination Requests

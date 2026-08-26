@@ -154,7 +154,7 @@ function Option({
     >
       <span
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-          checked ? 'border-[#8B3205] bg-[#8B3205]' : 'border-gray-300 bg-white'
+          checked ? 'border-[#953002] bg-[#953002]' : 'border-gray-300 bg-white'
         }`}
       >
         {checked && <Check size={12} className="text-white" strokeWidth={3} />}

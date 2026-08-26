@@ -130,7 +130,7 @@ export default function RemittanceMasterPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
       <div>
-        <h1 className="text-3xl font-bold text-[#9d3602]">Remittance Master</h1>
+        <h1 className="text-3xl font-bold text-[#953002]">Remittance Master</h1>
         <p className="mt-1 text-sm text-neutral-500">
           Contribution accounts collected on a New Member Registration.
         </p>
@@ -227,7 +227,7 @@ export default function RemittanceMasterPage() {
                           onCheckedChange={(v) =>
                             setField(account.id!, "mandatory", v === true)
                           }
-                          className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                          className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                         />
                         Mandatory on submit
                       </label>
@@ -235,7 +235,7 @@ export default function RemittanceMasterPage() {
                         <Checkbox
                           checked={draft.active}
                           onCheckedChange={(v) => setField(account.id!, "active", v === true)}
-                          className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                          className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                         />
                         Shown on registration form
                       </label>
@@ -245,7 +245,7 @@ export default function RemittanceMasterPage() {
                       type="button"
                       onClick={() => handleSave(account)}
                       disabled={savingId === account.id}
-                      className="bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                      className="bg-[#953002] text-white hover:bg-[#7a2700]"
                     >
                       {savingId === account.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />

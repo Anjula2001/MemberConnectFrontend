@@ -79,7 +79,7 @@ export default function MembershipCardTemplate({
           justifyContent: "space-between",
           height: "11.6mm",
           padding: "0 4mm",
-          background: "#9e3600",
+          background: "#953002",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "1.6mm" }}>
@@ -174,7 +174,7 @@ export default function MembershipCardTemplate({
                     fontSize: "1.9mm",
                     fontWeight: 600,
                     letterSpacing: "0.06mm",
-                    color: accent ? "#9e3600" : "#18181b",
+                    color: accent ? "#953002" : "#18181b",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -227,7 +227,7 @@ export default function MembershipCardTemplate({
         <span style={{ fontSize: "1.1mm", color: "#8b6a5c" }}>
           This card remains the property of Future Finance Institute.
         </span>
-        <span style={{ fontSize: "1.1mm", fontWeight: 600, letterSpacing: "0.08mm", color: "#9e3600" }}>
+        <span style={{ fontSize: "1.1mm", fontWeight: 600, letterSpacing: "0.08mm", color: "#953002" }}>
           ffi.lk
         </span>
       </div>

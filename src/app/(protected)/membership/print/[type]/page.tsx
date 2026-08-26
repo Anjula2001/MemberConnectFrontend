@@ -226,7 +226,7 @@ export default function MembershipDocumentPrintPage({
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#9d3602]"
+          className="flex items-center gap-2 text-sm text-neutral-600 hover:text-[#953002]"
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
@@ -264,7 +264,7 @@ export default function MembershipDocumentPrintPage({
             type="button"
             onClick={() => void printSheet()}
             disabled={preparing}
-            className="flex items-center gap-2 rounded-lg bg-[#9e3600] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8b2f00] disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg bg-[#953002] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7a2700] disabled:opacity-60"
           >
             {preparing ? (
               <Loader2 className="h-4 w-4 animate-spin" />

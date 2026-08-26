@@ -1136,7 +1136,7 @@ export default function FundDisbursementRequest() {
                           href={previewUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2700]"
                         >
                           Preview
                         </a>
@@ -1185,7 +1185,7 @@ export default function FundDisbursementRequest() {
                 type="button"
                 onClick={handleSubmitFundRequest}
                 disabled={!isSaved || !hasAllMandatoryDocuments}
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
               >
                 Submit for Approval
               </Button>
@@ -1216,7 +1216,7 @@ export default function FundDisbursementRequest() {
                 type="button"
                 onClick={handleIntegrateWithFinance}
                 disabled={isFinanceIntegrated || isIntegratingFinance}
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
               >
                 {isFinanceIntegrated
                   ? "Integrated with Finance Module"
@@ -1286,7 +1286,7 @@ export default function FundDisbursementRequest() {
                 type="button"
                 onClick={executeFundStatusChange}
                 disabled={!statusChangeTarget || isChangingStatus}
-                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
               >
                 {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
@@ -1388,7 +1388,7 @@ export default function FundDisbursementRequest() {
                 <Button
                   type="button"
                   onClick={() => setShowPopup(false)}
-                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
                 >
                   OK
                 </Button>
@@ -1432,7 +1432,7 @@ export default function FundDisbursementRequest() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm"
                   onClick={executeSubmitFundRequest}
                 >
                   Submit

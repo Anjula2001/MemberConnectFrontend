@@ -102,7 +102,7 @@ export function MultiSelect({
               onClick={() => onChange([])}
             >
               <span
-                className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#8B4513]" : ""}`}
+                className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#953002]" : ""}`}
               />
               {allLabel}
             </button>
@@ -115,7 +115,7 @@ export function MultiSelect({
               >
                 <span
                   className={`flex h-4 w-4 items-center justify-center rounded border ${
-                    selected.includes(o.value) ? "bg-[#8B4513] text-white" : ""
+                    selected.includes(o.value) ? "bg-[#953002] text-white" : ""
                   }`}
                 >
                   {selected.includes(o.value) && (

@@ -802,6 +802,34 @@ export default function BoardApprovalsPage() {
             ? "Approve"
             : "Reject";
 
+      /*
+       * The list-level reject reason.
+       *
+       * The board approval list stores ONE reason, while this screen captures one per
+       * application. listDecision only becomes "Reject" when every application in the
+       * list is rejected - and in exactly that case the backend requires the list-level
+       * reason, which was never put in the payload. So rejecting a whole list always
+       * failed with "Reject reason is required when rejecting applications", while
+       * rejecting only some applications worked (the list then resolves to "Approve").
+       *
+       * One shared reason is sent as itself; differing reasons are attributed per
+       * application so the single stored string stays readable.
+       */
+      const rejectedApplications = selectedListApplications.filter(
+        (app) => (applicationDecisions[app.id]?.decision || "Approve") === "Reject"
+      );
+      const reasonFor = (id: number) => (applicationDecisions[id]?.rejectReason ?? "").trim();
+      const distinctRejectReasons = Array.from(
+        new Set(rejectedApplications.map((app) => reasonFor(app.id)).filter(Boolean))
+      );
+      const listRejectReason =
+        distinctRejectReasons.length === 1
+          ? distinctRejectReasons[0]
+          : rejectedApplications
+              .map((app) => (reasonFor(app.id) ? `${app.name}: ${reasonFor(app.id)}` : null))
+              .filter((entry): entry is string => entry !== null)
+              .join("; ");
+
       // MMC12 / MMC25: each change request carries its own decision and reason.
       const nameChangeDecisions = selectedListNameChangeRequests
         .map((ncr) => {
@@ -840,6 +868,14 @@ export default function BoardApprovalsPage() {
         return;
       }
 
+      // Applications were never covered by the guard above, so a rejection with a blank
+      // reason reached the server and came back as a raw validation error.
+      if (rejectedApplications.some((app) => !reasonFor(app.id))) {
+        setToastMessage("Enter a reject reason for every rejected application before proceeding.");
+        setShowProcessToast(true);
+        return;
+      }
+
       // Upload the scanned, signed approval sheet first (if attached) so the stored
       // key can be saved alongside the decision. A failed upload must not lose the
       // board's decision, so fall back to recording the filename.
@@ -864,6 +900,7 @@ export default function BoardApprovalsPage() {
       const payload: ProcessBoardApprovalListPayload = {
         actualMeetingDate: todayDate,
         ...(listDecision ? { decision: listDecision } : {}),
+        ...(listDecision === "Reject" && listRejectReason ? { rejectReason: listRejectReason } : {}),
         boardRemarks,
         processedBy: "Super Admin User",
         ...(approvedListDocument ? { approvedListDocument } : {}),
@@ -875,6 +912,12 @@ export default function BoardApprovalsPage() {
 
       let approveToastMessage: string | null = null;
       const memberCreationErrors: string[] = [];
+      // A failed rejection used to be logged to the console and nothing else: the list
+      // still reported success, and because the application was never actually set to
+      // REJECTED it came back showing "Approve" - the board's decision silently flipped.
+      const rejectionErrors: string[] = [];
+      // Ids whose decision never reached the server, so the row must keep its old status.
+      const failedApplicationIds = new Set<number>();
       let newMembersCount = 0;
 
       await Promise.allSettled(
@@ -930,6 +973,7 @@ export default function BoardApprovalsPage() {
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : "Unknown error";
               memberCreationErrors.push(`${app.appId}: ${msg}`);
+              failedApplicationIds.add(app.id);
             }
           } else {
             try {
@@ -938,18 +982,55 @@ export default function BoardApprovalsPage() {
                 boardDecisionReason: appDecisionState?.rejectReason || ""
               });
             } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Unknown error";
               console.error("Failed to reject application", app.id, err);
+              rejectionErrors.push(`${app.appId}: ${msg}`);
+              failedApplicationIds.add(app.id);
             }
           }
         })
       );
 
-      if (memberCreationErrors.length > 0) {
-        console.warn("Some members could not be created:", memberCreationErrors);
-        approveToastMessage = `List processed but ${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`;
+      if (memberCreationErrors.length > 0 || rejectionErrors.length > 0) {
+        const parts: string[] = [];
+        if (memberCreationErrors.length > 0) {
+          console.warn("Some members could not be created:", memberCreationErrors);
+          parts.push(`${memberCreationErrors.length} member(s) could not be created: ${memberCreationErrors.join("; ")}`);
+        }
+        if (rejectionErrors.length > 0) {
+          console.warn("Some applications could not be rejected:", rejectionErrors);
+          parts.push(`${rejectionErrors.length} application(s) could not be rejected and still show as Approve: ${rejectionErrors.join("; ")}`);
+        }
+        approveToastMessage = `List processed but ${parts.join(". ")}`;
       } else {
         approveToastMessage = `Board approval list processed. ${newMembersCount} member(s) approved and created with INACTIVE status.`;
       }
+
+      /*
+       * Write the outcome onto the rows themselves.
+       *
+       * Once a list is processed the Decision and Reason columns stop reading the
+       * dropdown and render from application.status / .boardDecisionReason instead.
+       * Those come from the server-loaded array, which processing never updated - so a
+       * freshly rejected row fell through to the "Approved" branch and showed a green
+       * badge with "-" for its reason, until a refetch corrected it on reload.
+       *
+       * Applications whose decision failed to save keep their previous status, so the
+       * screen carries on disagreeing with the server only where the server disagrees.
+       */
+      setSelectedListApplications((prev) =>
+        prev.map((app) => {
+          if (failedApplicationIds.has(app.id)) return app;
+          const decision = applicationDecisions[app.id]?.decision || "Approve";
+          return decision === "Reject"
+            ? {
+                ...app,
+                status: "REJECTED",
+                boardDecisionReason: applicationDecisions[app.id]?.rejectReason || "",
+              }
+            : { ...app, status: "APPROVED" };
+        })
+      );
 
       setProcessedLists((prev) => ({
         ...prev,
@@ -958,7 +1039,7 @@ export default function BoardApprovalsPage() {
           processedAt: formatted,
           actualMeetingDate: processedList.actualMeetingDate ?? todayDate,
           decision: listDecision ?? "Approve",
-          rejectReason: "",
+          rejectReason: listDecision === "Reject" ? listRejectReason : "",
           boardRemarks: processedList.boardRemarks ?? boardRemarks,
         },
       }));
@@ -1001,7 +1082,7 @@ export default function BoardApprovalsPage() {
         </p>
         <button
           onClick={() => router.push("/membership/new-registrations")}
-          className="mt-6 flex items-center gap-2 rounded-lg bg-[#9e3600] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
+          className="mt-6 flex items-center gap-2 rounded-lg bg-[#953002] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00]"
         >
           Go to New Registrations
         </button>
@@ -1957,7 +2038,7 @@ export default function BoardApprovalsPage() {
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => setApprovalSheetFile(e.target.files?.[0] ?? null)}
-                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#9e3600] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#8b2f00]"
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#953002] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#7a2700]"
                 />
                 {approvalSheetFile && (
                   <p className="text-xs text-gray-500">

@@ -133,7 +133,7 @@ export default function UniversityMasterPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
       <div>
-        <h1 className="flex items-center gap-2 text-3xl font-bold text-[#9d3602]">
+        <h1 className="flex items-center gap-2 text-3xl font-bold text-[#953002]">
           <GraduationCap className="h-7 w-7" />
           University Master
         </h1>
@@ -155,8 +155,8 @@ export default function UniversityMasterPage() {
             }}
             className={
               tab === t.id
-                ? "border-b-2 border-[#9d3602] px-4 py-2 text-sm font-semibold text-[#9d3602]"
-                : "border-b-2 border-transparent px-4 py-2 text-sm font-medium text-neutral-500 hover:text-[#9d3602]"
+                ? "border-b-2 border-[#953002] px-4 py-2 text-sm font-semibold text-[#953002]"
+                : "border-b-2 border-transparent px-4 py-2 text-sm font-medium text-neutral-500 hover:text-[#953002]"
             }
           >
             {t.label}
@@ -166,7 +166,7 @@ export default function UniversityMasterPage() {
 
       {loading ? (
         <div className="flex h-40 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-[#9d3602]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#953002]" />
         </div>
       ) : tab === "pairings" ? (
         <>
@@ -250,7 +250,7 @@ export default function UniversityMasterPage() {
                     );
                     if (ok) setNewPairing({});
                   }}
-                  className="bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
                   <Plus className="h-4 w-4" />
                   Add
@@ -414,7 +414,7 @@ export default function UniversityMasterPage() {
                       else setNewProgram("");
                     }
                   }}
-                  className="bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
                   <Plus className="h-4 w-4" />
                   Add

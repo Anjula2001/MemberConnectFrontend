@@ -197,7 +197,7 @@ function MultiSelect({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
               onClick={() => onChange([])}
             >
-              <span className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#8B4513]" : ""}`} />
+              <span className={`h-4 w-4 rounded border ${selected.length === 0 ? "bg-[#953002]" : ""}`} />
               {allLabel}
             </button>
             {options.map((o) => (
@@ -209,7 +209,7 @@ function MultiSelect({
               >
                 <span
                   className={`flex h-4 w-4 items-center justify-center rounded border ${
-                    selected.includes(o.value) ? "bg-[#8B4513] text-white" : ""
+                    selected.includes(o.value) ? "bg-[#953002] text-white" : ""
                   }`}
                 >
                   {selected.includes(o.value) && (
@@ -607,7 +607,7 @@ export default function DormantMembersPage() {
       <html><head><title>${title}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#111}
-        h1{color:#8B4513;font-size:20px}
+        h1{color:#953002;font-size:20px}
         table{width:100%;border-collapse:collapse;margin-top:16px;font-size:12px}
         th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}
         th{background:#f3ede7}
@@ -644,7 +644,7 @@ export default function DormantMembersPage() {
   if (user && !canSeeDormant) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-8 w-8 text-[#8B4513]" />
+        <ShieldAlert className="h-8 w-8 text-[#953002]" />
         <h2 className="text-xl font-bold text-neutral-800">Access Restricted</h2>
         <p className="max-w-md text-sm text-muted-foreground">
           Dormant Membership Profiles are restricted to Head Office and Board
@@ -658,14 +658,14 @@ export default function DormantMembersPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#8B4513]">Dormant Members</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Dormant Members</h1>
         {/* MMD11 names an "Authorized Head Office System User" — narrower than
             the board list, so this is not gated on canManageLists. */}
         {canRunIdentification && (
           <Button
             onClick={handleRunIdentification}
             disabled={running}
-            className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
+            className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:opacity-50"
           >
             {running ? "Identifying Members..." : "Run Identification Process"}
           </Button>
@@ -695,7 +695,7 @@ export default function DormantMembersPage() {
       {/* Configuration */}
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">Dormant Configuration</CardTitle>
+          <CardTitle className="text-lg text-[#953002]">Dormant Configuration</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
           {!canEditConfig && (
@@ -769,7 +769,7 @@ export default function DormantMembersPage() {
                 <Button
                   onClick={handleSaveConfig}
                   disabled={!canEditConfig || savingConfig}
-                  className="bg-[#8B4513] hover:bg-[#A0522D] text-white disabled:opacity-50"
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white disabled:opacity-50"
                 >
                   {savingConfig ? "Saving..." : "Save Configuration"}
                 </Button>
@@ -784,7 +784,7 @@ export default function DormantMembersPage() {
       {/* Filters */}
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
-          <CardTitle className="text-lg text-[#8B4513]">Search Dormant Members</CardTitle>
+          <CardTitle className="text-lg text-[#953002]">Search Dormant Members</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
           {/* Same arrangement as the Termination and Profile Changes screens: the
@@ -902,7 +902,7 @@ export default function DormantMembersPage() {
                   <Button
                     onClick={handleRetrieve}
                     disabled={loadingResults}
-                    className="whitespace-nowrap bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                    className="whitespace-nowrap bg-[#953002] hover:bg-[#7a2700] text-white"
                   >
                     {loadingResults ? "Retrieving..." : "Retrieve"}
                   </Button>
@@ -917,7 +917,7 @@ export default function DormantMembersPage() {
       <Card className="border-2 border-[#ffffff]">
         <CardHeader className="bg-muted/30">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-lg text-[#8B4513]">Dormant Members</CardTitle>
+            <CardTitle className="text-lg text-[#953002]">Dormant Members</CardTitle>
             <div className="flex items-center gap-2">
               {canManageLists && (
                 <Link href="/membership/dormant/approval-lists">
@@ -929,7 +929,7 @@ export default function DormantMembersPage() {
               {canManageLists && selectedMemberIds.length > 0 && (
                 <Button
                   onClick={handleOpenCreate}
-                  className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                  className="bg-[#953002] hover:bg-[#7a2700] text-white"
                   size="sm"
                 >
                   Create Inactivation Approval List ({selectedMemberIds.length})
@@ -991,7 +991,7 @@ export default function DormantMembersPage() {
                       <TableCell>
                         <Link
                           href={`/membership/directory/${m.id}`}
-                          className="font-medium text-[#8B4513] underline-offset-2 hover:underline"
+                          className="font-medium text-[#953002] underline-offset-2 hover:underline"
                         >
                           {m.memberId}
                         </Link>
@@ -1049,7 +1049,7 @@ export default function DormantMembersPage() {
       {createdListInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-[#8B4513]">Inactivation Approval List Created</h2>
+            <h2 className="text-lg font-semibold text-[#953002]">Inactivation Approval List Created</h2>
             <p className="mt-2 text-sm text-gray-700">
               The Inactivation Approval List for {createdListInfo.count} Dormant Member(s) has been
               created. Do you want to view the list?
@@ -1059,7 +1059,7 @@ export default function DormantMembersPage() {
                 No
               </Button>
               <Button
-                className="bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                className="bg-[#953002] hover:bg-[#7a2700] text-white"
                 onClick={() => {
                   const listId = createdListInfo.list.listId;
                   setCreatedListInfo(null);

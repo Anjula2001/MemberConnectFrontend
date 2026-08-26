@@ -105,7 +105,7 @@ export default function MembershipEligibilityPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
       <div>
-        <h1 className="text-3xl font-bold text-[#9d3602]">Membership Eligibility</h1>
+        <h1 className="text-3xl font-bold text-[#953002]">Membership Eligibility</h1>
         <p className="mt-1 text-sm text-neutral-500">
           Age limits applied to New Member Registrations.
         </p>
@@ -163,7 +163,7 @@ export default function MembershipEligibilityPage() {
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-[#9e3600] text-white hover:bg-[#8b2f00]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
                 </Button>

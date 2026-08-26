@@ -303,7 +303,7 @@ export default function RemittanceChangePage({
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold leading-tight text-[#8B3205]">
+            <h1 className="text-2xl font-bold leading-tight text-[#953002]">
               {isEditMode
                 ? `Remittance Amount Change ${request?.requestNo ?? ''}`.trim()
                 : 'New Remittance Amount Change'}
@@ -328,7 +328,7 @@ export default function RemittanceChangePage({
               type="button"
               onClick={() => setIsEditing(true)}
               disabled={isSubmitting}
-              className="rounded-lg border border-[#8B3205] px-4 py-2 text-sm font-medium text-[#8B3205] transition-all hover:bg-[#8B3205]/5 disabled:opacity-60"
+              className="rounded-lg border border-[#953002] px-4 py-2 text-sm font-medium text-[#953002] transition-all hover:bg-[#953002]/5 disabled:opacity-60"
             >
               ✏️ Edit
             </button>
@@ -350,7 +350,7 @@ export default function RemittanceChangePage({
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-[#8B3205] px-6 py-2 font-bold text-white transition-all hover:bg-[#722904] disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-[#953002] px-6 py-2 font-bold text-white transition-all hover:bg-[#722904] disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               💾 Submit
@@ -391,7 +391,7 @@ export default function RemittanceChangePage({
 
       {/* Amounts */}
       <section className="rounded-xl border border-gray-200 bg-white p-6">
-        <h2 className="text-xl font-bold text-[#8B3205]">Remittance Amounts</h2>
+        <h2 className="text-xl font-bold text-[#953002]">Remittance Amounts</h2>
         <p className="mb-6 text-sm font-medium text-gray-500">
           Only the accounts this member may change are listed. Each amount is checked
           against its configured minimum on submit.

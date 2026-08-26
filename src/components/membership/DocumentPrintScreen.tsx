@@ -391,7 +391,7 @@ export default function DocumentPrintScreen({
           type="button"
           onClick={retrieve}
           disabled={loading}
-          className="h-9 bg-[#9e3600] text-white hover:bg-[#8b2f00] disabled:opacity-60"
+          className="h-9 bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-60"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Retrieve"}
         </Button>
@@ -409,7 +409,7 @@ export default function DocumentPrintScreen({
 
         <Card className="rounded-xl py-0">
           <CardHeader className="px-5 pt-5 pb-3">
-            <CardTitle className="text-[34px] font-semibold leading-none text-[#9d3602] sm:text-3xl">
+            <CardTitle className="text-[34px] font-semibold leading-none text-[#953002] sm:text-3xl">
               Search Criteria
             </CardTitle>
           </CardHeader>
@@ -612,7 +612,7 @@ export default function DocumentPrintScreen({
               type="button"
               onClick={() => handlePrint(selected, false)}
               disabled={selected.length === 0 || printing}
-              className="h-8 bg-[#9e3600] px-3 text-white hover:bg-[#8b2f00]"
+              className="h-8 bg-[#953002] px-3 text-white hover:bg-[#7a2700]"
             >
               {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               Print {selected.length > 0 ? `(${selected.length})` : ""}
@@ -629,7 +629,7 @@ export default function DocumentPrintScreen({
                         checked={allSelectableChecked}
                         onCheckedChange={(c) => toggleAll(Boolean(c))}
                         disabled={pageSelectableIds.length === 0}
-                        className="data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                        className="data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                       />
                     </TableHead>
                     <TableHead>Member ID</TableHead>
@@ -650,7 +650,7 @@ export default function DocumentPrintScreen({
                             checked={selected.includes(m.id as number)}
                             onCheckedChange={(c) => toggleOne(m.id as number, Boolean(c))}
                             disabled={Boolean(printed)}
-                            className="data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+                            className="data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
                           />
                         </TableCell>
                         <TableCell className="font-medium">{m.memberId ?? "—"}</TableCell>

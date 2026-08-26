@@ -529,7 +529,7 @@ export default function UniversityScholarshipFundRequestsPage() {
                     return (
                       <TableRow key={item.rowId} className="hover:bg-neutral-50">
                         <TableCell className="px-4 py-4 font-medium">
-                          <Link href={viewHref} className="text-[#9d3602] hover:underline">
+                          <Link href={viewHref} className="text-[#953002] hover:underline">
                             {item.requestId || item.id || "-"}
                           </Link>
                         </TableCell>
@@ -555,7 +555,7 @@ export default function UniversityScholarshipFundRequestsPage() {
                           {canEdit ? (
                             <Link
                               href={editHref}
-                              className="inline-flex text-[#9d3602] transition-colors hover:text-[#c44515]"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                               aria-label="Edit fund request"
                             >
                               <Pencil size={16} />
@@ -563,7 +563,7 @@ export default function UniversityScholarshipFundRequestsPage() {
                           ) : (
                             <Link
                               href={viewHref}
-                              className="inline-flex text-[#9d3602] transition-colors hover:text-[#c44515]"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                               aria-label="View fund request"
                             >
                               <Eye size={16} />

@@ -203,7 +203,7 @@ export default function Document({
                         href={`http://localhost:8080/api/uploaded-documents/download/${item.id}?requestId=${encodeURIComponent(requestId ? String(requestId) : "")}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-medium text-[#9d3602] hover:underline"
+                        className="font-medium text-[#953002] hover:underline"
                       >
                         {item.file.name}
                       </a>

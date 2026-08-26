@@ -443,13 +443,13 @@ export default function Page() {
 
         <div className="flex gap-2">
           {showNormalApprovalBtn && (
-            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(false)}>
+            <Button className="bg-[#ffb401] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(false)}>
               Create University Scholarship Normal Approval List ({selectedRequests.length})
             </Button>
           )}
 
           {showDeviationApprovalBtn && (
-            <Button className="bg-[#e3ac00] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
+            <Button className="bg-[#ffb401] hover:bg-[#c99500] text-white" onClick={() => handleOpenBoardMeetingModal(true)}>
               Create University Scholarship Deviation Approval List ({selectedRequests.length})
             </Button>
           )}
@@ -648,7 +648,7 @@ export default function Page() {
                         <TableCell className="px-4 py-4 font-medium">
                           <Link
                             href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                            className="text-[#9d3602] hover:underline"
+                            className="text-[#953002] hover:underline"
                           >
                             {requestKey}
                           </Link>
@@ -677,14 +677,14 @@ export default function Page() {
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
                               aria-label="Edit request"
-                              className="inline-flex text-[#9d3602] transition-colors hover:text-[#c44515]"
+                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                             >
                               <Pencil size={16} />
                             </Link>
                           ) : (
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                              className="text-sm font-medium text-[#9d3602] hover:underline"
+                              className="text-sm font-medium text-[#953002] hover:underline"
                             >
                               Open
                             </Link>

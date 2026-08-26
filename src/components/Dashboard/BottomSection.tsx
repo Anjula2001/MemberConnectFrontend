@@ -4,8 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { Activity, BarChart3 } from "lucide-react"
 import { getRecentActivity, AuditDTO } from "@/lib/api/audit"
-import { getMemberApplications } from "@/lib/api/memberApplications"
-import { getMembers } from "@/lib/api/member"
+import { apiClient } from "@/lib/api/client"
 import { useAuth, type UserRole } from "@/lib/auth-context"
 import { REGISTRATION_ROLES, hasRole } from "@/lib/permissions"
 
@@ -28,6 +27,24 @@ const AUDIT_ROLES: UserRole[] = [
   "SUPER_ADMIN",
 ]
 
+/**
+ * Totals come from a COUNT endpoint, not from measuring a downloaded table.
+ *
+ * These two cards used to call getMembers() and getMemberApplications(), each of which
+ * returns every row with no parameters - a 37-field DTO per member - so that .length
+ * could produce a single integer.
+ */
+async function countOf(path: string, locations: string[] | null): Promise<number | null> {
+  try {
+    const { data } = await apiClient.get<{ count?: number }>(path, {
+      params: locations && locations.length > 0 ? { locations } : undefined,
+    })
+    return typeof data?.count === "number" ? data.count : null
+  } catch {
+    return null
+  }
+}
+
 const cardClass =
   "flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950"
 
@@ -44,6 +61,12 @@ export default function BottomSection() {
   const canSeeMemberData = hasRole(role, REGISTRATION_ROLES)
   const canSeeActivity = hasRole(role, AUDIT_ROLES)
 
+  // Scoped the same way as the queue row above: a District Office user's totals cover
+  // their own district. Previously these two cards were the one place on the dashboard
+  // that still reported national figures to a district clerk.
+  const district = role === "DISTRICT_OFFICE" ? (user?.assignedDistrict ?? null) : null
+  const locations = district ? [district] : null
+
   const [data, setData] = useState<Data>({
     activity: null,
     totalMembers: null,
@@ -59,8 +82,8 @@ export default function BottomSection() {
 
       const [activity, members, applications] = await Promise.allSettled([
         canSeeActivity ? getRecentActivity(5) : Promise.resolve(null),
-        canSeeMemberData ? getMembers() : Promise.resolve(null),
-        canSeeMemberData ? getMemberApplications() : Promise.resolve(null),
+        canSeeMemberData ? countOf("/api/members/count", locations) : Promise.resolve(null),
+        canSeeMemberData ? countOf("/api/applications/count", locations) : Promise.resolve(null),
       ])
 
       if (!mounted) return
@@ -68,13 +91,10 @@ export default function BottomSection() {
       const value = <T,>(result: PromiseSettledResult<T | null>): T | null =>
         result.status === "fulfilled" ? result.value : null
 
-      const memberRows = value(members)
-      const applicationRows = value(applications)
-
       setData({
         activity: value(activity),
-        totalMembers: Array.isArray(memberRows) ? memberRows.length : null,
-        totalApplications: Array.isArray(applicationRows) ? applicationRows.length : null,
+        totalMembers: value(members),
+        totalApplications: value(applications),
       })
       setLoading(false)
     }
@@ -83,7 +103,7 @@ export default function BottomSection() {
     return () => {
       mounted = false
     }
-  }, [canSeeActivity, canSeeMemberData])
+  }, [canSeeActivity, canSeeMemberData, district])
 
   const show = (value: number | null) => (loading ? "…" : (value ?? "—"))
 
@@ -149,7 +169,7 @@ export default function BottomSection() {
             <h2 className="text-lg font-semibold text-[#953002]">At a glance</h2>
           </div>
           <p className="mb-4 text-sm text-neutral-500">
-            Totals across the institute, for reference
+            {district ? `Totals for ${district}, for reference` : "Totals across the institute, for reference"}
           </p>
 
           <dl className="space-y-3">

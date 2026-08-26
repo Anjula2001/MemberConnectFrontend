@@ -254,6 +254,11 @@ export default function ProfileChangeRequests() {
       case 'REMITTANCE':
         router.push(`/membership/directory/change-remittance?editId=${row.requestId}`);
         break;
+      case 'MEMBER_TRANSFER':
+        // The transfer form opens read-only when given a requestId, which is what MMC29
+        // asks for; omitting mode=edit is what keeps it in View Mode.
+        router.push(`/membership/directory/change-memberTransfer?requestId=${row.requestId}`);
+        break;
       default:
         router.push(`/membership/profile-changes/${row.requestId}`);
     }
@@ -274,13 +279,7 @@ export default function ProfileChangeRequests() {
   const canDeleteRow = (row: ProfileChangeListItem) =>
     canDelete && Boolean(DELETE_PATHS[row.type]);
 
-  /**
-   * MMC29 specifies a detail view for a transfer, but no route serves one yet - the
-   * transfer form under directory/change-memberTransfer takes no request id. Rather than
-   * link somewhere broken, the Member ID stays plain text for transfers.
-   */
-  const canOpenRow = (row: ProfileChangeListItem) =>
-    row.requestId != null && row.type !== 'MEMBER_TRANSFER';
+  const canOpenRow = (row: ProfileChangeListItem) => row.requestId != null;
 
   const handleDelete = async (row: ProfileChangeListItem) => {
     const path = DELETE_PATHS[row.type];
@@ -346,11 +345,11 @@ export default function ProfileChangeRequests() {
   return (
     <div className="p-6 bg-[#F9FAFB] min-h-screen">
       <div className="max-w-7xl mx-auto mb-6">
-        <h1 className="text-2xl font-bold text-[#8B3205]">All Member Profile Change Requests</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">All Member Profile Change Requests</h1>
       </div>
 
       <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
-        <h2 className="text-lg font-bold text-[#8B3205] mb-6">Search Criteria</h2>
+        <h2 className="text-lg font-bold text-[#953002] mb-6">Search Criteria</h2>
 
         {/* Laid out like the Member Transfer screen this replaced, which is the shape the
             rest of the app uses: the four filters the SRS names across one row (what,
@@ -628,7 +627,7 @@ export default function ProfileChangeRequests() {
                           {canOpenRow(row) ? (
                             <button
                               onClick={() => openRecord(row)}
-                              className="text-[#9d3602] hover:underline"
+                              className="text-[#953002] hover:underline"
                             >
                               {row.memberId ?? '—'}
                             </button>
@@ -695,7 +694,7 @@ export default function ProfileChangeRequests() {
           <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
             <div className="flex items-start justify-between px-5 pt-5">
               <div>
-                <h2 className="text-2xl font-semibold text-[#8B3205]">Select Board Meeting</h2>
+                <h2 className="text-2xl font-semibold text-[#953002]">Select Board Meeting</h2>
                 <p className="text-sm text-gray-500">
                   Select the meeting date for these {selectedKeys.length} requests.
                 </p>
@@ -735,7 +734,7 @@ export default function ProfileChangeRequests() {
                   type="button"
                   onClick={() => void handleCreateApprovalList()}
                   disabled={!selectedMeeting || savingList}
-                  className="bg-[#8B3205] text-white px-4 py-2 rounded-lg disabled:opacity-60"
+                  className="bg-[#953002] text-white px-4 py-2 rounded-lg disabled:opacity-60"
                 >
                   {savingList ? 'Saving…' : 'Save'}
                 </button>
@@ -749,7 +748,7 @@ export default function ProfileChangeRequests() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
             <div className="flex items-start justify-between px-5 pt-5">
-              <h2 className="text-2xl font-semibold text-[#8B3205]">Confirmation</h2>
+              <h2 className="text-2xl font-semibold text-[#953002]">Confirmation</h2>
               <button type="button" onClick={() => setCreatedList(null)} className="text-gray-500">
                 ✕
               </button>
@@ -779,7 +778,7 @@ export default function ProfileChangeRequests() {
                         : '/membership/board-approvals'
                     );
                   }}
-                  className="bg-[#8B3205] text-white px-4 py-2 rounded-lg"
+                  className="bg-[#953002] text-white px-4 py-2 rounded-lg"
                 >
                   Yes
                 </button>

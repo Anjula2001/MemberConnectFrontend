@@ -815,7 +815,7 @@ export default function Grade5ApprovalListsPage() {
                                       `/membership/directory/grade5-scholarship?memberId=${r.memberId}&requestId=${r.id}&mode=view`
                                     )
                                   }
-                                  className="text-left text-[#9d3602] hover:underline"
+                                  className="text-left text-[#953002] hover:underline"
                                   type="button"
                                 >
                                   {r.requestNo}
@@ -989,7 +989,7 @@ export default function Grade5ApprovalListsPage() {
               </Button>
               <Button
                 onClick={handleConfirmProcess}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 Process
               </Button>
@@ -1022,7 +1022,7 @@ export default function Grade5ApprovalListsPage() {
               <Button
                 type="button"
                 onClick={handleConfirmDeleteList}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 OK
               </Button>
@@ -1047,7 +1047,7 @@ export default function Grade5ApprovalListsPage() {
               <Button
                 type="button"
                 onClick={closePopup}
-                className="bg-[#953002] text-white hover:bg-[#672102] min-w-[80px]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] min-w-[80px]"
               >
                 OK
               </Button>

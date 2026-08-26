@@ -961,7 +961,7 @@ export default function DeathDonationRequestPage() {
       <div className="flex flex-1 flex-col gap-4 px-10 py-10 pt-0">
         <Link
           href={backHref}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#9d3602]"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
@@ -1009,7 +1009,7 @@ export default function DeathDonationRequestPage() {
                 <Button
                   onClick={handleSave}
                   disabled={!canModifyMember || isSaving}
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? "Saving..." : "Save"}
                 </Button>
@@ -1027,7 +1027,7 @@ export default function DeathDonationRequestPage() {
                   <Button
                     onClick={handleSubmit}
                     disabled={!request?.requestNo || isSubmitting}
-                    className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Submit
                   </Button>
@@ -1090,7 +1090,7 @@ export default function DeathDonationRequestPage() {
                 <Button
                   onClick={handleSaveConcerns}
                   disabled={isSaving}
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? "Saving..." : "Save Concerns"}
                 </Button>
@@ -1526,7 +1526,7 @@ export default function DeathDonationRequestPage() {
                   type="button"
                   onClick={handleRefreshDonation}
                   disabled={isRefreshingDonation}
-                  className="mt-4 bg-[#953002] text-white hover:bg-[#7a2702] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-4 bg-[#953002] text-white hover:bg-[#7a2700] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isRefreshingDonation ? "Recalculating..." : "Recalculate"}
                 </Button>
@@ -1594,7 +1594,7 @@ export default function DeathDonationRequestPage() {
                           className={`rounded-md px-3 py-1 text-sm text-white ${
                             uploadingDocumentType === docType.type
                               ? "cursor-not-allowed bg-[#953002]/60"
-                              : "cursor-pointer bg-[#953002] hover:bg-[#7a2702]"
+                              : "cursor-pointer bg-[#953002] hover:bg-[#7a2700]"
                           }`}
                         >
                           {uploadingDocumentType === docType.type ? "Uploading..." : "Add"}

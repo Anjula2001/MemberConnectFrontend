@@ -69,7 +69,7 @@ export default function TopHeader() {
         id="sidebar-toggle"
         onClick={toggleSidebar}
         title={state === "expanded" ? "Collapse sidebar" : "Expand sidebar"}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-transparent text-neutral-500 transition-all duration-200 hover:border-neutral-200 hover:bg-[#fdf5f2] hover:text-[#9e3600]"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-transparent text-neutral-500 transition-all duration-200 hover:border-neutral-200 hover:bg-[#fdf5f2] hover:text-[#953002]"
       >
         {state === "expanded" ? (
           <PanelLeftClose className="h-5 w-5" />
@@ -86,7 +86,7 @@ export default function TopHeader() {
            Passbook templates, so the screen and the printed documents agree.
            Truncates rather than pushing the role and profile cards off a narrow
            screen — those are functional, this is identification. */}
-      <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-[#9e3600]">
+      <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-[#953002]">
         Future Finance Institute
       </h1>
 
@@ -95,9 +95,9 @@ export default function TopHeader() {
 
       {/* ── Role Badge Card (h-10, matching the profile card) ── */}
       <div className="flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3.5 shrink-0">
-        <Shield className="h-4 w-4 text-[#9e3600]" />
+        <Shield className="h-4 w-4 text-[#953002]" />
         <span className="text-xs font-medium text-neutral-500">Role :</span>
-        <span className="text-xs font-semibold text-[#9e3600]">{roleLabel}</span>
+        <span className="text-xs font-semibold text-[#953002]">{roleLabel}</span>
       </div>
 
       {/* ── Profile / Logout Card (h-10, matching the role card) ── */}
@@ -105,9 +105,9 @@ export default function TopHeader() {
         <button
           id="profile-menu-trigger"
           onClick={() => setProfileOpen((v) => !v)}
-          className="flex h-10 items-center gap-2.5 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 transition-colors hover:border-[#9e3600]/30 hover:bg-[#fdf5f2]"
+          className="flex h-10 items-center gap-2.5 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 transition-colors hover:border-[#953002]/30 hover:bg-[#fdf5f2]"
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shrink-0 shadow-xs overflow-hidden">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#953002] text-xs font-bold text-white shrink-0 shadow-xs overflow-hidden">
             {user?.profilePictureUrl ? (
               <img src={user.profilePictureUrl} alt={user.fullName} className="h-full w-full object-cover" />
             ) : (
@@ -125,7 +125,7 @@ export default function TopHeader() {
             {/* User info */}
             <div className="border-b border-neutral-100 px-4 py-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#9e3600] text-sm font-bold text-white overflow-hidden">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#953002] text-sm font-bold text-white overflow-hidden">
                   {user?.profilePictureUrl ? (
                     <img src={user.profilePictureUrl} alt={user.fullName} className="h-full w-full object-cover" />
                   ) : (
@@ -134,7 +134,7 @@ export default function TopHeader() {
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-neutral-800">{user?.fullName ?? "User"}</p>
-                  <p className="text-xs font-medium text-[#9e3600]">{roleLabel}</p>
+                  <p className="text-xs font-medium text-[#953002]">{roleLabel}</p>
                 </div>
               </div>
             </div>
@@ -143,7 +143,7 @@ export default function TopHeader() {
             <div className="p-1.5">
               <button
                 id="profile-menu-link"
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-[#fdf5f2] hover:text-[#9e3600]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-[#fdf5f2] hover:text-[#953002]"
                 onClick={() => {
                   setProfileOpen(false);
                   router.push("/profile");
@@ -155,7 +155,7 @@ export default function TopHeader() {
 
               {user?.role === "SUPER_ADMIN" && (
                 <button
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-[#fdf5f2] hover:text-[#9e3600]"
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-[#fdf5f2] hover:text-[#953002]"
                   onClick={() => { setProfileOpen(false); router.push("/admin/users"); }}
                 >
                   <Settings className="h-4 w-4 shrink-0" />

@@ -2,7 +2,6 @@ import { apiClient } from "@/lib/api/client"
 import { searchMembers } from "@/lib/api/member"
 import { searchDeathDonationRequests } from "@/lib/api/deathDonation"
 import { searchMemberDeathRecords } from "@/lib/api/memberDeath"
-import { getDormantApprovalLists } from "@/lib/api/dormant"
 import type { UserRole } from "@/lib/auth-context"
 
 /**
@@ -50,21 +49,56 @@ async function countFrom(
 }
 
 /**
- * Counts rows the caller has to filter in the browser.
+ * Asks a paged listing endpoint for its total, rather than for the rows.
  *
- * Used only where the endpoint takes no status parameter. It is a stop-gap: every one
- * of these downloads a whole table to count part of it, which is the pattern this
- * codebase has already removed from the registration and member screens. The proper
- * fix is a count endpoint per module.
+ * These cards used to call /api/applications/search and take the length of the
+ * array. Now that the endpoint pages, one row is enough to carry back the total the
+ * database counted — and the dashboard stops downloading a whole result set per card
+ * to arrive at a single number.
  */
-async function countWhere(
+async function countOfPage(
   path: string,
-  statuses: string[]
+  params?: Record<string, string | string[]>
 ): Promise<number> {
-  const { data } = await apiClient.get<{ status?: string }[]>(path)
-  if (!Array.isArray(data)) return 0
-  return data.filter((row) => row.status && statuses.includes(row.status)).length
+  const { data } = await apiClient.get<{ totalElements?: number }>(path, {
+    params: { ...params, page: "0", size: "1" },
+    // Repeat keys for arrays (statuses=A&statuses=B) rather than axios's default
+    // "statuses[]=A". Spring binds either form to a List<T> @RequestParam, so this
+    // matches the other callers of this endpoint rather than fixing anything.
+    paramsSerializer: { indexes: null },
+  })
+  return typeof data?.totalElements === "number" ? data.totalElements : 0
 }
+
+/**
+ * Asks an endpoint for a count, rather than for the rows behind it.
+ *
+ * Replaces the browser-side filter these queues used to run: each one fetched a whole
+ * table and counted the matching rows locally, because the listing endpoints took no
+ * status parameter. They now expose /count, which answers with a database COUNT.
+ */
+async function countOf(
+  path: string,
+  params?: Record<string, string | string[]>
+): Promise<number> {
+  const { data } = await apiClient.get<{ count?: number }>(path, { params })
+  return typeof data?.count === "number" ? data.count : 0
+}
+
+/**
+ * Death donation requests that are still someone's work.
+ *
+ * The card counts open requests, so the settled ones are excluded. Passing no statuses
+ * at all - which is what this queue used to do - counted approved, rejected and
+ * inactive requests too, and reported them as outstanding.
+ */
+const OPEN_DONATION_STATUSES = [
+  "NEW",
+  "SUBMITTED_FOR_APPROVAL",
+  "DISTRICT_COMMITTEE",
+  "PD_COMMITTEE",
+  "INCOMPLETE",
+]
 
 const REGISTRATION: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE", "BOARD_SECRETARY", "DISTRICT_OFFICE"]
 const BOARD: UserRole[] = ["SUPER_ADMIN", "HEAD_OFFICE", "BOARD_SECRETARY"]
@@ -78,7 +112,7 @@ export const QUEUES: QueueDef[] = [
     href: "/membership/new-registrations",
     roles: ["SUPER_ADMIN", "DISTRICT_OFFICE"],
     load: (ctx) =>
-      countFrom("/api/applications/search", {
+      countOfPage("/api/applications/search", {
         statuses: ["NEW"],
         ...(ctx.district ? { locations: [ctx.district] } : {}),
       }),
@@ -90,7 +124,7 @@ export const QUEUES: QueueDef[] = [
     href: "/membership/new-registrations",
     roles: REGISTRATION,
     load: (ctx) =>
-      countFrom("/api/applications/search", {
+      countOfPage("/api/applications/search", {
         statuses: ["REJECTED"],
         ...(ctx.district ? { locations: [ctx.district] } : {}),
       }),
@@ -104,7 +138,7 @@ export const QUEUES: QueueDef[] = [
     href: "/membership/board-approvals",
     roles: BOARD,
     load: () =>
-      countFrom("/api/applications/search", {
+      countOfPage("/api/applications/search", {
         statuses: ["SUBMITTED_FOR_APPROVAL"],
       }),
   },
@@ -125,8 +159,8 @@ export const QUEUES: QueueDef[] = [
     // screen it links to. They have their own cards below.
     load: async () => {
       const [membership, termination] = await Promise.all([
-        countWhere("/api/board-approval-lists/getAllBoardApprovalLists", ["CREATED"]),
-        countWhere("/api/termination-approval-lists", ["CREATED"]),
+        countOf("/api/board-approval-lists/count", { statuses: ["CREATED"] }),
+        countOf("/api/termination-approval-lists/count", { statuses: ["CREATED"] }),
       ])
       return membership + termination
     },
@@ -138,7 +172,7 @@ export const QUEUES: QueueDef[] = [
     href: "/scholarships/grade-5/approval-lists",
     // Mirrors who holds G5_LIST_VIEW.
     roles: ["SUPER_ADMIN", "HEAD_OFFICE", "BOARD_SECRETARY", "SCHOLARSHIP_OFFICER", "ACCOUNTS"],
-    load: () => countWhere("/api/grade5/approval-lists/all", ["CREATED"]),
+    load: () => countOf("/api/grade5/approval-lists/count", { statuses: ["CREATED"] }),
   },
   {
     id: "dormant-lists-to-process",
@@ -147,8 +181,8 @@ export const QUEUES: QueueDef[] = [
     href: "/membership/dormant/approval-lists",
     // DORMANT_BOARD_ROLES - the board half of MMD13-MMD18.
     roles: BOARD,
-    load: async () =>
-      (await getDormantApprovalLists()).filter((list) => list.status === "CREATED").length,
+    load: () =>
+      countOf("/api/dormant-members/approval-lists/count", { statuses: ["CREATED"] }),
   },
 
   // ── Terminations ──────────────────────────────────────────────────────────
@@ -191,7 +225,8 @@ export const QUEUES: QueueDef[] = [
     hint: "Open requests across the death donation flow",
     href: "/death-donation",
     roles: ["SUPER_ADMIN", "HEAD_OFFICE", "BOARD_SECRETARY", "DISTRICT_OFFICE", "DEATH_DONATION_OFFICER"],
-    load: async () => (await searchDeathDonationRequests()).length,
+    load: async () =>
+      (await searchDeathDonationRequests({ statuses: OPEN_DONATION_STATUSES })).length,
   },
 
   // ── Scholarships ──────────────────────────────────────────────────────────
@@ -212,8 +247,12 @@ export const QUEUES: QueueDef[] = [
     hint: "MMS26 - the Committee gate before board approval",
     href: "/scholarships/university",
     roles: ["SUPER_ADMIN", "SCHOLARSHIP_OFFICER"],
+    // /university-scholarships/search already filters by status server-side; the
+    // unfiltered listing this used to read returned every request to count a few.
     load: () =>
-      countWhere("/api/university-scholarships", ["SUBMITTED_FOR_COMMITTEE_APPROVAL"]),
+      countFrom("/api/university-scholarships/search", {
+        statuses: ["SUBMITTED_FOR_COMMITTEE_APPROVAL"],
+      }),
   },
 
   // ── Finance ───────────────────────────────────────────────────────────────

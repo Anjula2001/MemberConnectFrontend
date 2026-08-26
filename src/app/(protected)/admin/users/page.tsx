@@ -403,7 +403,7 @@ export default function UserManagementPage() {
       {/* ── Page Header ────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200 pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#9e3600]">User & Role Management</h1>
+          <h1 className="text-2xl font-bold text-[#953002]">User & Role Management</h1>
           <p className="mt-1 text-sm text-neutral-500">
             Create, manage staff accounts, assign administrative roles, and allocate district branches.
           </p>
@@ -415,7 +415,7 @@ export default function UserManagementPage() {
             setCreatePassword(generateRandomPassword());
             setShowCreateModal(true);
           }}
-          className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#9e3600] px-4 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#b33f00]"
+          className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#953002] px-4 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#b33f00]"
         >
           <UserPlus className="h-4 w-4" />
           <span>Add New Staff User</span>
@@ -427,7 +427,7 @@ export default function UserManagementPage() {
         <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-500">Total Users</span>
-            <Users className="h-4 w-4 text-[#9e3600]" />
+            <Users className="h-4 w-4 text-[#953002]" />
           </div>
           <p className="mt-2 text-2xl font-bold text-neutral-800">{totalCount}</p>
           <p className="mt-1 text-[11px] text-neutral-400">Registered staff accounts</p>
@@ -472,7 +472,7 @@ export default function UserManagementPage() {
             placeholder="Search by name, username, or district..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] pl-9 pr-4 text-sm text-neutral-700 outline-none transition-all focus:border-[#9e3600]/50 focus:bg-white"
+            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] pl-9 pr-4 text-sm text-neutral-700 outline-none transition-all focus:border-[#953002]/50 focus:bg-white"
           />
         </div>
 
@@ -482,7 +482,7 @@ export default function UserManagementPage() {
             id="role-filter"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#9e3600]/50"
+            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#953002]/50"
           >
             <option value="ALL">All Roles</option>
             {Object.keys(ROLE_CONFIG).map((roleKey) => (
@@ -499,7 +499,7 @@ export default function UserManagementPage() {
             id="district-filter"
             value={districtFilter}
             onChange={(e) => setDistrictFilter(e.target.value)}
-            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#9e3600]/50"
+            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#953002]/50"
           >
             <option value="ALL">All Districts</option>
             {SRI_LANKAN_DISTRICTS.map((d) => (
@@ -516,7 +516,7 @@ export default function UserManagementPage() {
             id="status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#9e3600]/50"
+            className="h-10 w-full rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3 text-xs font-medium text-neutral-700 outline-none focus:border-[#953002]/50"
           >
             <option value="ALL">All Status</option>
             <option value="ACTIVE">Active Only</option>
@@ -546,7 +546,7 @@ export default function UserManagementPage() {
         {loading ? (
           <div className="flex h-64 items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#9e3600] border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#953002] border-t-transparent" />
               <p className="text-sm font-medium text-neutral-500">Loading user accounts...</p>
             </div>
           </div>
@@ -600,7 +600,7 @@ export default function UserManagementPage() {
                       {/* User details */}
                       <TableCell className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#9e3600] text-xs font-bold text-white shadow-xs overflow-hidden">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#953002] text-xs font-bold text-white shadow-xs overflow-hidden">
                             {u.profilePictureUrl ? (
                               <img
                                 src={u.profilePictureUrl}
@@ -637,7 +637,7 @@ export default function UserManagementPage() {
                           </span>
                           {u.authorized && (
                             <span
-                              className="inline-flex items-center gap-1 rounded-md border border-[#9e3600]/25 bg-[#fdf5f2] px-2 py-1 text-xs font-semibold text-[#9e3600]"
+                              className="inline-flex items-center gap-1 rounded-md border border-[#953002]/25 bg-[#fdf5f2] px-2 py-1 text-xs font-semibold text-[#953002]"
                               title="Holds authorising power, not preparation only"
                             >
                               <ShieldCheck className="h-3 w-3 shrink-0" />
@@ -684,7 +684,7 @@ export default function UserManagementPage() {
                           {/* Edit */}
                           <button
                             onClick={() => openEditModal(u)}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 transition-colors hover:border-[#9e3600]/40 hover:bg-[#fdf5f2] hover:text-[#9e3600]"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 transition-colors hover:border-[#953002]/40 hover:bg-[#fdf5f2] hover:text-[#953002]"
                             title="Edit user details"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -741,7 +741,7 @@ export default function UserManagementPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#9e3600]/10 text-[#9e3600]">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
                   <UserPlus className="h-4 w-4" />
                 </div>
                 <h3 className="text-base font-bold text-neutral-800">Add New Staff Account</h3>
@@ -767,7 +767,7 @@ export default function UserManagementPage() {
                   placeholder="e.g. Kasun Jayasinghe"
                   value={createFullName}
                   onChange={(e) => setCreateFullName(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                   required
                 />
               </div>
@@ -783,7 +783,7 @@ export default function UserManagementPage() {
                   placeholder="e.g. kasun_colombo"
                   value={createUsername}
                   onChange={(e) => setCreateUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                   required
                 />
                 <p className="mt-1 text-[11px] text-neutral-400">Lowercase letters, numbers, and underscores only</p>
@@ -798,7 +798,7 @@ export default function UserManagementPage() {
                   <button
                     type="button"
                     onClick={() => setCreatePassword(generateRandomPassword())}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-[#9e3600] hover:underline"
+                    className="flex items-center gap-1 text-[11px] font-semibold text-[#953002] hover:underline"
                   >
                     <Sparkles className="h-3 w-3" /> Generate Random
                   </button>
@@ -810,7 +810,7 @@ export default function UserManagementPage() {
                     value={createPassword}
                     onChange={(e) => setCreatePassword(e.target.value)}
                     placeholder="Enter or generate password"
-                    className="h-10 w-full rounded-lg border border-neutral-200 pl-3.5 pr-10 text-sm text-neutral-800 outline-none focus:border-[#9e3600] focus:ring-2 focus:ring-[#9e3600]/10"
+                    className="h-10 w-full rounded-lg border border-neutral-200 pl-3.5 pr-10 text-sm text-neutral-800 outline-none focus:border-[#953002] focus:ring-2 focus:ring-[#953002]/10"
                     required
                   />
                   <button
@@ -832,7 +832,7 @@ export default function UserManagementPage() {
                   id="create-role"
                   value={createRole}
                   onChange={(e) => setCreateRole(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                 >
                   {Object.keys(ROLE_CONFIG).map((roleKey) => (
                     <option key={roleKey} value={roleKey}>
@@ -855,7 +855,7 @@ export default function UserManagementPage() {
                     id="create-district"
                     value={createDistrict}
                     onChange={(e) => setCreateDistrict(e.target.value)}
-                    className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                   >
                     {SRI_LANKAN_DISTRICTS.map((d) => (
                       <option key={d} value={d}>
@@ -875,14 +875,14 @@ export default function UserManagementPage() {
                       type="checkbox"
                       checked={createAuthorized}
                       onChange={(e) => setCreateAuthorized(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#9e3600] focus:ring-[#9e3600]"
+                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#953002] focus:ring-[#953002]"
                     />
                     <div>
                       <label
                         htmlFor="create-authorized"
                         className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-neutral-800"
                       >
-                        <ShieldCheck className="h-3.5 w-3.5 text-[#9e3600]" />
+                        <ShieldCheck className="h-3.5 w-3.5 text-[#953002]" />
                         Authorized Officer
                       </label>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
@@ -907,7 +907,7 @@ export default function UserManagementPage() {
                   id="submit-create-user"
                   type="submit"
                   disabled={submittingCreate}
-                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#9e3600] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00] disabled:opacity-60"
+                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#953002] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00] disabled:opacity-60"
                 >
                   {submittingCreate ? (
                     <>
@@ -930,7 +930,7 @@ export default function UserManagementPage() {
           <div className="relative w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#9e3600]/10 text-[#9e3600]">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
                   <Pencil className="h-4 w-4" />
                 </div>
                 <h3 className="text-base font-bold text-neutral-800">
@@ -955,7 +955,7 @@ export default function UserManagementPage() {
                   type="text"
                   value={editFullName}
                   onChange={(e) => setEditFullName(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3.5 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                   required
                 />
               </div>
@@ -966,7 +966,7 @@ export default function UserManagementPage() {
                 <select
                   value={editRole}
                   onChange={(e) => setEditRole(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                 >
                   {Object.keys(ROLE_CONFIG).map((roleKey) => (
                     <option key={roleKey} value={roleKey}>
@@ -985,7 +985,7 @@ export default function UserManagementPage() {
                   <select
                     value={editDistrict}
                     onChange={(e) => setEditDistrict(e.target.value)}
-                    className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                   >
                     {SRI_LANKAN_DISTRICTS.map((d) => (
                       <option key={d} value={d}>
@@ -1005,14 +1005,14 @@ export default function UserManagementPage() {
                       type="checkbox"
                       checked={editAuthorized}
                       onChange={(e) => setEditAuthorized(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#9e3600] focus:ring-[#9e3600]"
+                      className="mt-0.5 h-4 w-4 rounded-sm border-neutral-300 text-[#953002] focus:ring-[#953002]"
                     />
                     <div>
                       <label
                         htmlFor="edit-authorized"
                         className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-neutral-800"
                       >
-                        <ShieldCheck className="h-3.5 w-3.5 text-[#9e3600]" />
+                        <ShieldCheck className="h-3.5 w-3.5 text-[#953002]" />
                         Authorized Officer
                       </label>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
@@ -1030,7 +1030,7 @@ export default function UserManagementPage() {
                   type="checkbox"
                   checked={editIsActive}
                   onChange={(e) => setEditIsActive(e.target.checked)}
-                  className="h-4 w-4 rounded-sm border-neutral-300 text-[#9e3600] focus:ring-[#9e3600]"
+                  className="h-4 w-4 rounded-sm border-neutral-300 text-[#953002] focus:ring-[#953002]"
                 />
                 <label htmlFor="edit-is-active" className="text-sm font-medium text-neutral-700 cursor-pointer">
                   Account is Active and allowed to sign in
@@ -1049,7 +1049,7 @@ export default function UserManagementPage() {
                 <button
                   type="submit"
                   disabled={submittingEdit}
-                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#9e3600] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00] disabled:opacity-60"
+                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#953002] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#b33f00] disabled:opacity-60"
                 >
                   {submittingEdit ? "Saving..." : "Save Changes"}
                 </button>
@@ -1089,7 +1089,7 @@ export default function UserManagementPage() {
                   <button
                     type="button"
                     onClick={() => setResetNewPassword(generateRandomPassword())}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-[#9e3600] hover:underline"
+                    className="flex items-center gap-1 text-[11px] font-semibold text-[#953002] hover:underline"
                   >
                     <Sparkles className="h-3 w-3" /> Generate Random
                   </button>
@@ -1100,7 +1100,7 @@ export default function UserManagementPage() {
                     value={resetNewPassword}
                     onChange={(e) => setResetNewPassword(e.target.value)}
                     placeholder="At least 6 characters"
-                    className="h-10 w-full rounded-lg border border-neutral-200 pl-3.5 pr-10 text-sm text-neutral-800 outline-none focus:border-[#9e3600]"
+                    className="h-10 w-full rounded-lg border border-neutral-200 pl-3.5 pr-10 text-sm text-neutral-800 outline-none focus:border-[#953002]"
                     required
                   />
                   <button

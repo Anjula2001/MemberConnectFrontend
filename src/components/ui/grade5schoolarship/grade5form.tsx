@@ -543,7 +543,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
                 <Button
                   type="button"
                   onClick={() => setPopupError("")}
-                  className="bg-[#953002] text-white hover:bg-[#672102]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 >
                   OK
                 </Button>
@@ -758,7 +758,7 @@ const Grade5Form = forwardRef<Grade5FormRef, Grade5FormProps>(
               <Button
                 type="button"
                 onClick={validateExamNumber}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
                 disabled={readOnly || checkingExamNo}
               >
                 {checkingExamNo ? "Checking..." : "Validate"}

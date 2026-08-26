@@ -722,7 +722,7 @@ export default function RetirementPage() {
                   onClick={handleSendToFinance}
                   disabled={isSendingToFinance}
                   title="Send this approved retirement to the Finance Module"
-                  className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   {isSendingToFinance ? "Sending..." : "Send to Finance"}
                 </Button>
@@ -774,7 +774,7 @@ export default function RetirementPage() {
                     <Button
                       type="button"
                       disabled
-                      className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2702] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="bg-[#953002] text-white disabled:bg-[#953002]  hover:bg-[#7a2700] disabled:text-white disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       Submit for Approval
                     </Button>
@@ -820,7 +820,7 @@ export default function RetirementPage() {
                         (isIncompleteStatus && !isEditMode) ||
                         (validation ? !validation.canSubmit : true)
                       }
-                      className="bg-[#953002] text-white  hover:bg-[#7a2702] disabled:cursor-not-allowed"
+                      className="bg-[#953002] text-white  hover:bg-[#7a2700] disabled:cursor-not-allowed"
                     >
                       Submit for Approval
                     </Button>
@@ -1105,7 +1105,7 @@ export default function RetirementPage() {
                   setApproveModalOpen(false);
                 }}
                 disabled={approvalAction === "approve"}
-                className="bg-[#953002] text-white hover:bg-[#672102] disabled:opacity-70"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-70"
               >
                 {approvalAction === "approve" ? "Approving..." : "OK"}
               </Button>
@@ -1151,7 +1151,7 @@ export default function RetirementPage() {
                   type="button"
                   onClick={() => handleApprovalAction("reject", rejectComment)}
                   disabled={!rejectComment.trim() || approvalAction === "reject"}
-                  className="bg-[#953002] text-white hover:bg-[#672102] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   {approvalAction === "reject" ? "Rejecting..." : "Reject"}
                 </Button>
@@ -1206,7 +1206,7 @@ export default function RetirementPage() {
               <Button
                 type="button"
                 onClick={confirmChangeStatus}
-                className="bg-[#953002] text-white hover:bg-[#672102]"
+                className="bg-[#953002] text-white hover:bg-[#7a2700]"
               >
                 OK
               </Button>
@@ -1250,7 +1250,7 @@ export default function RetirementPage() {
                 type="button"
                 onClick={handleConfirmSubmit}
                 disabled={isSubmitting}
-                className="bg-[#953002] text-white hover:bg-[#672102] disabled:opacity-70"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-70"
               >
                 {isSubmitting ? "Submitting..." : "OK"}
               </Button>

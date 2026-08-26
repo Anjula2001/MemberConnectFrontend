@@ -1442,7 +1442,7 @@ export default function ChangeMemberTransferForm() {
                           href={previewUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                          className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2700]"
                         >
                           Preview
                         </a>
@@ -1554,7 +1554,7 @@ export default function ChangeMemberTransferForm() {
                 <Button
                   type="button"
                   onClick={() => setShowPopup(false)}
-                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
                 >
                   OK
                 </Button>
@@ -1614,7 +1614,7 @@ export default function ChangeMemberTransferForm() {
                 type="button"
                 onClick={executeStatusChange}
                 disabled={!statusChangeTarget || isChangingStatus}
-                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
               >
                 {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
@@ -1657,7 +1657,7 @@ export default function ChangeMemberTransferForm() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm"
                   onClick={executeSubmit}
                 >
                   Submit

@@ -144,7 +144,7 @@ function MultiSelectDropdown({
 									<Checkbox
 										checked={selected.includes(option.value)}
 										onCheckedChange={() => toggleOption(option.value)}
-										className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#9e3600] data-[state=checked]:bg-[#9e3600]"
+										className="h-4 w-4 border-[#c6581f] data-[state=checked]:border-[#953002] data-[state=checked]:bg-[#953002]"
 									/>
 									<span className="text-sm">{option.label}</span>
 								</label>
@@ -392,7 +392,7 @@ export default function MemberDirectoryPage() {
 						type="button"
 						onClick={fetchMembers}
 						disabled={loading}
-						className="h-9 bg-[#9e3600] text-white hover:bg-[#8b2f00] disabled:opacity-60"
+						className="h-9 bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-60"
 					>
 						{loading ? (
 							<Loader2 className="h-4 w-4 animate-spin" />
@@ -423,12 +423,12 @@ export default function MemberDirectoryPage() {
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
-			<h1 className="text-3xl font-bold text-[#9d3602]">Membership Profile Search</h1>
+			<h1 className="text-3xl font-bold text-[#953002]">Membership Profile Search</h1>
 
 			{/* ── Search Criteria Card ── */}
 			<Card className="rounded-xl border-neutral-300 py-0 shadow-none">
 				<CardHeader className="px-5 pt-5 pb-3">
-					<CardTitle className="text-[34px] font-semibold leading-none text-[#9d3602] sm:text-3xl">
+					<CardTitle className="text-[34px] font-semibold leading-none text-[#953002] sm:text-3xl">
 						Search Criteria
 					</CardTitle>
 				</CardHeader>
@@ -663,7 +663,7 @@ export default function MemberDirectoryPage() {
 											{member.memberId || member.id ? (
 												<Link
 													href={`/membership/directory/${member.id}`}
-													className="text-[#9d3602] hover:underline"
+													className="text-[#953002] hover:underline"
 												>
 													{member.memberId ?? "—"}
 												</Link>

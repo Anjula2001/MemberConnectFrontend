@@ -1644,7 +1644,7 @@ export default function StudentExamSection() {
             {isApprovedDetailsEditMode && (
               <Button
                 type="button"
-                className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleUpdateApprovedDetails}
                 disabled={!hasApprovedDetailChanges}
               >
@@ -1675,7 +1675,7 @@ export default function StudentExamSection() {
                 <Button
                   type="submit"
                   disabled={isSubmitting || !requestId || !hasAllMandatoryDocuments || !isEditableStatus}
-                  className="bg-[#953002] text-white hover:bg-[#7a2500] disabled:opacity-50"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-50"
                 >
                   {isSubmitting ? "Submitting..." : "Submit"}
                 </Button>
@@ -2163,7 +2163,7 @@ export default function StudentExamSection() {
                             href={previewUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2500]"
+                            className="inline-flex items-center justify-center rounded-md bg-[#953002] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#7a2700]"
                           >
                             Preview
                           </a>
@@ -2228,7 +2228,7 @@ export default function StudentExamSection() {
 
                 <Button
                   type="button"
-                  className="bg-[#953002] text-white hover:bg-[#7a2500]"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
                   onClick={handleNewFundRequest}
                   disabled={!canAddFundRequest}
                 >
@@ -2364,7 +2364,7 @@ export default function StudentExamSection() {
                 <Button
                   type="button"
                   onClick={() => setShowExamNoPopup(false)}
-                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
+                  className="w-32 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold py-2 rounded-lg text-sm transition-all shadow-sm mx-auto block"
                 >
                   OK
                 </Button>
@@ -2424,7 +2424,7 @@ export default function StudentExamSection() {
                 type="button"
                 onClick={executeStatusChange}
                 disabled={!statusChangeTarget || isChangingStatus}
-                className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
               >
                 {isChangingStatus ? "Saving..." : "Confirm"}
               </Button>
@@ -2467,7 +2467,7 @@ export default function StudentExamSection() {
                 </Button>
                 <Button
                   type="button"
-                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2500] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
+                  className="w-28 bg-[#953002] text-white hover:bg-[#7a2700] font-semibold rounded-lg text-sm shadow-sm disabled:opacity-50"
                   onClick={executeSubmit}
                   disabled={isSubmitting}
                 >
@@ -2616,7 +2616,7 @@ export default function StudentExamSection() {
                         <TableCell className="px-4 py-4 text-right">
                           <button
                             type="button"
-                            className="inline-flex text-[#9d3602] transition-colors hover:text-[#c44515]"
+                            className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                             onClick={() => handleOpenScholarshipFromHistory(scholarship)}
                             aria-label="View scholarship"
                           >

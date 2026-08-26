@@ -372,7 +372,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
   if (loadingRequest) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB]">
-        <Loader2 className="animate-spin w-10 h-10 text-[#8B3205]" />
+        <Loader2 className="animate-spin w-10 h-10 text-[#953002]" />
       </div>
     );
   }
@@ -384,13 +384,13 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
           <button onClick={() => router.back()} className="p-2 hover:bg-gray-200 rounded-full transition-all">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <h1 className="text-xl font-bold text-[#8B3205]">
+          <h1 className="text-xl font-bold text-[#953002]">
             {isEditMode ? `Basic Profile Change Request ${requestNo ?? 'NEW'}` : "New Profile Change Request"}
           </h1>
         </div>
         <div className="flex items-center gap-3">
           {selectedStatus && (
-            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#8B3205]">
+            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#953002]">
               {selectedStatus.replace(/_/g, ' ')}
             </span>
           )}
@@ -399,7 +399,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
               type="button"
               onClick={() => setIsEditing(true)}
               disabled={isSubmitting}
-              className="border border-[#8B3205] text-[#8B3205] px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#8B3205]/5 transition-all disabled:opacity-60"
+              className="border border-[#953002] text-[#953002] px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#953002]/5 transition-all disabled:opacity-60"
             >
               ✏️ Edit
             </button>
@@ -418,7 +418,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
                 type="button"
                 onClick={() => handleSubmit()}
                 disabled={isSubmitting}
-                className="bg-[#8B3205] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all disabled:opacity-60"
+                className="bg-[#953002] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all disabled:opacity-60"
               >
                 {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
                 💾 Submit
@@ -449,7 +449,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
             <button
               onClick={() => handleSubmit()}
               disabled={isSubmitting}
-              className="bg-[#8B3205] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all disabled:opacity-60"
+              className="bg-[#953002] text-white px-6 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-[#722904] transition-all disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="animate-spin w-4 h-4" />}
               💾 Submit
@@ -468,7 +468,7 @@ export default function BasicDetailChange({ editId, memberId }: { editId?: strin
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
             <div className="flex items-start justify-between px-5 pt-5">
-              <h2 className="text-xl font-semibold text-[#8B3205]">Reject this request</h2>
+              <h2 className="text-xl font-semibold text-[#953002]">Reject this request</h2>
               <button type="button" onClick={() => setShowRejectModal(false)} className="text-gray-500">✕</button>
             </div>
             <div className="px-5 pb-5 pt-3">

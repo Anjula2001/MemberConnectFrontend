@@ -82,7 +82,7 @@ export function SubmitConfirmationModal({
             type="button"
             onClick={onConfirm}
             disabled={isLoading}
-            className="bg-[#953002] text-white hover:bg-[#7a2702] disabled:opacity-70"
+            className="bg-[#953002] text-white hover:bg-[#7a2700] disabled:opacity-70"
           >
             {isLoading ? "Submitting..." : confirmLabel}
           </Button>
@@ -144,7 +144,7 @@ export function SubmitSuccessModal({
           <Button
             type="button"
             onClick={onClose}
-            className="min-w-[120px] bg-[#953002] text-white hover:bg-[#7a2702]"
+            className="min-w-[120px] bg-[#953002] text-white hover:bg-[#7a2700]"
           >
             OK
           </Button>

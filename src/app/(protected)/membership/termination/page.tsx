@@ -330,7 +330,7 @@ function StatusMultiSelect({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left shadow-sm hover:bg-gray-50 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002]"
       >
         <span className="text-sm">{displayText}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -424,7 +424,7 @@ function LocationMultiSelect({
         disabled={disabled}
         title={disabled ? "You can only view your own district's requests." : undefined}
         className={cn(
-          "flex h-9 w-full items-center justify-between rounded-md border border-gray-300 px-3 text-left shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#8B4513]",
+          "flex h-9 w-full items-center justify-between rounded-md border border-gray-300 px-3 text-left shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#953002]",
           disabled
             ? "cursor-not-allowed bg-gray-100 text-gray-600"
             : "bg-white hover:bg-gray-50"
@@ -1093,7 +1093,7 @@ export default function TerminationPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 w-full px-6 py-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#8B4513]">Termination & Retirement Requests</h1>
+        <h1 className="text-2xl font-bold text-[#953002]">Termination & Retirement Requests</h1>
         {showApprovalListActions && (
           <div className="flex items-center gap-2">
             <Button
@@ -1104,7 +1104,7 @@ export default function TerminationPage() {
               View Approval Lists
             </Button>
             <Button
-              className="bg-[#e3ac00] hover:bg-[#c99500] text-white"
+              className="bg-[#ffb401] hover:bg-[#c99500] text-white"
               disabled={selectedTerminationCount === 0}
               onClick={handleOpenBoardMeetingModal}
             >
@@ -1116,7 +1116,7 @@ export default function TerminationPage() {
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-        <h2 className="text-lg font-bold text-[#8B3205] mb-6">Search Criteria</h2>
+        <h2 className="text-lg font-bold text-[#953002] mb-6">Search Criteria</h2>
 
         {/* Same arrangement as the profile changes and directory screens: the four
             filters on one row (where, what, when, which status), the date pair only
@@ -1281,7 +1281,7 @@ export default function TerminationPage() {
                 </Select>
                 <Button
                   onClick={handleRetrieve}
-                  className="whitespace-nowrap bg-[#8B4513] hover:bg-[#A0522D] text-white"
+                  className="whitespace-nowrap bg-[#953002] hover:bg-[#7a2700] text-white"
                 >
                   Retrieve
                 </Button>
@@ -1351,7 +1351,7 @@ export default function TerminationPage() {
                     <button
                       type="button"
                       onClick={() => handleOpenRequest(request)}
-                      className="font-medium text-[#8B4513] hover:underline"
+                      className="font-medium text-[#953002] hover:underline"
                     >
                       {request.requestId}
                     </button>
@@ -1512,7 +1512,7 @@ export default function TerminationPage() {
               <div className="mt-6 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  className="bg-[#e3ac00] text-white hover:bg-[#c99500]"
+                  className="bg-[#ffb401] text-white hover:bg-[#c99500]"
                   onClick={handleCloseCreationConfirmModal}
                 >
                   No

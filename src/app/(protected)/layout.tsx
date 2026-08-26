@@ -76,8 +76,8 @@ export default function ProtectedLayout({
     return (
       <div className="flex h-screen items-center justify-center bg-[#f4f4f5]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#9e3600] border-t-transparent" />
-          <p className="text-sm text-[#9e3600] font-medium">Loading...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#953002] border-t-transparent" />
+          <p className="text-sm text-[#953002] font-medium">Loading...</p>
         </div>
       </div>
     );
@@ -86,12 +86,34 @@ export default function ProtectedLayout({
   if (!isAuthenticated) return null;
 
   return (
-    <SidebarProvider>
+    /*
+     * h-svh, not the provider's own min-h-svh.
+     *
+     * SidebarProvider's wrapper is "flex min-h-svh w-full", so a page taller than the
+     * viewport grows the flex row instead of being clipped by it, and the DOCUMENT
+     * scrolls. The overflow-hidden and overflow-auto below then do nothing — they have
+     * no bounded parent height to clip against — and the two h-16 bars scroll away with
+     * everything else, taking the sidebar brand and the top header off the top of the
+     * screen. Fixing the row to the viewport height puts the scrolling back inside
+     * <main>, where it was meant to be.
+     */
+    <SidebarProvider className="h-svh overflow-hidden">
       {/* Left: Sidebar */}
       <NavigationSideBar />
 
-      {/* Right: Header + Page Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/*
+       * Right: Header + Page Content
+       *
+       * min-w-0 matters here. A flex item defaults to min-width:auto, so without it this
+       * column refuses to shrink below its content's intrinsic width and overflows to the
+       * right of the viewport — taking the header with it. The overflow-hidden then clips
+       * whatever crossed the edge, which is what cut the profile dropdown in half: the
+       * menu is absolutely positioned inside this column, so it is clipped by it.
+       *
+       * The overflow-hidden itself stays: it is what gives <main> a bounded height to
+       * scroll inside (the vertical half of the same min-size rule).
+       */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top header bar: search, role badge, notifications, profile */}
         <TopHeader />
 
