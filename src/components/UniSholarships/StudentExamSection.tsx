@@ -19,7 +19,12 @@ import Document, { DocumentFileItem, RequiredDocType } from "./Document";
 import { MarkIncompleteModal } from "./Incomplete";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { hasPermission } from "@/lib/permissions";
+import {
+  hasPermission,
+  canEditUniversityRequest,
+  canReviewUniversityCommittee,
+  hasUserPermission,
+} from "@/lib/permissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Eye, Check, AlertCircle } from "lucide-react";
 import { authFetch } from "@/lib/api/authFetch";
@@ -188,6 +193,11 @@ export default function StudentExamSection() {
     | "INACTIVE"
   >("NEW");
   const [isSaved, setIsSaved] = useState(false);
+  // True only for a request this session created. Saving a new request rewrites the URL
+  // to mode=edit, which must not be mistaken for reopening an existing one: raising and
+  // submitting stays with the whole District Office, only editing is restricted.
+  // isSaved cannot stand in for this — it is also set when an existing record loads.
+  const [createdInSession, setCreatedInSession] = useState(false);
 
   const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFileItem[]>([]);
@@ -200,7 +210,15 @@ export default function StudentExamSection() {
   const isSubmitted = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
   const isExistingRequest = Boolean(requestKey);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
-  const isEditMode = isExistingRequest && mode === "edit" && isEditableStatus;
+  // Editing a NEW / INCOMPLETE request is an authorised officer's right. Checked on the
+  // mode itself and not only on the Edit button, because mode=edit arrives in the URL
+  // and would otherwise be reachable by typing it.
+  const canEditRequest = canEditUniversityRequest(user);
+  const isEditMode =
+    isExistingRequest
+    && mode === "edit"
+    && isEditableStatus
+    && (canEditRequest || createdInSession);
 
   const canEditApprovedScholarshipDetails = hasPermission(user?.role, "US_APPROVED_EDIT");
 
@@ -224,8 +242,10 @@ export default function StudentExamSection() {
     INACTIVE: ["NEW"],
   };
 
-  const canReopenToNew = hasPermission(user?.role, "US_REQUEST_REOPEN");
-  const canSetInactive = hasPermission(user?.role, "US_REQUEST_SET_INACTIVE");
+  // hasUserPermission, not hasPermission: both rights now reach District Office and
+  // Head Office through the per-account authority flag rather than the role alone.
+  const canReopenToNew = hasUserPermission(user, "US_REQUEST_REOPEN");
+  const canSetInactive = hasUserPermission(user, "US_REQUEST_SET_INACTIVE");
 
   const availableStatusTargets = (STATUS_CHANGE_TARGETS[status] || []).filter((target) =>
     target === "NEW" ? canReopenToNew : canSetInactive
@@ -807,6 +827,8 @@ export default function StudentExamSection() {
       setSavedSnapshot(currentData);
 
       if (!requestKey && savedRequest.universityScholarshipRequestID) {
+        // Carrying on with a request this session just created, not reopening one.
+        setCreatedInSession(true);
         const params = new URLSearchParams(searchParams.toString());
         params.set("requestId", savedRequest.universityScholarshipRequestID);
         params.set("mode", "edit");
@@ -1449,7 +1471,7 @@ export default function StudentExamSection() {
   const canReviewSubmission =
     isViewMode
     && status === "SUBMITTED_FOR_COMMITTEE_APPROVAL"
-    && hasPermission(user?.role, "US_COMMITTEE_APPROVE");
+    && canReviewUniversityCommittee(user);
   const isApprovedScholarship = status === "APPROVED";
   const fundRequests = loadedRecord?.fundRequests || [];
   const availableBalance =
@@ -1621,7 +1643,7 @@ export default function StudentExamSection() {
               </Button>
             )}
 
-            {isViewMode && isEditableStatus && (
+            {isViewMode && isEditableStatus && canEditRequest && (
               <Button
                 type="button"
                 variant="outline"

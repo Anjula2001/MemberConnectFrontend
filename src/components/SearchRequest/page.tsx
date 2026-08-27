@@ -6,8 +6,8 @@ import { Search, Loader2, FileCheck2, ListChecks, Trash2, ArrowUp, RotateCcw } f
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
-import { StatusBadge } from '@/src/components/ui/status-badge';
 import { humanStatus } from '@/lib/statusBadge';
+import { StatusBadge } from '@/src/components/ui/status-badge';
 import {
   Table,
   TableBody,
@@ -36,6 +36,7 @@ import MultiSelect from './MultiSelect';
 import ConfirmDialog from '@/src/components/membership/ConfirmDialog';
 import { useAuth } from '@/lib/auth-context';
 import {
+  canSelectAllLocations,
   hasRole,
   PROFILE_CHANGE_APPROVAL_LIST_ROLES,
   PROFILE_CHANGE_DELETE_ROLES,
@@ -61,8 +62,9 @@ import {
  * Received On, multi-select Status (including All), a search over the member's names /
  * number / NIC, and Sort with a direction.
  *
- * There is no Location control: district users are confined to their own district by the
- * backend on every request, so the filter added nothing they could act on.
+ * Location is a multi-select that follows MMC02: auto-selected and disabled for a user
+ * with access to a single district, enabled and defaulted to "All" for a user with
+ * national access. An earlier version of this screen had no Location control at all.
  *
  * The previous version called each type's "get all" endpoint and filtered the results
  * in the browser, which is why Location, Received On and Sort did not exist, Status was
@@ -97,6 +99,7 @@ const ALL_STATUSES = 'ALL';
 /** Same idea for Location: "All" means send no location filter at all. */
 const ALL_LOCATIONS = 'ALL';
 
+
 export default function ProfileChangeRequests() {
   const router = useRouter();
   const { user } = useAuth();
@@ -111,11 +114,21 @@ export default function ProfileChangeRequests() {
   // ascending.
   const [requestType, setRequestType] = useState<ProfileChangeType>('BASIC_PROFILE');
   const [statusFilter, setStatusFilter] = useState<string[]>(['SUBMITTED_FOR_APPROVAL']);
-  // MMC02's Location filter. It is a plain filter for every role: the district lock was
-  // removed at the client's direction, so a District Office user searches all locations
-  // like everyone else and simply picks one when they want to narrow.
+  // MMC02's Location filter, restored to the SRS wording on 2026-08-27: a user with
+  // access to a single district gets that district auto-selected and the control
+  // disabled, while a user with national access (Head Office, Board Secretary, Accounts,
+  // Scholarship Officer, Super Admin) keeps it enabled and defaults to "All".
+  //
+  // "All" is the initial value for everyone; the effect below narrows it once the user
+  // has loaded, which is the same shape the University Scholarship screen uses.
+  //
+  // This is a default and a UX affordance, not enforcement: ProfileChangeController
+  // deliberately applies no district lock server-side, so a District Office caller can
+  // still widen the query by calling the API directly. See the note at the foot of that
+  // controller for why the server-side lock was removed.
   const [locationFilter, setLocationFilter] = useState<string[]>([ALL_LOCATIONS]);
   const [locations, setLocations] = useState<string[]>([]);
+  const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
   const [receivedOn, setReceivedOn] = useState<RequestReceivedOn>('ALL_DAYS');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -139,6 +152,12 @@ export default function ProfileChangeRequests() {
 
   const supportsApprovalList = requestType === 'NAME' || requestType === 'NOMINEE';
 
+  // Member Transfers do not show Location. Every other type is filed at the office that
+  // raised it, so the column tells them apart; a transfer is always about the member's
+  // own administering office, which the Location filter above has already pinned, so the
+  // column only ever repeats it down the page.
+  const showLocationColumn = requestType !== 'MEMBER_TRANSFER';
+
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -154,6 +173,16 @@ export default function ProfileChangeRequests() {
       .then(setLocations)
       .catch(() => setLocations([]));
   }, []);
+
+  // MMC02: pin a single-district user to their own location once the account has
+  // loaded. Runs on the user rather than on mount because useAuth resolves
+  // asynchronously — on the first render assignedDistrict is still undefined, and
+  // pinning then would leave the filter stuck on "All".
+  useEffect(() => {
+    if (!canSelectAllLocationOptions && user?.assignedDistrict) {
+      setLocationFilter([user.assignedDistrict]);
+    }
+  }, [canSelectAllLocationOptions, user?.assignedDistrict]);
 
   // The available statuses depend on the type: only Name and Nominee pass through a
   // board approval list, so only they can sit on "Added to Board Approval List".
@@ -232,8 +261,12 @@ export default function ProfileChangeRequests() {
   const safePage = clampPage(page, results.length);
   const pagedResults = useMemo(() => pageSlice(results, safePage), [results, safePage]);
 
-  /** Six fixed columns, plus Status and Action, plus the select box when listable. */
-  const columnCount = supportsApprovalList ? 9 : 8;
+  /**
+   * Six fixed columns, plus Status and Action, plus the select box when listable — less
+   * Location on Member Transfers. Kept in step with the header and body below, since it
+   * is the colSpan the empty and loading rows stretch across.
+   */
+  const columnCount = (supportsApprovalList ? 9 : 8) - (showLocationColumn ? 0 : 1);
 
   const toggleRow = (key: string) =>
     setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -364,6 +397,7 @@ export default function ProfileChangeRequests() {
               options={locations.map((d) => ({ value: d, label: d }))}
               selected={locationFilter}
               onChange={setLocationFilter}
+              disabled={!canSelectAllLocationOptions}
               emptyText="No districts configured"
             />
 
@@ -550,7 +584,14 @@ export default function ProfileChangeRequests() {
                       />
                     </TableHead>
                   )}
-                  {['Request ID', 'Member ID', 'Member Name', 'NIC', 'Requested Date', 'Location'].map(
+                  {[
+                    'Request ID',
+                    'Member ID',
+                    'Member Name',
+                    'NIC',
+                    'Requested Date',
+                    ...(showLocationColumn ? ['Location'] : []),
+                  ].map(
                     (h) => (
                       <TableHead
                         key={h}
@@ -647,9 +688,11 @@ export default function ProfileChangeRequests() {
                         <TableCell className="px-4 py-4 text-neutral-700 tabular-nums">
                           {row.requestedDate ?? '—'}
                         </TableCell>
-                        <TableCell className="px-4 py-4 text-neutral-700">
-                          {row.submissionLocation ?? '—'}
-                        </TableCell>
+                        {showLocationColumn && (
+                          <TableCell className="px-4 py-4 text-neutral-700">
+                            {row.submissionLocation ?? '—'}
+                          </TableCell>
+                        )}
                         <TableCell className="px-4 py-4 text-center">
                           <StatusBadge status={row.status} vocabulary="request" />
                         </TableCell>
