@@ -24,6 +24,7 @@ import {
   canAccessUniversityScholarships,
   canSelectAllLocations,
   hasPermission,
+  canEditUniversityRequest,
 } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { getEducationalDistricts } from "@/lib/api/education";
@@ -52,6 +53,9 @@ export default function Page() {
 
   const canViewPage = canAccessUniversityScholarships(user?.role);
   const canCreateApprovalLists = hasPermission(user?.role, "US_LIST_CREATE");
+  // Must agree with the Edit button on the request itself — a pencil that opens a
+  // read-only form is worse than no pencil.
+  const canEditRequests = canEditUniversityRequest(user);
   const canSelectAllLocationOptions = canSelectAllLocations(user?.role);
 
   const [requests, setRequests] = useState<RequestRow[]>([]);
@@ -673,20 +677,13 @@ export default function Page() {
                           )}
                         </TableCell>
                         <TableCell className="px-4 py-4 text-right">
-                          {(item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") ? (
+                          {canEditRequests && (item.status?.toUpperCase() === "NEW" || item.status?.toUpperCase() === "INCOMPLETE") && (
                             <Link
                               href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=edit`}
                               aria-label="Edit request"
                               className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                             >
                               <Pencil size={16} />
-                            </Link>
-                          ) : (
-                            <Link
-                              href={`/membership/directory/university-scholarship?requestId=${encodeURIComponent(requestKey)}&mode=view`}
-                              className="text-sm font-medium text-[#953002] hover:underline"
-                            >
-                              Open
                             </Link>
                           )}
                         </TableCell>

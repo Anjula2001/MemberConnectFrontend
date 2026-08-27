@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/ca
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 import { ArrowLeft, Printer, Search, Trash2, ChevronDown, File, CheckCircle2, Upload, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { hasPermission } from "@/lib/permissions";
+import { hasPermission, canDeleteUniversityList } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 import { authFetch } from "@/lib/api/authFetch";
 
@@ -115,7 +115,9 @@ function ApprovalsPageInner() {
   const [processError, setProcessError] = useState<string | null>(null);
   const [processSuccess, setProcessSuccess] = useState(false);
 
-  const canDelete = hasPermission(user?.role, "US_LIST_DELETE");
+  // Authorised Head Office and Super Admin only. Board Secretary lost this on
+  // 2026-08-27 — it cannot carry the authority flag the right now depends on.
+  const canDelete = canDeleteUniversityList(user);
   const canPrint = hasPermission(user?.role, "US_LIST_PRINT");
   const canProcess = hasPermission(user?.role, "US_LIST_PROCESS");
   const [pendingDeleteListId, setPendingDeleteListId] = useState<string | null>(null);

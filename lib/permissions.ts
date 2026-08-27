@@ -519,7 +519,10 @@ const GRADE5_BOARD: Permission[] = [
   "G5_EXAM_MASTER_VIEW",
 ];
 
-// University scholarship requests (MMS21-MMS25) only.
+// University scholarship requests (MMS21-MMS25) only. Note the absence of
+// US_REQUEST_EDIT: editing a NEW/INCOMPLETE request is an authorised officer's right,
+// so it lives in UNIVERSITY_DISTRICT_AUTHORITY below and an ordinary clerk in the same
+// office can raise and submit a request without being able to reopen and alter one.
 //
 // No fund request rights at all, not even US_FUND_VIEW — briefly granted on
 // 2026-08-19 and revoked on 2026-08-20. Since canAccessFundRequests() keys on
@@ -528,40 +531,96 @@ const GRADE5_BOARD: Permission[] = [
 const UNIVERSITY_DISTRICT: Permission[] = [
   "US_REQUEST_VIEW",
   "US_REQUEST_CREATE",
-  "US_REQUEST_EDIT",
   "US_REQUEST_SUBMIT",
   "US_REQUEST_INCOMPLETE",
   "US_MASTER_VIEW",
 ];
 
-// The University board track. Deliberately WITHOUT US_COMMITTEE_APPROVE — the
-// Committee gate (MMS26) must not be cleared by the office that runs the Board.
+// The University board track, shared by HEAD_OFFICE and BOARD_SECRETARY.
 //
-// US_FUND_APPROVE is included as of 2026-08-19 by product decision: the office that
-// raises fund requests also decides them. It knowingly pairs US_APPROVED_EDIT
-// (changing a payee's bank account) with releasing payment into that account.
+// Deliberately WITHOUT US_COMMITTEE_APPROVE — the Committee gate (MMS26) must not be
+// cleared by the office that runs the Board. Head Office is the one exception, and it
+// holds that right only through UNIVERSITY_HEAD_OFFICE_AUTHORITY below.
+//
+// Also WITHOUT US_REQUEST_SET_INACTIVE / US_REQUEST_REOPEN / US_LIST_DELETE as of
+// 2026-08-27. All three are now authorised-officer rights, which this array cannot
+// express because BOARD_SECRETARY shares it and holds none of them.
+//
+// US_FUND_APPROVE was included from 2026-08-19 by product decision — the office that
+// raises fund requests also decides them — and moved to UNIVERSITY_HEAD_OFFICE_AUTHORITY
+// on 2026-08-27. It stays with Head Office, but now only with an *authorised* officer
+// there, which restores part of the maker/checker split the 2026-08-19 note knowingly
+// gave up: the whole office still raises a fund request, one officer decides it.
+//
+// US_FUND_EDIT / US_FUND_SET_INACTIVE / US_FUND_REOPEN moved for the same reason on the
+// same date. US_FUND_CREATE, US_FUND_SUBMIT and US_FUND_INCOMPLETE deliberately did NOT:
+// raising and preparing a fund request remains the whole office's work.
+//
 // Mirrors RolePermissions.java on the backend — keep the two in step.
 const UNIVERSITY_BOARD: Permission[] = [
   "US_REQUEST_VIEW",
-  "US_REQUEST_SET_INACTIVE",
-  "US_REQUEST_REOPEN",
   "US_LIST_VIEW",
   "US_LIST_CREATE",
   "US_LIST_PRINT",
   "US_LIST_PROCESS",
-  "US_LIST_DELETE",
   "US_APPROVED_EDIT",
   "US_FUND_VIEW",
   "US_FUND_CREATE",
-  "US_FUND_EDIT",
   "US_FUND_SUBMIT",
   "US_FUND_INCOMPLETE",
+  "US_MASTER_VIEW",
+];
+
+// --- University: rights carried by the per-account authority flag ------------
+//
+// Product decision of 2026-08-27. These University actions are held by an *authorised*
+// officer rather than by everyone holding the role:
+//
+//   edit a NEW/INCOMPLETE request .... authorised District Office, authorised Head Office
+//   change a request's status ........ authorised District Office, authorised Head Office
+//   committee Approve / Reject ....... authorised Head Office (+ SCHOLARSHIP_OFFICER)
+//   delete an approval list .......... authorised Head Office
+//
+// and the same three gates again on the Fund Request side, Head Office only:
+//
+//   edit a NEW/INCOMPLETE fund request .... authorised Head Office
+//   change a fund request's status ........ authorised Head Office
+//   fund request Approve / Reject ......... authorised Head Office
+//
+// Super Admin holds all of them through ALL_PERMISSIONS. BOARD_SECRETARY holds none:
+// it cannot carry the authority flag, which UserAdminService forces false for
+// every role except DISTRICT_OFFICE and HEAD_OFFICE.
+//
+// District Office holds no fund request rights at all, authorised or not, so the fund
+// gates appear only in UNIVERSITY_HEAD_OFFICE_AUTHORITY.
+//
+// District Office is deliberately NOT granted US_COMMITTEE_APPROVE. It holds
+// US_REQUEST_CREATE, so pairing the two would let one office raise a request and clear
+// the committee gate that exists to scrutinise it — the segregation of duties this
+// whole file is built around. Confirmed 2026-08-27.
+//
+// Mirrors AUTHORITY_GRANTS in RolePermissions.java, which is what actually enforces
+// this: User.getAuthorities() emits the flag's grants alongside the role's, so the
+// existing @PreAuthorize("hasAuthority('US_...')") on each endpoint narrows with it.
+const UNIVERSITY_DISTRICT_AUTHORITY: Permission[] = [
+  "US_REQUEST_EDIT",
+  "US_REQUEST_SET_INACTIVE",
+  "US_REQUEST_REOPEN",
+];
+
+const UNIVERSITY_HEAD_OFFICE_AUTHORITY: Permission[] = [
+  "US_REQUEST_EDIT",
+  "US_REQUEST_SET_INACTIVE",
+  "US_REQUEST_REOPEN",
+  "US_LIST_DELETE",
+  "US_COMMITTEE_APPROVE",
+  // Fund requests (2026-08-27). Note the absence of US_FUND_CREATE / US_FUND_SUBMIT /
+  // US_FUND_INCOMPLETE: raising and preparing a fund request stays with the whole
+  // office through UNIVERSITY_BOARD, only deciding and altering one is narrowed here.
+  "US_FUND_EDIT",
   "US_FUND_APPROVE",
-  // Fund request View Mode status changes (New <-> Inactive). Withheld from District
-  // Office, which raises fund requests.
   "US_FUND_SET_INACTIVE",
   "US_FUND_REOPEN",
-  "US_MASTER_VIEW",
 ];
 
 // --- Member Transfers (MMC27-MMC30) ---------------------------------------
@@ -590,6 +649,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "G5_FINANCE_DISBURSE",
   ...UNIVERSITY_DISTRICT,
   ...UNIVERSITY_BOARD,
+  ...UNIVERSITY_HEAD_OFFICE_AUTHORITY,
   "US_COMMITTEE_APPROVE",
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
@@ -624,8 +684,10 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     ...TRANSFER_APPROVER,
   ],
 
-  // The same approval track as Head Office, plus the Grade 5 / University delete
-  // privileges that DELETE_RIGHTS_ROLES also grants.
+  // The same approval track as Head Office, plus the Grade 5 delete privilege that
+  // DELETE_RIGHTS_ROLES also grants. The University delete privilege is NOT included
+  // as of 2026-08-27 — US_LIST_DELETE became an authorised-officer right, and this role
+  // cannot carry the authority flag.
   BOARD_SECRETARY: [...GRADE5_BOARD, ...UNIVERSITY_BOARD, ...TRANSFER_SECRETARY],
 
   // Seat of the University Scholarship Committee (MMS26), and owner of the university
@@ -833,6 +895,103 @@ export function isAuthorizedOfficer(
   user: { role?: UserRole | null; authorized?: boolean } | null | undefined
 ): boolean {
   return !!user?.authorized;
+}
+
+/**
+ * Rights the authority flag adds on top of the role, mirroring AUTHORITY_GRANTS in
+ * RolePermissions.java. Only the roles that can carry the flag appear here.
+ *
+ * Grade 5 is deliberately absent even though the backend map grants
+ * G5_REQUEST_SET_INACTIVE / G5_REQUEST_REOPEN to an authorised District Office. This
+ * copy under-grants there rather than over-grants, and correcting it would change
+ * Grade 5 behaviour, which is not what the 2026-08-27 decision covered. Left as-is on
+ * purpose; worth closing separately.
+ */
+const AUTHORITY_GRANTS: Partial<Record<UserRole, Permission[]>> = {
+  DISTRICT_OFFICE: UNIVERSITY_DISTRICT_AUTHORITY,
+  HEAD_OFFICE: UNIVERSITY_HEAD_OFFICE_AUTHORITY,
+};
+
+/**
+ * hasPermission, plus anything this particular account's authority flag adds.
+ *
+ * Takes the user rather than the role because the flag is per account: two Head Office
+ * logins can legitimately disagree about whether they may delete an approval list.
+ */
+export function hasUserPermission(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined,
+  permission: Permission
+): boolean {
+  if (hasPermission(user?.role, permission)) return true;
+  if (!user?.role || !isAuthorizedOfficer(user)) return false;
+  return (AUTHORITY_GRANTS[user.role] ?? []).includes(permission);
+}
+
+// ─── University Scholarships: the four authorised-officer gates ──────────────
+//
+// Each is the single source of truth for one button. They exist as named functions
+// rather than inline hasUserPermission calls so that the screens cannot drift from
+// each other — the list page's pencil and the detail page's Edit button must agree.
+
+/** Edit a NEW / INCOMPLETE University Scholarship request (MMS23). */
+export function canEditUniversityRequest(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "US_REQUEST_EDIT");
+}
+
+/** Show the view-mode "Change Status" button on a University request (MMS25). */
+export function canChangeUniversityRequestStatus(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return (
+    hasUserPermission(user, "US_REQUEST_REOPEN")
+    || hasUserPermission(user, "US_REQUEST_SET_INACTIVE")
+  );
+}
+
+/** Approve / Reject a request sitting at Submitted for Committee Approval (MMS26). */
+export function canReviewUniversityCommittee(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "US_COMMITTEE_APPROVE");
+}
+
+/** Delete a University Normal or Deviation approval list (MMS31 / MMS38). */
+export function canDeleteUniversityList(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "US_LIST_DELETE");
+}
+
+// ─── University Fund Requests: the three authorised-officer gates ────────────
+//
+// Head Office only — District Office holds no fund request rights at all. Each is the
+// single source of truth for one button, for the same reason as the request gates
+// above: the list page's pencil and the form's Edit mode must not drift apart.
+
+/** Edit a NEW / INCOMPLETE fund request (MMS44). Not the same as raising a new one. */
+export function canEditFundRequest(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "US_FUND_EDIT");
+}
+
+/** Show the view-mode "Change Status" button on a fund request (MMS46 / MMS47). */
+export function canChangeFundRequestStatus(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return (
+    hasUserPermission(user, "US_FUND_REOPEN")
+    || hasUserPermission(user, "US_FUND_SET_INACTIVE")
+  );
+}
+
+/** Approve / Reject a fund request awaiting a decision (MMS45). */
+export function canReviewFundRequest(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "US_FUND_APPROVE");
 }
 
 /**
