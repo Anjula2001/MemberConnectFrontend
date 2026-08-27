@@ -562,6 +562,11 @@ export default function TerminationPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+  // The request type the table on screen was actually loaded with. The dropdown can
+  // be changed without retrieving, so the approval-list actions key off this rather
+  // than off requestType — they act on the rows currently shown, not on a pending
+  // filter selection. Null until the first retrieve.
+  const [fetchedRequestType, setFetchedRequestType] = useState<RequestType | null>(null);
   const [error, setError] = useState("");
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
@@ -572,11 +577,19 @@ export default function TerminationPage() {
     useState<TerminationApprovalListDTO | null>(null);
   const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
   const [approvalListError, setApprovalListError] = useState("");
-  const showRequestTypeColumn = requestType === "all";
-  const tableColumnCount = 8 + (showRequestTypeColumn ? 1 : 0);
+  // Also keyed off the retrieved type, not the dropdown: changing the filter without
+  // retrieving must leave the results already on screen exactly as they are.
+  const showRequestTypeColumn = fetchedRequestType === "all";
 
   const showApprovalListActions =
-    requestType === "termination" && hasRole(user?.role, TERMINATION_BOARD_ROLES);
+    fetchedRequestType === "termination" && hasRole(user?.role, TERMINATION_BOARD_ROLES);
+
+  // Seven columns are always rendered (Request ID, Date, Member ID, Member Name,
+  // Indicators, Status, Action); the select-all checkbox and Type are conditional.
+  // The empty/loading row spans this, so an inflated count leaves a phantom column
+  // the header has no cell for — showing up as a gap in the header's background.
+  const tableColumnCount =
+    7 + (showRequestTypeColumn ? 1 : 0) + (showApprovalListActions ? 1 : 0);
   const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
 
   /*
@@ -882,6 +895,7 @@ export default function TerminationPage() {
       setRequests(retrievedRequests);
       setSelectedRows([]);
       setHasFetched(true);
+      setFetchedRequestType(requestType);
     } catch (requestError) {
       console.error("Retrieve termination requests error:", requestError);
       setError(
@@ -891,6 +905,7 @@ export default function TerminationPage() {
       );
       setRequests([]);
       setHasFetched(true);
+      setFetchedRequestType(requestType);
     } finally {
       setLoading(false);
     }
