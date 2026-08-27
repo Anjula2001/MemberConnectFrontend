@@ -52,6 +52,55 @@ import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Routes whose owning sidebar entry is not the one their URL implies.
+ *
+ * Ownership is not the URL hierarchy. A dozen screens sit under
+ * /membership/directory/* because they are opened from a member's action menu, but
+ * they belong to Profile Changes, Termination & Retirement, Scholarships or Death
+ * Donation. Matching on the URL prefix lit up Member Directory for every one of
+ * them, so opening a Member Transfer request from Profile Changes left the sidebar
+ * insisting you were in the Directory. The same went for the change-request editors
+ * under /membership/name-changes and /membership/nommine-changes, which matched no
+ * entry at all and so highlighted nothing.
+ *
+ * Keyed by route prefix. The longest matching prefix wins, which is what keeps
+ * .../university-scholarship-fundrequest on Fund Requests rather than on University.
+ */
+const ROUTE_SECTION_OWNER: Record<string, string> = {
+  // ── Profile Changes (MMC): every profile change request editor ──────────────
+  "/membership/directory/basic-profile-change-request": "/membership/profile-changes",
+  "/membership/directory/change-memberTransfer": "/membership/profile-changes",
+  "/membership/directory/change-name": "/membership/profile-changes",
+  "/membership/directory/change-nominee": "/membership/profile-changes",
+  "/membership/directory/change-remittance": "/membership/profile-changes",
+  "/membership/change-remittance": "/membership/profile-changes",
+  "/membership/MemberTransfer": "/membership/profile-changes",
+  "/membership/name-changes": "/membership/profile-changes",
+  "/membership/nommine-changes": "/membership/profile-changes",
+
+  // ── Termination & Retirement ────────────────────────────────────────────────
+  "/membership/directory/termination-request": "/membership/termination",
+  "/membership/directory/retirement": "/membership/termination",
+
+  // ── Scholarships ────────────────────────────────────────────────────────────
+  "/membership/directory/grade5-scholarship": "/scholarships/grade-5",
+  "/membership/directory/university-scholarship-fundrequest": "/scholarships/fund-requests",
+  "/membership/directory/university-scholarship": "/scholarships/university",
+
+  // ── Death Donation ──────────────────────────────────────────────────────────
+  "/membership/directory/death-donation-request": "/death-donation",
+
+  // ── The print sheets, which open in their own tab from the three print lists ─
+  "/membership/print/membership-card": "/membership/print-membership-cards",
+  "/membership/print/signature-card": "/membership/print-signature-cards",
+  "/membership/print/passbook": "/membership/print-passbooks",
+};
+
+/** True when `pathname` is `prefix` itself or a route nested inside it. */
+const isUnder = (pathname: string, prefix: string) =>
+  pathname === prefix || pathname.startsWith(`${prefix}/`);
+
 type SubMenuItem = {
   title: string;
   url: string;
@@ -481,11 +530,51 @@ export default function NavigationSideBar() {
 
   const menuItems = getFilteredMenuItems();
 
-  const isItemActive = (url?: string) => {
-    if (!url) return false;
-    if (url === "/") return pathname === "/";
-    return pathname === url || pathname.startsWith(`${url}/`);
-  };
+  /**
+   * The single sidebar entry that owns the current route.
+   *
+   * Resolved once rather than tested per entry, because "is this entry active" is not
+   * independently answerable: /scholarships/grade-5/manage-exam-cutoff is under both
+   * its own Administration entry and the shorter /scholarships/grade-5, and the old
+   * per-entry prefix test lit up both at once. Picking one winner makes exactly one
+   * row highlight, always.
+   */
+  const activeSectionUrl = (() => {
+    // Explicit ownership first: these routes live under a URL that belongs to a
+    // different section. Longest prefix wins.
+    let owner: string | null = null;
+    let ownerLength = -1;
+    for (const [prefix, sectionUrl] of Object.entries(ROUTE_SECTION_OWNER)) {
+      if (isUnder(pathname, prefix) && prefix.length > ownerLength) {
+        owner = sectionUrl;
+        ownerLength = prefix.length;
+      }
+    }
+    if (owner) return owner;
+
+    // Otherwise the sidebar entry with the longest matching prefix. Only entries the
+    // role can actually see are considered, so a route owned by a hidden section
+    // highlights nothing rather than something arbitrary.
+    const sidebarUrls = menuItems.flatMap((item) => [
+      ...(item.url ? [item.url] : []),
+      ...(item.subMenu?.map((sub) => sub.url) ?? []),
+    ]);
+
+    let best: string | null = null;
+    let bestLength = -1;
+    for (const url of sidebarUrls) {
+      if (url === "/") continue;
+      if (isUnder(pathname, url) && url.length > bestLength) {
+        best = url;
+        bestLength = url.length;
+      }
+    }
+    if (best) return best;
+
+    return pathname === "/" ? "/" : null;
+  })();
+
+  const isItemActive = (url?: string) => Boolean(url) && url === activeSectionUrl;
 
   return (
     <Sidebar className="border-r border-neutral-200 bg-[#f4f4f5]">
