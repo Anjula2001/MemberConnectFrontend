@@ -54,14 +54,14 @@ const FALLBACK = "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200";
  * than borrowing the colour of an outcome they have not reached yet.
  */
 const MEMBER: Record<string, string> = {
-  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
   INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
-  RESIGNED: "bg-yellow-100 hover:bg-yellow-100 text-yellow-700 border-yellow-200",
-  TERMINATED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  RESIGNED: "bg-yellow-100 hover:bg-yellow-100 text-yellow-600 border-yellow-200",
+  TERMINATED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
   // Taken from the local map this module replaced: RETIRED is a real MemberStatus and
   // was missing here, so a retired member fell through to the neutral grey fallback.
-  RETIRED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
-  DECEASED: "bg-neutral-200 hover:bg-neutral-200 text-neutral-700 border-neutral-300",
+  RETIRED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
+  DECEASED: "bg-neutral-200 hover:bg-neutral-200 text-neutral-600 border-neutral-300",
 };
 
 /**
@@ -74,11 +74,11 @@ const MEMBER: Record<string, string> = {
  * board meeting now carries the same hue as one already approved.
  */
 const REQUEST: Record<string, string> = {
-  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
-  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
-  ADDED_TO_BOARD_APPROVAL_LIST: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
-  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
-  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-600 border-blue-200",
+  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
+  ADDED_TO_BOARD_APPROVAL_LIST: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
   INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
@@ -96,40 +96,41 @@ const REQUEST: Record<string, string> = {
  * consistency with membership, and are tinted again now that every vocabulary is — the
  * one visual spec held throughout, only its treatment changed.
  *
- * Normal and deviation routes keep distinct colours: a deviation request is the one a
- * reviewer must not mistake for a normal one, so it never shares a colour with it. This
- * was reaffirmed on 2026-08-27 against a mock-up that showed both in amber.
+ * Normal and deviation routes share their colours as of 2026-08-27, at the client's
+ * direction: both board stages are amber and both approval lists are green. They were
+ * previously kept apart so a reviewer could not mistake a deviation request for a normal
+ * one — that distinction now rests entirely on the label text, which spells out which
+ * route a request is on.
  */
 const SCHOLARSHIP: Record<string, string> = {
-  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
-  INCOMPLETE: "bg-pink-100 hover:bg-pink-100 text-pink-700 border-pink-200",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-600 border-blue-200",
+  INCOMPLETE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 
   // University fund requests stop at a committee; the scholarship requests do not.
   SUBMITTED_FOR_COMMITTEE_APPROVAL:
-    "bg-purple-100 hover:bg-purple-100 text-purple-700 border-purple-200",
+    "bg-purple-100 hover:bg-purple-100 text-purple-600 border-purple-200",
 
   // Awaiting a board. Grade 5 omits BOARD from the name, University includes it.
-  SUBMITTED_FOR_NORMAL_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  SUBMITTED_FOR_NORMAL_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
   SUBMITTED_FOR_NORMAL_BOARD_APPROVAL:
-    "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+    "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
   SUBMITTED_FOR_DEVIATION_APPROVAL:
-    "bg-violet-100 hover:bg-violet-100 text-violet-700 border-violet-200",
+    "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
   SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL:
-    "bg-violet-100 hover:bg-violet-100 text-violet-700 border-violet-200",
+    "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
 
-  // On a list, waiting for the meeting. Green for the normal route at the client's
-  // direction; the deviation route stays indigo so the two remain tellable apart.
+  // On a list, waiting for the meeting. Both routes green.
   ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST:
-    "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+    "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
   ADDED_TO_NORMAL_BOARD_APPROVAL_LIST:
-    "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+    "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
   ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST:
-    "bg-indigo-100 hover:bg-indigo-100 text-indigo-700 border-indigo-200",
+    "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
   ADDED_TO_DEVIATION_BOARD_APPROVAL_LIST:
-    "bg-indigo-100 hover:bg-indigo-100 text-indigo-700 border-indigo-200",
+    "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
 
-  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
-  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
   INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
@@ -142,18 +143,18 @@ const SCHOLARSHIP: Record<string, string> = {
  * spelling the API also returns.
  */
 const DONATION: Record<string, string> = {
-  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
-  INCOMPLETE: "bg-pink-100 hover:bg-pink-100 text-pink-700 border-pink-200",
-  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-600 border-blue-200",
+  INCOMPLETE: "bg-pink-100 hover:bg-pink-100 text-pink-600 border-pink-200",
+  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-600 border-amber-200",
   // Orange and teal rather than amber and blue: the tints are paler than the solids
   // they replace, and amber/blue would have sat too close to SUBMITTED_FOR_APPROVAL and
   // NEW to read as separate desks at a glance.
-  DISTRICT_COMMITTEE: "bg-orange-100 hover:bg-orange-100 text-orange-700 border-orange-200",
-  PD_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-700 border-teal-200",
+  DISTRICT_COMMITTEE: "bg-orange-100 hover:bg-orange-100 text-orange-600 border-orange-200",
+  PD_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-600 border-teal-200",
   // Not in DeathDonationRequestStatus, but the screens already guarded for it.
-  P_AND_D_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-700 border-teal-200",
-  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
-  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  P_AND_D_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-600 border-teal-200",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
   INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
@@ -161,9 +162,9 @@ const DONATION: Record<string, string> = {
  * User account state (admin screens). Not a workflow - just on or off.
  */
 const ACCOUNT: Record<string, string> = {
-  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-600 border-green-200",
   INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
-  LOCKED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  LOCKED: "bg-rose-100 hover:bg-rose-100 text-rose-600 border-rose-200",
   DISABLED: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 

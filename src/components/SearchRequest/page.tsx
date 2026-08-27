@@ -601,7 +601,7 @@ export default function ProfileChangeRequests() {
                       </TableHead>
                     ),
                   )}
-                  <TableHead className="px-4 py-3 text-center text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+                  <TableHead className="px-4 py-3 text-left text-xs font-semibold tracking-wide text-neutral-500 uppercase">
                     Status
                   </TableHead>
                   <TableHead className="px-4 py-3 text-right text-xs font-semibold tracking-wide text-neutral-500 uppercase">
@@ -693,7 +693,7 @@ export default function ProfileChangeRequests() {
                             {row.submissionLocation ?? '—'}
                           </TableCell>
                         )}
-                        <TableCell className="px-4 py-4 text-center">
+                        <TableCell className="px-4 py-4 text-left">
                           <StatusBadge status={row.status} vocabulary="request" />
                         </TableCell>
                         <TableCell className="px-4 py-4 text-right">
