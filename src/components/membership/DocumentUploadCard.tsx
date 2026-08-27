@@ -220,7 +220,11 @@ export default function DocumentUploadCard({
       {/* Drop zone / preview */}
       <div
         {...getRootProps()}
-        className={`rounded-lg border border-dashed p-4 transition ${
+        // `relative` contains react-dropzone's absolutely positioned hidden input.
+        // Without a positioned ancestor it anchors to the document instead of this
+        // card, escapes the <main> scroll container and stretches the page — see the
+        // note in UniSholarships/Document.tsx.
+        className={`relative rounded-lg border border-dashed p-4 transition ${
           isDragActive
             ? "border-[#953002] bg-[#fff6f2]"
             : hasExisting

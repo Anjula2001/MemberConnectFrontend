@@ -467,16 +467,29 @@ export default function ChangeMemberTransferForm() {
     if (!hasSnapshot) return;
 
     setOldValues((prev) => ({
-      // Keep personal detail fields from live member data 
-      fullName: prev?.fullName ?? "",
-      dateOfBirth: prev?.dateOfBirth ?? "",
-      nicNumber: prev?.nicNumber ?? "",
-      gender: prev?.gender ?? "",
-      preferredLanguage: prev?.preferredLanguage ?? "",
-      permanentPrivateAddress: prev?.permanentPrivateAddress ?? "",
-      privateTelephone: prev?.privateTelephone ?? "",
-      mobileNumber: prev?.mobileNumber ?? "",
-      emailAddress: prev?.emailAddress ?? "",
+      // Personal details come from the live member, NOT from `prev`.
+      //
+      // Reading them off `prev` left every one of them blank. The member fetch above
+      // deliberately skips setOldValues when the request carries a snapshot — it
+      // defers to this effect — so on a snapshot request nothing ever writes the
+      // personal fields into oldValues, and `prev?.fullName ?? ""` resolves to "" on
+      // the first run and stays that way. The member was loaded the whole time; it
+      // simply was not the thing being read. Hence Occupation Details filling from
+      // the snapshot while Full Name, Date of Birth, NIC and Gender stayed empty.
+      //
+      // `prev` is kept only as the fallback for the render that happens before the
+      // member arrives, since this effect re-runs once it does.
+      fullName: member ? formatDisplayValue(member.fullName) : (prev?.fullName ?? ""),
+      dateOfBirth: member ? formatDisplayValue(member.dateOfBirth) : (prev?.dateOfBirth ?? ""),
+      nicNumber: member ? formatDisplayValue(member.nic) : (prev?.nicNumber ?? ""),
+      gender: member ? formatDisplayValue(member.gender) : (prev?.gender ?? ""),
+      preferredLanguage: member ? formatDisplayValue(member.preferredLanguage) : (prev?.preferredLanguage ?? ""),
+      permanentPrivateAddress: member
+        ? formatDisplayValue(member.permanentPrivateAddress)
+        : (prev?.permanentPrivateAddress ?? ""),
+      privateTelephone: member ? formatDisplayValue(member.privateTelephone) : (prev?.privateTelephone ?? ""),
+      mobileNumber: member ? formatDisplayValue(member.mobileNumber) : (prev?.mobileNumber ?? ""),
+      emailAddress: member ? formatDisplayValue(member.emailAddress) : (prev?.emailAddress ?? ""),
       // Transfer-related fields: use the saved snapshot
       designation: formatDisplayValue(loadedRecord.currentDesignation),
       natureOfOccupation: formatDisplayValue(loadedRecord.currentNatureOfOccupation),
@@ -489,7 +502,9 @@ export default function ChangeMemberTransferForm() {
       salaryPayingOffice: formatDisplayValue(loadedRecord.currentSalaryPayingOffice),
     }));
     setLoading(false);
-  }, [loadedRecord]);
+    // `member` is a real dependency: it arrives from its own fetch after this effect
+    // has already run once, and the personal fields above are read from it.
+  }, [loadedRecord, member]);
 
 
   useEffect(() => {
