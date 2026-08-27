@@ -16,7 +16,12 @@ import { MarkIncompleteModal } from "./Incomplete";
 import { fundRequestSchema } from "@/lib/validators/fundrequestvalidation.schema";
 import { authFetch } from "@/lib/api/authFetch";
 import { useAuth } from "@/lib/auth-context";
-import { hasPermission } from "@/lib/permissions";
+import {
+  canEditFundRequest,
+  canReviewFundRequest,
+  hasPermission,
+  hasUserPermission,
+} from "@/lib/permissions";
 
 type FundRequestSchema = ReturnType<typeof fundRequestSchema>;
 type FundRequestFormInput = z.input<FundRequestSchema>;
@@ -94,17 +99,28 @@ export default function FundDisbursementRequest() {
   const [isIntegratingFinance, setIsIntegratingFinance] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [status, setStatus] = useState<FundRequestStatus>("NEW");
-  const isViewMode = Boolean(fundRequestId) && mode !== "edit";
+  const isExistingFundRequest = Boolean(fundRequestId);
+
+  // Raising a fund request and altering one already on file are separate rights as of
+  // 2026-08-27. The whole Board office still raises them (US_FUND_CREATE); editing one
+  // that exists belongs to an authorised Head Office officer. Checked on the mode and
+  // not only on the buttons, because mode=edit arrives in the URL and would otherwise
+  // be reachable by typing it.
+  const canEditExistingFundRequest = canEditFundRequest(user);
+  const canCreateFundRequest = hasPermission(user?.role, "US_FUND_CREATE");
+  const isViewMode =
+    isExistingFundRequest && (mode !== "edit" || !canEditExistingFundRequest);
   const isEditableStatus = status === "NEW" || status === "INCOMPLETE";
   const isSubmittedForApproval = status === "SUBMITTED_FOR_COMMITTEE_APPROVAL";
 
-  const canPrepareFundRequest =
-    hasPermission(user?.role, "US_FUND_CREATE") || hasPermission(user?.role, "US_FUND_EDIT");
+  const canPrepareFundRequest = isExistingFundRequest
+    ? canEditExistingFundRequest
+    : canCreateFundRequest;
   const canSubmitFundRequest = hasPermission(user?.role, "US_FUND_SUBMIT");
   const canMarkFundRequestIncomplete = hasPermission(user?.role, "US_FUND_INCOMPLETE");
   const canEditRequest = !isViewMode && isEditableStatus && canPrepareFundRequest;
 
-  const canChangeSubmittedFundRequestStatus = hasPermission(user?.role, "US_FUND_APPROVE");
+  const canChangeSubmittedFundRequestStatus = canReviewFundRequest(user);
   const canReviewSubmittedFundRequest =
     isViewMode && isSubmittedForApproval && canChangeSubmittedFundRequestStatus;
 
@@ -116,8 +132,10 @@ export default function FundDisbursementRequest() {
   };
 
   const canIntegrateWithFinance = hasPermission(user?.role, "US_FINANCE_DISBURSE");
-  const canReopenFundRequest = hasPermission(user?.role, "US_FUND_REOPEN");
-  const canSetFundRequestInactive = hasPermission(user?.role, "US_FUND_SET_INACTIVE");
+  // hasUserPermission, not hasPermission: both rights now reach Head Office through the
+  // per-account authority flag rather than the role alone.
+  const canReopenFundRequest = hasUserPermission(user, "US_FUND_REOPEN");
+  const canSetFundRequestInactive = hasUserPermission(user, "US_FUND_SET_INACTIVE");
 
   const availableFundStatusTargets = (FUND_STATUS_CHANGE_TARGETS[status] || []).filter(
     (target) => (target === "NEW" ? canReopenFundRequest : canSetFundRequestInactive)
@@ -834,7 +852,7 @@ export default function FundDisbursementRequest() {
               </Button>
             )}
 
-            {isViewMode && isEditableStatus && (
+            {isViewMode && isEditableStatus && canEditExistingFundRequest && (
               <Button type="button" variant="outline" onClick={handleEnterEditMode}>
                 Edit
               </Button>

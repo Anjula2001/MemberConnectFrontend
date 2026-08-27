@@ -2,9 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, ChevronDown, Eye, Pencil, RotateCcw, Search } from "lucide-react";
+import { ArrowUp, ChevronDown, Pencil, RotateCcw, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { canAccessFundRequests, canSelectAllLocations } from "@/lib/permissions";
+import {
+  canAccessFundRequests,
+  canEditFundRequest,
+  canSelectAllLocations,
+} from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
 
 import { Button } from "@/src/components/ui/button";
@@ -222,7 +226,9 @@ export default function UniversityScholarshipFundRequestsPage() {
   const hasMultipleLocationAccess = canSelectAllLocations(user?.role);
   const currentLocation = user?.assignedDistrict ?? "";
   const isLocationFilterDisabled = !hasMultipleLocationAccess;
-  const hasEditRights = true;
+  // Must agree with the Edit mode on the fund request itself — a pencil that opens a
+  // read-only form is worse than no pencil. Was hardcoded true until 2026-08-27.
+  const hasEditRights = canEditFundRequest(user);
 
   useEffect(() => {
     if (isLocationFilterDisabled) {
@@ -524,7 +530,10 @@ export default function UniversityScholarshipFundRequestsPage() {
                     const fundRequestId = String(item.requestId || item.id || "");
                     const viewHref = `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(item.scholarshipRequestId)}&fundRequestId=${encodeURIComponent(fundRequestId)}&mode=view`;
                     const editHref = `/membership/directory/university-scholarship-fundrequest?scholarshipRequestId=${encodeURIComponent(item.scholarshipRequestId)}&fundRequestId=${encodeURIComponent(fundRequestId)}&mode=edit`;
-                    const canEdit = hasEditRights && normalizeStatus(item.status) === "new";
+                    const editableStatus = normalizeStatus(item.status);
+                    const canEdit =
+                      hasEditRights
+                      && (editableStatus === "new" || editableStatus === "incomplete");
 
                     return (
                       <TableRow key={item.rowId} className="hover:bg-neutral-50">
@@ -552,21 +561,13 @@ export default function UniversityScholarshipFundRequestsPage() {
                           <StatusBadge status={item.status} vocabulary="scholarship" />
                         </TableCell>
                         <TableCell className="px-4 py-4 text-right">
-                          {canEdit ? (
+                          {canEdit && (
                             <Link
                               href={editHref}
                               className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
                               aria-label="Edit fund request"
                             >
                               <Pencil size={16} />
-                            </Link>
-                          ) : (
-                            <Link
-                              href={viewHref}
-                              className="inline-flex text-[#953002] transition-colors hover:text-[#c44515]"
-                              aria-label="View fund request"
-                            >
-                              <Eye size={16} />
                             </Link>
                           )}
                         </TableCell>
