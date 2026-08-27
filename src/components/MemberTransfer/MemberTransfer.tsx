@@ -19,7 +19,7 @@ import {
 import { memberTransferSchema, type MemberTransferFormData, } from "@/lib/validators/membertransfer.schema";
 import { authFetch } from "@/lib/api/authFetch";
 import { useAuth } from "@/lib/auth-context";
-import { hasPermission } from "@/lib/permissions";
+import { canApproveTransfer, canChangeTransferStatus } from "@/lib/permissions";
 
 type DocumentFileItem = {
   file: File;
@@ -197,11 +197,13 @@ export default function ChangeMemberTransferForm() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
 
-  // MMC30 seats the decision with Head Office, and MMC29's status change with
-  // whoever holds Inactive rights. The server enforces both independently; these
-  // only decide whether the buttons are offered.
-  const canApproveTransfer = hasPermission(user?.role, "MT_REQUEST_APPROVE");
-  const canSetInactive = hasPermission(user?.role, "MT_REQUEST_SET_INACTIVE");
+  // MMC30 seats the decision with the District Office, restored on 2026-08-27: an
+  // authorised District Office officer decides a transfer, and nobody at Head Office
+  // does. MMC29's status change reaches an authorised officer at either office. Both
+  // are per-account rather than per-role, so these take the user and not the role. The
+  // server enforces the same split independently; these only decide what is offered.
+  const canApprove = canApproveTransfer(user);
+  const canSetInactive = canChangeTransferStatus(user);
 
   const requestKey = searchParams.get("requestId");
   const memberId = searchParams.get("memberId") || "";
@@ -1040,7 +1042,7 @@ export default function ChangeMemberTransferForm() {
 
   const pageTitle = isExistingRequest ? "Member Transfer" : "New Member Transfer";
   const canReviewSubmission =
-    isViewMode && status === "SUBMITTEDFORAPPROVAL" && canApproveTransfer;
+    isViewMode && status === "SUBMITTEDFORAPPROVAL" && canApprove;
 
   // MMC30: an approved transfer that moves the member to a different District has the
   // Loan and Finance Modules told to re-file their records. Compared here the same way

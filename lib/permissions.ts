@@ -630,17 +630,43 @@ const UNIVERSITY_HEAD_OFFICE_AUTHORITY: Permission[] = [
 // The office that raises a transfer: it reads and creates, and decides nothing.
 const TRANSFER_DISTRICT: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_CREATE"];
 
-// MMC30 names the District Office as the approver, resolved in favour of Head
-// Office for the same reason as the scholarship modules: the office that raises a
-// request does not approve it.
-const TRANSFER_APPROVER: Permission[] = [
-  "MT_REQUEST_VIEW",
+// Head Office reads transfers and nothing more, as of 2026-08-27.
+//
+// MMC30 names the District Office as the approver. That was previously resolved in
+// favour of Head Office on the scholarship modules' reasoning — the office that raises
+// a request does not approve it — and the product decision of 2026-08-27 reverses it,
+// putting the decision back where the SRS puts it. Head Office keeps no approval right
+// at all; it may still take a transfer to Inactive, but only as an authorised officer
+// and only through TRANSFER_HEAD_OFFICE_AUTHORITY below.
+//
+// The maker/checker split this gives up is now carried entirely by the authority flag:
+// any District Office clerk raises a transfer, only an authorised District Office
+// officer decides one. That control is real only while some District Office accounts
+// are left unauthorised.
+const TRANSFER_APPROVER: Permission[] = ["MT_REQUEST_VIEW"];
+
+// Board Secretary reads transfers. It lost MT_REQUEST_SET_INACTIVE on 2026-08-27, when
+// that became an authorised-officer right — UserAdminService forces the authority flag
+// false for this role, so there is no authorised Board Secretary to grant it back to.
+const TRANSFER_SECRETARY: Permission[] = ["MT_REQUEST_VIEW"];
+
+// --- Member Transfers: rights carried by the per-account authority flag ------
+//
+// Product decision of 2026-08-27, and Member Transfers only — the scholarship modules'
+// status-change gates are unchanged.
+//
+//   Approve / Reject a transfer ....... authorised District Office (nobody else)
+//   change a transfer's status ........ authorised District Office, authorised Head Office
+//
+// Note the asymmetry: an authorised Head Office officer may cancel a transfer to
+// Inactive but may not decide one. That is deliberate — Head Office holds no
+// MT_REQUEST_APPROVE in any form after this change.
+const TRANSFER_DISTRICT_AUTHORITY: Permission[] = [
   "MT_REQUEST_APPROVE",
   "MT_REQUEST_SET_INACTIVE",
 ];
 
-// Board Secretary reads and holds the Inactive right, but does not approve.
-const TRANSFER_SECRETARY: Permission[] = ["MT_REQUEST_VIEW", "MT_REQUEST_SET_INACTIVE"];
+const TRANSFER_HEAD_OFFICE_AUTHORITY: Permission[] = ["MT_REQUEST_SET_INACTIVE"];
 
 const ALL_PERMISSIONS: Permission[] = [
   ...GRADE5_DISTRICT,
@@ -654,6 +680,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "US_MASTER_MANAGE",
   "US_FINANCE_DISBURSE",
   ...TRANSFER_APPROVER,
+  ...TRANSFER_DISTRICT_AUTHORITY,
   "MT_REQUEST_CREATE",
 ];
 
@@ -908,8 +935,8 @@ export function isAuthorizedOfficer(
  * purpose; worth closing separately.
  */
 const AUTHORITY_GRANTS: Partial<Record<UserRole, Permission[]>> = {
-  DISTRICT_OFFICE: UNIVERSITY_DISTRICT_AUTHORITY,
-  HEAD_OFFICE: UNIVERSITY_HEAD_OFFICE_AUTHORITY,
+  DISTRICT_OFFICE: [...UNIVERSITY_DISTRICT_AUTHORITY, ...TRANSFER_DISTRICT_AUTHORITY],
+  HEAD_OFFICE: [...UNIVERSITY_HEAD_OFFICE_AUTHORITY, ...TRANSFER_HEAD_OFFICE_AUTHORITY],
 };
 
 /**
@@ -992,6 +1019,27 @@ export function canReviewFundRequest(
   user: { role?: UserRole | null; authorized?: boolean } | null | undefined
 ): boolean {
   return hasUserPermission(user, "US_FUND_APPROVE");
+}
+
+// ─── Member Transfers: the two authorised-officer gates ──────────────────────
+
+/**
+ * Approve / Reject a member transfer (MMC30).
+ *
+ * Authorised District Office and Super Admin only. Head Office holds no approval
+ * right on transfers in any form as of 2026-08-27.
+ */
+export function canApproveTransfer(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "MT_REQUEST_APPROVE");
+}
+
+/** Show the view-mode "Change Status" button on a transfer (MMC29). */
+export function canChangeTransferStatus(
+  user: { role?: UserRole | null; authorized?: boolean } | null | undefined
+): boolean {
+  return hasUserPermission(user, "MT_REQUEST_SET_INACTIVE");
 }
 
 /**
