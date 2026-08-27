@@ -6,6 +6,7 @@ import { Search, Loader2, FileCheck2, ListChecks, Trash2, ArrowUp, RotateCcw } f
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
+import { humanStatus } from '@/lib/statusBadge';
 import { StatusBadge } from '@/src/components/ui/status-badge';
 import {
   Table,
@@ -98,26 +99,6 @@ const ALL_STATUSES = 'ALL';
 /** Same idea for Location: "All" means send no location filter at all. */
 const ALL_LOCATIONS = 'ALL';
 
-/** Joining words that stay lower case unless they open the label. */
-const MINOR_WORDS = new Set(['for', 'to', 'of', 'and', 'on', 'in', 'a', 'an', 'the']);
-
-/**
- * Title-cases a status for the Status dropdown: SUBMITTED_FOR_APPROVAL reads as
- * "Submitted for Approval".
- *
- * Deliberately local rather than a change to humanStatus in lib/statusBadge, which is
- * shared with StatusBadge and therefore with every status pill in the app — that helper
- * documents its upper case as intentional. This only restyles the filter's option list.
- */
-function titleCaseStatus(status: string) {
-  return status
-    .toLowerCase()
-    .split('_')
-    .map((word, index) =>
-      index > 0 && MINOR_WORDS.has(word) ? word : word.charAt(0).toUpperCase() + word.slice(1)
-    )
-    .join(' ');
-}
 
 export default function ProfileChangeRequests() {
   const router = useRouter();
@@ -462,7 +443,7 @@ export default function ProfileChangeRequests() {
               label="Status"
               allValue={ALL_STATUSES}
               allLabel="All Statuses"
-              options={availableStatuses.map((st) => ({ value: st, label: titleCaseStatus(st) }))}
+              options={availableStatuses.map((st) => ({ value: st, label: humanStatus(st) }))}
               selected={statusFilter}
               onChange={setStatusFilter}
               emptyText="Pick a type first"

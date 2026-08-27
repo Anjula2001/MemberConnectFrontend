@@ -22,10 +22,29 @@
  * whitespace-nowrap. Those three are what stop the wrapping; keep using Badge rather
  * than re-deriving them on a span.
  */
-export const STATUS_BADGE_LAYOUT = "px-2.5 py-0.5 text-[11px] font-semibold";
+export const STATUS_BADGE_LAYOUT = "px-2.5 py-0.5 text-xs font-medium border";
+
+/**
+ * Every status is a tint: a pale background, its own hue for the text, and a border a
+ * shade or two darker than the fill.
+ *
+ * The system ran solid pills (bg-*-600 with white text) until 2026-08-27. Scholarships
+ * had used tints before that and were converted to solid for consistency; the client
+ * has since asked for the tinted treatment, so this is that conversion run the other
+ * way — and run across all five vocabularies rather than one, because a single visual
+ * spec for every screen is the point of this module.
+ *
+ * The `hover:` half of each entry repeats the resting background on purpose. Badge's
+ * default variant carries a hover that would otherwise darken a pill the user cannot
+ * click.
+ *
+ * Every class below is written out in full rather than built from a hue name. Tailwind
+ * scans source for complete class strings, so an interpolated `bg-${hue}-100` would
+ * never be generated and the pill would render unstyled.
+ */
 
 /** Statuses with no colour of their own - a neutral grey, never a guessed one. */
-const FALLBACK = "bg-gray-400 hover:bg-gray-400 text-white";
+const FALLBACK = "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200";
 
 /**
  * Member lifecycle (MemberStatus, 15 values).
@@ -35,32 +54,32 @@ const FALLBACK = "bg-gray-400 hover:bg-gray-400 text-white";
  * than borrowing the colour of an outcome they have not reached yet.
  */
 const MEMBER: Record<string, string> = {
-  ACTIVE: "bg-green-600 hover:bg-green-600 text-white",
-  INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
-  RESIGNED: "bg-yellow-600 hover:bg-yellow-600 text-white",
-  TERMINATED: "bg-red-600 hover:bg-red-600 text-white",
+  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
+  RESIGNED: "bg-yellow-100 hover:bg-yellow-100 text-yellow-700 border-yellow-200",
+  TERMINATED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
   // Taken from the local map this module replaced: RETIRED is a real MemberStatus and
   // was missing here, so a retired member fell through to the neutral grey fallback.
-  RETIRED: "bg-red-600 hover:bg-red-600 text-white",
-  DECEASED: "bg-neutral-700 hover:bg-neutral-700 text-white",
+  RETIRED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  DECEASED: "bg-neutral-200 hover:bg-neutral-200 text-neutral-700 border-neutral-300",
 };
 
 /**
  * Request lifecycle - member applications (MR01/MR04) and the five profile-change
  * types (MMC), which share one status enum.
  *
- * ADDED_TO_BOARD_APPROVAL_LIST is blue to match the ListChecks icon already marking
- * those rows, and SUBMITTED_FOR_APPROVAL amber to match FileCheck2. Before this, both
- * fell through a ternary's else branch and came out the same amber, so the badge
- * disagreed with the icon sitting three columns to its left.
+ * SUBMITTED_FOR_APPROVAL is amber to match the FileCheck2 icon already marking those
+ * rows. ADDED_TO_BOARD_APPROVAL_LIST was blue to match ListChecks and is green as of
+ * 2026-08-27 at the client's direction, which does mean a request still waiting for its
+ * board meeting now carries the same hue as one already approved.
  */
 const REQUEST: Record<string, string> = {
-  NEW: "bg-slate-500 hover:bg-slate-500 text-white",
-  SUBMITTED_FOR_APPROVAL: "bg-[#EAB308] hover:bg-[#EAB308] text-white",
-  ADDED_TO_BOARD_APPROVAL_LIST: "bg-blue-600 hover:bg-blue-600 text-white",
-  APPROVED: "bg-green-600 hover:bg-green-600 text-white",
-  REJECTED: "bg-red-600 hover:bg-red-600 text-white",
-  INACTIVE: "bg-gray-400 hover:bg-gray-400 text-white",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
+  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  ADDED_TO_BOARD_APPROVAL_LIST: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
 /**
@@ -73,35 +92,45 @@ const REQUEST: Record<string, string> = {
  * SUBMITTED_FOR_NORMAL_BOARD_APPROVAL for the same stage. Colouring the stage rather
  * than the enum keeps the two scholarship screens legible side by side.
  *
- * These screens used tinted badges (bg-*-100 with dark text and a border) while the
- * membership screens used solid ones. Two badge treatments for the same concept is the
- * inconsistency this module exists to remove, so scholarships adopt the solid style.
+ * These screens used tinted badges before 2026-08-27, were converted to solid pills for
+ * consistency with membership, and are tinted again now that every vocabulary is — the
+ * one visual spec held throughout, only its treatment changed.
  *
  * Normal and deviation routes keep distinct colours: a deviation request is the one a
- * reviewer must not mistake for a normal one, so it never shares a colour with it.
+ * reviewer must not mistake for a normal one, so it never shares a colour with it. This
+ * was reaffirmed on 2026-08-27 against a mock-up that showed both in amber.
  */
 const SCHOLARSHIP: Record<string, string> = {
-  NEW: "bg-slate-500 hover:bg-slate-500 text-white",
-  INCOMPLETE: "bg-orange-600 hover:bg-orange-600 text-white",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
+  INCOMPLETE: "bg-pink-100 hover:bg-pink-100 text-pink-700 border-pink-200",
 
   // University fund requests stop at a committee; the scholarship requests do not.
-  SUBMITTED_FOR_COMMITTEE_APPROVAL: "bg-purple-600 hover:bg-purple-600 text-white",
+  SUBMITTED_FOR_COMMITTEE_APPROVAL:
+    "bg-purple-100 hover:bg-purple-100 text-purple-700 border-purple-200",
 
   // Awaiting a board. Grade 5 omits BOARD from the name, University includes it.
-  SUBMITTED_FOR_NORMAL_APPROVAL: "bg-[#EAB308] hover:bg-[#EAB308] text-white",
-  SUBMITTED_FOR_NORMAL_BOARD_APPROVAL: "bg-[#EAB308] hover:bg-[#EAB308] text-white",
-  SUBMITTED_FOR_DEVIATION_APPROVAL: "bg-violet-600 hover:bg-violet-600 text-white",
-  SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL: "bg-violet-600 hover:bg-violet-600 text-white",
+  SUBMITTED_FOR_NORMAL_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  SUBMITTED_FOR_NORMAL_BOARD_APPROVAL:
+    "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  SUBMITTED_FOR_DEVIATION_APPROVAL:
+    "bg-violet-100 hover:bg-violet-100 text-violet-700 border-violet-200",
+  SUBMITTED_FOR_DEVIATION_BOARD_APPROVAL:
+    "bg-violet-100 hover:bg-violet-100 text-violet-700 border-violet-200",
 
-  // On a list, waiting for the meeting.
-  ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST: "bg-blue-600 hover:bg-blue-600 text-white",
-  ADDED_TO_NORMAL_BOARD_APPROVAL_LIST: "bg-blue-600 hover:bg-blue-600 text-white",
-  ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST: "bg-indigo-600 hover:bg-indigo-600 text-white",
-  ADDED_TO_DEVIATION_BOARD_APPROVAL_LIST: "bg-indigo-600 hover:bg-indigo-600 text-white",
+  // On a list, waiting for the meeting. Green for the normal route at the client's
+  // direction; the deviation route stays indigo so the two remain tellable apart.
+  ADDED_TO_SCHOLARSHIP_NORMAL_APPROVAL_LIST:
+    "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  ADDED_TO_NORMAL_BOARD_APPROVAL_LIST:
+    "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  ADDED_TO_SCHOLARSHIP_DEVIATION_APPROVAL_LIST:
+    "bg-indigo-100 hover:bg-indigo-100 text-indigo-700 border-indigo-200",
+  ADDED_TO_DEVIATION_BOARD_APPROVAL_LIST:
+    "bg-indigo-100 hover:bg-indigo-100 text-indigo-700 border-indigo-200",
 
-  APPROVED: "bg-green-600 hover:bg-green-600 text-white",
-  REJECTED: "bg-red-600 hover:bg-red-600 text-white",
-  INACTIVE: "bg-gray-400 hover:bg-gray-400 text-white",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
 /**
@@ -113,26 +142,29 @@ const SCHOLARSHIP: Record<string, string> = {
  * spelling the API also returns.
  */
 const DONATION: Record<string, string> = {
-  NEW: "bg-slate-500 hover:bg-slate-500 text-white",
-  INCOMPLETE: "bg-orange-600 hover:bg-orange-600 text-white",
-  SUBMITTED_FOR_APPROVAL: "bg-[#EAB308] hover:bg-[#EAB308] text-white",
-  DISTRICT_COMMITTEE: "bg-amber-600 hover:bg-amber-600 text-white",
-  PD_COMMITTEE: "bg-blue-600 hover:bg-blue-600 text-white",
+  NEW: "bg-blue-100 hover:bg-blue-100 text-blue-700 border-blue-200",
+  INCOMPLETE: "bg-pink-100 hover:bg-pink-100 text-pink-700 border-pink-200",
+  SUBMITTED_FOR_APPROVAL: "bg-amber-100 hover:bg-amber-100 text-amber-700 border-amber-200",
+  // Orange and teal rather than amber and blue: the tints are paler than the solids
+  // they replace, and amber/blue would have sat too close to SUBMITTED_FOR_APPROVAL and
+  // NEW to read as separate desks at a glance.
+  DISTRICT_COMMITTEE: "bg-orange-100 hover:bg-orange-100 text-orange-700 border-orange-200",
+  PD_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-700 border-teal-200",
   // Not in DeathDonationRequestStatus, but the screens already guarded for it.
-  P_AND_D_COMMITTEE: "bg-blue-600 hover:bg-blue-600 text-white",
-  APPROVED: "bg-green-600 hover:bg-green-600 text-white",
-  REJECTED: "bg-red-600 hover:bg-red-600 text-white",
-  INACTIVE: "bg-gray-400 hover:bg-gray-400 text-white",
+  P_AND_D_COMMITTEE: "bg-teal-100 hover:bg-teal-100 text-teal-700 border-teal-200",
+  APPROVED: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  REJECTED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
 /**
  * User account state (admin screens). Not a workflow - just on or off.
  */
 const ACCOUNT: Record<string, string> = {
-  ACTIVE: "bg-green-600 hover:bg-green-600 text-white",
-  INACTIVE: "bg-gray-500 hover:bg-gray-500 text-white",
-  LOCKED: "bg-red-600 hover:bg-red-600 text-white",
-  DISABLED: "bg-gray-500 hover:bg-gray-500 text-white",
+  ACTIVE: "bg-green-100 hover:bg-green-100 text-green-700 border-green-200",
+  INACTIVE: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
+  LOCKED: "bg-rose-100 hover:bg-rose-100 text-rose-700 border-rose-200",
+  DISABLED: "bg-gray-100 hover:bg-gray-100 text-gray-600 border-gray-200",
 };
 
 const VOCABULARIES = {
@@ -170,14 +202,35 @@ export function statusBadgeClass(vocabulary: StatusVocabulary, status?: string |
   return NORMALISED[vocabulary][canonical(status)] ?? FALLBACK;
 }
 
+/** Joining words that stay lower case unless they open the label. */
+const MINOR_WORDS = new Set(["for", "to", "of", "and", "on", "in", "a", "an", "the"]);
+
 /**
- * Underscores out, case left alone: SUBMITTED_FOR_APPROVAL reads as
- * SUBMITTED FOR APPROVAL.
+ * Initialisms that stay upper case. Without these, PD_COMMITTEE title-cases to
+ * "Pd Committee" - the one way this change could read worse than the upper case it
+ * replaces.
+ */
+const ACRONYMS = new Set(["pd", "p", "d", "nic", "id"]);
+
+/**
+ * Underscores out, title case in: SUBMITTED_FOR_APPROVAL reads as
+ * "Submitted for Approval".
  *
- * Case is deliberately untouched. Every screen already renders these upper case, so
- * title-casing here would restyle the screens this change is meant to leave alone.
+ * Upper case was deliberate until 2026-08-27, when the client asked for title case
+ * along with the tinted pills. Both changes land together and everywhere, so no screen
+ * is left with the old treatment.
  */
 export function humanStatus(status?: string | null) {
   if (!status) return "—";
-  return status.replace(/_/g, " ");
+
+  return status
+    .toLowerCase()
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      if (ACRONYMS.has(word)) return word.toUpperCase();
+      if (index > 0 && MINOR_WORDS.has(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
 }
