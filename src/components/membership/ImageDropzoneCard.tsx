@@ -83,7 +83,11 @@ export default function ImageDropzoneCard({
 
 			<div
 				{...getRootProps()}
-				className={`mx-auto flex h-24 w-40 items-center justify-center overflow-hidden rounded-md border border-dashed text-xs transition-colors ${
+				// `relative` contains react-dropzone's absolutely positioned hidden input.
+				// overflow-hidden here does not clip it: with no positioned ancestor its
+				// containing block is the document, which overflow on a static ancestor has
+				// no say over. See the note in UniSholarships/Document.tsx.
+				className={`relative mx-auto flex h-24 w-40 items-center justify-center overflow-hidden rounded-md border border-dashed text-xs transition-colors ${
 					isDragActive
 						? "border-[#953002] bg-[#fff3ec]"
 						: displayUrl

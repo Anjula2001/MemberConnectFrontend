@@ -150,9 +150,24 @@ export default function Document({
             </select>
           </div>
 
+          {/*
+            `relative` is load-bearing, not cosmetic.
+
+            react-dropzone hides its file input with the visually-hidden recipe:
+            position:absolute, 1x1px, clipped. That recipe assumes a positioned
+            ancestor. With every ancestor static the input's containing block becomes
+            the initial containing block — the document — so it is NOT clipped by the
+            <main> scroll container it visually sits in, and its offset is measured
+            down the whole page. Measured here at top:1643px against a 1135px
+            viewport, which stretched documentElement to 1644px and gave the app a
+            second, outer scrollbar over ~500px of blank space below the form.
+
+            Making this div the containing block keeps the input inside <main>, where
+            it is clipped like everything else.
+          */}
           <div
             {...getRootProps()}
-            className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-sm ${
+            className={`relative border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-sm ${
               selectedDocumentType
                 ? "cursor-pointer text-muted-foreground hover:bg-gray-50"
                 : "cursor-not-allowed bg-gray-50 text-gray-400"

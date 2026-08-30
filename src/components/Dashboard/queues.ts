@@ -244,7 +244,7 @@ export const QUEUES: QueueDef[] = [
   {
     id: "us-committee",
     label: "University requests awaiting Committee",
-    hint: "MMS26 - the Committee gate before board approval",
+    hint: "The Committee gate before board approval",
     href: "/scholarships/university",
     roles: ["SUPER_ADMIN", "SCHOLARSHIP_OFFICER"],
     // /university-scholarships/search already filters by status server-side; the
