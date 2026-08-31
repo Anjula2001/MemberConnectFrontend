@@ -1,0 +1,1066 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { ChevronDown, User, Loader2, ArrowLeft, FileText, Download, Folder } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+
+import ImageDropzoneCard from "@/src/components/membership/ImageDropzoneCard";
+import ProgressTimeline from "@/src/components/membership/ProgressTimeline";
+import RemittanceSavingsTab from "@/src/components/membership/RemittanceSavingsTab";
+import { Badge } from "@/src/components/ui/badge";
+import { StatusBadge } from "@/src/components/ui/status-badge";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/src/components/ui/table";
+import { Card, CardContent } from "@/src/components/ui/card";
+import { Separator } from "@/src/components/ui/separator";
+
+import { getMemberById, searchMembers, updateMemberStatus, type MemberDTO } from "@/lib/api/member";
+import { authFetch } from "@/lib/api/authFetch";
+import { getDocumentsByApplication, uploadDocumentFile, deleteDocument, type UploadDocumentResponseDTO, type DocumentType } from "@/lib/api/documents";
+import {
+	AD_HOC_DISPLAY_NAME,
+	AD_HOC_DOCUMENT_TYPE,
+	downloadAdHocDocument,
+	getAdHocDocuments,
+	type AdHocDocumentDTO,
+} from "@/lib/api/adHocDocuments";
+import { useToast } from "@/lib/toast-context";
+import { useAuth } from "@/lib/auth-context";
+import {
+	DEATH_DONATION_ENTRY_ROLES,
+	MEMBER_DEATH_ENTRY_ROLES,
+	PROFILE_CHANGE_CREATE_ROLES,
+	TESTING_ACTIVATE_ROLES,
+	hasPermission,
+	hasRetPermission,
+	hasRole,
+} from "@/lib/permissions";
+
+const detailTabs = [
+	"Profile Details",
+	"Documents",
+	"Remittance & Savings",
+	"Scholarships",
+	"Progress",
+];
+
+const NO_RAISE_HINT =
+	"Your role approves requests, it does not raise them.";
+
+const INACTIVE_MEMBER_HINT =
+	"This member is not Active, so a Grade 5 request cannot be raised for them.";
+
+const actionGroups = {
+	profileRequests: [
+		"Basic Profile Changes",
+		"Change Name",
+		"Change Remittance",
+		"Change Nominee",
+		"Member Transfer",
+	],
+	scholarshipRequests: [
+		"Grade 5 Scholarship",
+		"University Scholarship",
+	],
+	secondary: ["Retirement", "Death Donation Request", "Add Documents", "Record Member Death", "Member Termination"],
+};
+
+/**
+ * Actions that only an ACTIVE member may start.
+ *
+ * Transferring a member who holds no active membership moves nothing, and a new
+ * University Scholarship would be raised against a membership that cannot fund it.
+ *
+ * Any status other than ACTIVE blocks these — INACTIVE, INACTIVE_DORMANT, RETIRED,
+ * TERMINATED, DECEASED, RESIGNED, MEMBER_DEATH_RECORDED, TERMINATION_REQUESTED alike.
+ */
+const ACTIVE_MEMBER_ONLY_ACTIONS = ["Member Transfer", "University Scholarship"];
+
+function Field({ label, value }: { label: string; value: string | undefined | null }) {
+	return (
+		<div className="space-y-1">
+			<p className="text-[11px] text-neutral-500">{label}</p>
+			<p className="text-sm font-medium text-neutral-800">{value || "—"}</p>
+		</div>
+	);
+}
+
+function SectionTitle({ title }: { title: string }) {
+	return <p className="text-sm font-semibold text-[#953002]">{title}</p>;
+}
+
+export default function MemberProfilePage({
+	params,
+}: {
+	params: Promise<{ memberId: string }>;
+}) {
+	const router = useRouter();
+	const [memberIdParam, setMemberIdParam] = useState<string | null>(null);
+	const [profile, setProfile] = useState<MemberDTO | null>(null);
+	const [documents, setDocuments] = useState<UploadDocumentResponseDTO[]>([]);
+	/*
+	 * MMD09's ad-hoc documents, kept separate from `documents` because they are keyed by
+	 * member rather than by application - see lib/api/adHocDocuments.ts. Merging them
+	 * into one list would mean giving them a fake applicationId.
+	 */
+	const [adHocDocuments, setAdHocDocuments] = useState<AdHocDocumentDTO[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [activeTab, setActiveTab] = useState("Profile Details");
+	const [selectedDocType, setSelectedDocType] = useState<string | null>(null);
+	const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+	const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
+	const [isActivating, setIsActivating] = useState(false);
+	// Request id of the member's transfer request awaiting approval, if any. A
+	// second one would compete with it, so the action is offered but disabled.
+	const [inFlightTransferId, setInFlightTransferId] = useState<string | null>(null);
+	const { addToast } = useToast();
+	const { user } = useAuth();
+	// MMC01/05/14/18 name the District Office System User as the one who raises a
+	// profile change request. Board Secretary decides them but never opens one, so the
+	// Actions entries are hidden rather than shown and refused.
+	const canRaiseProfileChange = hasRole(user?.role, PROFILE_CHANGE_CREATE_ROLES);
+	const canTestActivate = hasRole(user?.role, TESTING_ACTIVATE_ROLES);
+	// MMT18 names the District Office System User as the sole actor who initiates a
+	// Member Death Record. The approval levels reach an existing record through the
+	// requests list, never by starting a new one from the profile.
+	const canRecordMemberDeath = hasRole(user?.role, MEMBER_DEATH_ENTRY_ROLES);
+	// MMD01 names the District Office System User as the sole actor who raises a
+	// death donation request. Everyone else was previously offered the option and
+	// only found out it was refused after filling the form in.
+	const canRaiseDeathDonation = hasRole(user?.role, DEATH_DONATION_ENTRY_ROLES);
+	// Raising a request is the originating office's job. Head Office holds neither
+	// right, so it reviews these rather than creating them.
+	const canCreateUniversityScholarship = hasPermission(user?.role, "US_REQUEST_CREATE");
+	// Now a named permission rather than a role list, so this agrees with the
+	// MT_REQUEST_CREATE check the server applies to POST /api/member-transfers/submit.
+	const canCreateMemberTransfer = hasPermission(user?.role, "MT_REQUEST_CREATE");
+
+	// Real activation is supposed to come from the Finance Module once the member's
+	// accounts are created there (out of scope for this build). This button is a
+	// clearly-labelled, Super-Admin-only stand-in so the rest of the flow (card/signature
+	// card/passbook printing, dispatch — all of which require an Active member) can be
+	// tested end-to-end until that integration exists. It must not be mistaken for the
+	// real activation path.
+	const handleTestActivate = async () => {
+		if (!profile?.id) return;
+		setIsActivating(true);
+		try {
+			const updated = await updateMemberStatus(profile.id, "ACTIVE");
+			setProfile(updated);
+			addToast("Member activated (testing override).");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to activate member";
+			addToast(message, "destructive");
+		} finally {
+			setIsActivating(false);
+		}
+	};
+
+	const [scholarships, setScholarships] = useState<any[]>([]);
+
+	// Filter out orphaned old local files ("uploads/...") for ALL documents
+	const validDocuments = documents.filter(d => !(d.storagePath || "").startsWith("uploads/"));
+
+	// displayDocuments is used for the "Documents" tab. We want ALL valid documents to show up as folders.
+	const displayDocuments = validDocuments;
+	const uniqueDocTypes = Array.from(new Set(displayDocuments.map(d => d.documentType)));
+
+	/*
+	 * MMD09: the Ad-hoc Documents type "will be always displayed on top of the 'Document
+	 * Types' section, if the Member has an ad-hoc document uploaded. The date displayed
+	 * will be the date of the first document uploaded to the Ad-hoc Document type."
+	 *
+	 * The API returns oldest first, so the head of the list is that first upload - no
+	 * separate min() and no chance of the two disagreeing.
+	 */
+	const hasAdHocDocuments = adHocDocuments.length > 0;
+	const firstAdHocUploadDate = hasAdHocDocuments ? adHocDocuments[0].uploadedAt : null;
+	const sortedDocs = [...validDocuments].sort((a, b) => b.id - a.id); // Sort descending by ID
+	const profilePhotoDoc = sortedDocs.find(d => d.documentType === "PROFILE_PHOTO");
+	const signatureDoc = sortedDocs.find(d => d.documentType === "SIGNATURE");
+
+	/** MMD09: clicking a file downloads it. Goes through the authenticated client,
+	 *  since a bare href would reach the endpoint without the JWT. */
+	const handleAdHocDownload = async (doc: AdHocDocumentDTO) => {
+		if (!profile?.memberId) return;
+		try {
+			const blob = await downloadAdHocDocument(profile.memberId, doc.id);
+			const url = URL.createObjectURL(blob);
+			const link = window.document.createElement("a");
+			link.href = url;
+			link.download = doc.fileName;
+			window.document.body.appendChild(link);
+			link.click();
+			link.remove();
+			URL.revokeObjectURL(url);
+		} catch {
+			// The tab stays usable if one file cannot be fetched; the row remains listed.
+		}
+	};
+
+	// MMT12 needs both: the member must be Active, and the user must hold the right to
+	// raise a retirement request in the first place.
+	const isRetirementAvailable =
+		profile?.status === "ACTIVE" &&
+		hasRetPermission(user?.role, "RET_REQUEST_CREATE");
+
+	// Head Office approves requests, it does not raise them — the SRS actor tables and
+	// G5_ROLE_PERMISSIONS both put creation at District Office. Reaching a member's
+	// profile is not permission to start a request from it, so every request-raising
+	// entry in the Actions menu is disabled for Head Office. "Add Documents" is not a
+	// request, so it stays available.
+	const canRaiseRequests = user?.role !== "HEAD_OFFICE";
+
+	// Grade 5 is the one entry with a real permission behind it, so it answers to that
+	// rather than to the role name.
+	const canRaiseGrade5 =
+		canRaiseRequests && hasPermission(user?.role, "G5_REQUEST_CREATE");
+
+	const NON_REQUEST_ACTIONS = ["Add Documents"];
+
+	const isGrade5Action = (action: string) =>
+		action === "Grade 5 Scholarship" || action === "Grade 5 Scholarships";
+
+	const isUniversityScholarshipAction = (action: string) =>
+		action === "University Scholarship" || action === "University Scholarships";
+
+	// The single answer to "may this Actions entry be used, and if not, why not".
+	// The menu reads it to disable and explain an entry, handleActionClick reads it to
+	// stop a stale page acting on one, so the two cannot drift apart. null means the
+	// action is allowed.
+	const actionDisabledReason = (action: string): string | null => {
+		if (isGrade5Action(action)) {
+			// saveRequest rejects a member who is not Active on the exam's last date, so
+			// an inactive member cannot hold a Grade 5 request at all — the entry is
+			// disabled rather than leading to a form that cannot be saved.
+			if (!canRaiseGrade5) {
+				return canRaiseRequests
+					? "Your role cannot raise a Grade 5 Scholarship request"
+					: NO_RAISE_HINT;
+			}
+			return profile?.status !== "ACTIVE" ? INACTIVE_MEMBER_HINT : null;
+		}
+
+		if (!canRaiseRequests && !NON_REQUEST_ACTIONS.includes(action)) {
+			return NO_RAISE_HINT;
+		}
+
+		if (ACTIVE_MEMBER_ONLY_ACTIONS.includes(action) && profile?.status !== "ACTIVE") {
+			return "Available only while the member is active";
+		}
+
+		// Every request in this menu is raised against a live membership, so a member who
+		// is not ACTIVE - retired, terminated, deceased, dormant, awaiting activation -
+		// can have none of them raised. Previously only a handful of actions checked the
+		// status individually, which left Basic Profile Changes, Change Name, Change
+		// Remittance and Change Nominee openable against, say, a RETIRED member.
+		//
+		// Add Documents is the sole exception, and NON_REQUEST_ACTIONS is what says so:
+		// paperwork is usually the reason the member is in a non-active state, and
+		// blocking uploads would remove the only way to resolve it.
+		//
+		// The two carve-outs below are deliberate and predate this rule: each keeps an
+		// EXISTING request reachable so it can be reopened, rather than opening a new one.
+		if (
+			profile?.status !== "ACTIVE" &&
+			!NON_REQUEST_ACTIONS.includes(action) &&
+			!(action === "Record Member Death" && profile?.status === "MEMBER_DEATH_RECORDED") &&
+			!(action === "Member Termination" && profile?.status === "TERMINATION_REQUESTED")
+		) {
+			return `Not available while the member is ${(profile?.status ?? "not Active").replace(/_/g, " ")}`;
+		}
+
+		if (action === "Member Transfer") {
+			if (!canCreateMemberTransfer) {
+				return "Your role cannot raise a Member Transfer request";
+			}
+			// Only one transfer request may be awaiting approval at a time; a second
+			// would compete with it.
+			if (inFlightTransferId !== null) {
+				return inFlightTransferId
+					? `Transfer request ${inFlightTransferId} is already awaiting approval`
+					: "A transfer request is already awaiting approval";
+			}
+		}
+
+		if (isUniversityScholarshipAction(action) && !canCreateUniversityScholarship) {
+			return "Your role cannot raise a University Scholarship request";
+		}
+
+		if (action === "Death Donation Request") {
+			if (!canRaiseDeathDonation) {
+				return "Your role cannot raise a Death Donation request";
+			}
+			// MMD01: "The Member states need to be Active to have the Death Donation
+			// option available."
+			if (profile?.status !== "ACTIVE") {
+				return "Not available for an inactive member";
+			}
+		}
+
+		if (action === "Record Member Death") {
+			// MMT18 puts raising the record at District Office; the approval levels reach
+			// an existing one through the requests list instead.
+			if (!canRecordMemberDeath) {
+				return "Your role cannot record a Member Death";
+			}
+			if (
+				profile?.status !== "ACTIVE" &&
+				profile?.status !== "MEMBER_DEATH_RECORDED"
+			) {
+				return "Not available for this member's status";
+			}
+		}
+
+		// MMT01: "The Member states need to be 'Active' to have the Termination option
+		// available." An existing request leaves the member at TERMINATION_REQUESTED,
+		// which must stay reachable so the request can be reopened.
+		if (
+			action === "Member Termination" &&
+			profile?.status !== "ACTIVE" &&
+			profile?.status !== "TERMINATION_REQUESTED"
+		) {
+			return "Not available for this member's status";
+		}
+
+		if (action === "Retirement" && !isRetirementAvailable) {
+			return "Not available for this member's status or your role";
+		}
+
+		return null;
+	};
+
+	const isActionDisabled = (action: string) => actionDisabledReason(action) !== null;
+
+	// A note printed under the entry name. Only the pending transfer request gets
+	// one: it is a temporary state the user can clear by deciding that request,
+	// unlike a role or member-status block, which the tooltip alone explains.
+	const actionNote = (action: string): string | null => {
+		if (action === "Member Transfer" && inFlightTransferId !== null) {
+			return inFlightTransferId
+				? `Already has a pending request (${inFlightTransferId})`
+				: "Already has a pending request";
+		}
+		return null;
+	};
+
+	const handleDocumentUpload = async (file: File, documentType: DocumentType) => {
+		if (!profile?.applicationId) {
+			addToast("No application ID found for this member", "destructive");
+			return;
+		}
+
+		setUploadingDocType(documentType);
+		try {
+			// Find all existing documents of this type to replace
+			const existingDocs = documents.filter(d => d.documentType === documentType);
+			for (const existingDoc of existingDocs) {
+				await deleteDocument(existingDoc.id).catch(e => console.error(e));
+			}
+
+			const uploaded = await uploadDocumentFile({
+				applicationId: profile.applicationId,
+				documentType,
+				file,
+			});
+
+			setDocuments(prev => [
+				...prev.filter(d => d.documentType !== documentType),
+				uploaded
+			]);
+			addToast(`${documentType.replace(/_/g, " ")} saved successfully!`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Failed to upload document";
+			addToast(message, "destructive");
+		} finally {
+			setUploadingDocType(null);
+		}
+	};
+
+	const handleDocumentDelete = async (documentType: DocumentType) => {
+		const doc = documents.find(d => d.documentType === documentType);
+		if (!doc) return;
+
+		setDeletingDocType(documentType);
+		try {
+			await deleteDocument(doc.id);
+			setDocuments(prev => prev.filter(d => d.id !== doc.id));
+			addToast(`${documentType.replace(/_/g, " ")} removed successfully!`);
+		} catch (error) {
+			addToast("Failed to delete document", "destructive");
+		} finally {
+			setDeletingDocType(null);
+		}
+	};
+
+	useEffect(() => {
+		params.then((p) => setMemberIdParam(p.memberId));
+	}, [params]);
+
+	useEffect(() => {
+		if (!memberIdParam) return;
+
+		const idParam = memberIdParam;
+
+		async function loadMember() {
+			try {
+				const numericId = Number(idParam);
+				// The route segment is normally the numeric primary key, but some links pass
+				// the member number (e.g. "MEM-0012") or an undefined id — resolve those by search
+				// instead of sending "NaN" to /getMemberById/{id}, which the backend rejects.
+				const data = Number.isInteger(numericId) && numericId > 0
+					? await getMemberById(numericId)
+					: (await searchMembers({ query: idParam })).find(
+						(m) => m.memberId === idParam
+					);
+
+				if (!data) {
+					setProfile(null);
+					return;
+				}
+
+				setProfile(data);
+				if (data.applicationId) {
+					const docs = await getDocumentsByApplication(data.applicationId);
+					setDocuments(docs);
+				}
+
+				if (data.memberId) {
+					// Load every Grade 5 Scholarship request this member holds
+					fetch(`http://localhost:8080/api/grade5/${data.memberId}/requests`)
+						.then(res => {
+							if (!res.ok) return null;
+							return res.text().then(text => {
+								try {
+									return text ? JSON.parse(text) : null;
+								} catch (e) {
+									return null;
+								}
+							});
+						})
+						.then(scholData => {
+							setScholarships(Array.isArray(scholData) ? scholData : scholData ? [scholData] : []);
+						})
+						.catch(e => console.error("Error loading scholarship requests", e));
+
+					// Load any member transfer request awaiting approval
+					fetch(`http://localhost:8080/api/member-transfers/in-flight/${encodeURIComponent(data.memberId)}`)
+						.then(res => (res.ok ? res.json() : null))
+						.then(transferVal => {
+							if (transferVal?.hasInFlight) {
+								setInFlightTransferId(transferVal.requestId || "");
+							}
+						})
+						.catch(e => console.error("Error loading member transfer status", e));
+
+				}
+			} catch (err) {
+				console.error("Failed to fetch member", err);
+			} finally {
+				setLoading(false);
+			}
+		}
+
+		loadMember();
+	}, [memberIdParam]);
+
+	const handleActionClick = (action: string) => {
+		if (!profile?.memberId) return;
+		// Role rights and member-status rules both live in actionDisabledReason, which
+		// is what disabled the button in the first place. Re-asking it here is what stops
+		// a stale page whose profile loaded while the member was still active.
+		if (isActionDisabled(action)) return;
+
+		// Requirement 02 gates every profile change request on an active membership.
+		const activeOnlyActions = [
+			"Basic Profile Changes",
+			"Change Name",
+			"Change Remittance",
+			"Change Nominee",
+		];
+		if (activeOnlyActions.includes(action) && profile.status !== "ACTIVE") {
+			return;
+		}
+
+		const memberIdQuery = `?memberId=${profile.memberId}`;
+
+		const routeMap: Record<string, string> = {
+			"Basic Profile Changes": `/membership/directory/basic-profile-change-request?memberId=${memberIdParam}`,
+			"Change Name": `/membership/directory/change-name?memberId=${memberIdParam}`,
+			"Change Remittance": `/membership/directory/change-remittance?memberId=${memberIdParam}`,
+			"Change Nominee": `/membership/directory/change-nominee?memberId=${memberIdParam}`,
+			"Member Transfer": `/membership/directory/change-memberTransfer${memberIdQuery}`,
+			"Grade 5 Scholarship": `/membership/directory/grade5-scholarship${memberIdQuery}&mode=new`,
+			"Grade 5 Scholarships": `/membership/directory/grade5-scholarship${memberIdQuery}&mode=new`,
+			"University Scholarship": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"University Scholarships": `/membership/directory/university-scholarship${memberIdQuery}`,
+			"Member Termination": `/membership/directory/termination-request${memberIdQuery}`,
+			"Retirement": `/membership/directory/retirement${memberIdQuery}`,
+			"Death Donation Request": `/membership/directory/death-donation-request${memberIdQuery}`,
+			"Add Documents": `/membership/directory/add-documents${memberIdQuery}`,
+			"Record Member Death": `/membership/directory/record-member-death${memberIdQuery}`,
+		};
+
+		const route = routeMap[action];
+		if (route) {
+			router.push(route);
+		}
+	};
+
+	if (loading) {
+		return (
+			<div className="flex h-[50vh] items-center justify-center">
+				<Loader2 className="h-8 w-8 animate-spin text-[#953002]" />
+			</div>
+		);
+	}
+
+	if (!profile) {
+		notFound();
+	}
+
+	return (
+		<div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
+			<div className="flex items-center">
+				<Link
+					href="/membership/directory"
+					className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
+				>
+					<ArrowLeft className="h-4 w-4" />
+					Back to List
+				</Link>
+			</div>
+			<div className="rounded-xl border border-neutral-200 bg-white">
+				<div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 p-4">
+					<div className="flex items-center gap-3">
+						<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 overflow-hidden border border-neutral-200">
+							{profilePhotoDoc?.storagePath ? (
+								<img src={`/api/documents/file/${profilePhotoDoc.storagePath}`} alt={profile.fullName} className="h-full w-full object-cover" />
+							) : profile.profilePictureUrl ? (
+								<img src={profile.profilePictureUrl} alt={profile.fullName} className="h-full w-full object-cover" />
+							) : (
+								<User className="h-6 w-6" />
+							)}
+						</div>
+						<div>
+							<div className="flex flex-wrap items-center gap-2">
+								<h1 className="text-2xl font-semibold text-[#953002]">{profile.fullName || profile.nameWithInitials}</h1>
+								{/* MR14 lists Status among the profile fields. It already decided which
+								    Actions were offered; showing it means a greyed-out action now has a
+								    visible reason instead of looking broken. */}
+								<StatusBadge status={profile.status} vocabulary="member" />
+							</div>
+							<p className="text-xs text-neutral-500">
+								{profile.memberId} <span className="mx-2">•</span> {profile.designation || "—"}
+							</p>
+						</div>
+					</div>
+
+					<div className="flex items-center gap-2">
+						<details className="group relative">
+							<summary className="flex h-9 min-w-[120px] cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+								Actions
+								<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+							</summary>
+
+							<div className="absolute top-11 right-0 z-50 w-[340px] rounded-xl border border-neutral-300 bg-white shadow-xl">
+								<div className="border-b border-neutral-300 px-5 py-3">
+									<p className="text-2xl font-semibold text-neutral-800">Profile Requests</p>
+								</div>
+
+								{/* The five profile change types collapse into one entry, the same
+								    shape Scholarship uses. Listed flat they filled most of the menu
+								    and pushed Retirement, Death Donation and Termination out of view. */}
+								{canRaiseProfileChange && (
+									<div className="border-b border-neutral-300 px-5 py-2">
+										<details className="group">
+											<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
+												<span>Profile Changes</span>
+												<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+											</summary>
+											<div className="mt-1 space-y-1 pl-3">
+												{actionGroups.profileRequests.map((item) => {
+													const disabledReason = actionDisabledReason(item);
+													const isDisabled = disabledReason !== null;
+
+													return (
+														<button
+															key={item}
+															type="button"
+															onClick={() => handleActionClick(item)}
+															disabled={isDisabled}
+															title={disabledReason ?? undefined}
+															className={
+																isDisabled
+																	? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
+																	: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
+															}
+														>
+															{item}
+														</button>
+													);
+												})}
+											</div>
+										</details>
+									</div>
+								)}
+
+								<div className="border-b border-neutral-300 px-5 py-2">
+									<details className="group">
+										<summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002] [&::-webkit-details-marker]:hidden">
+											<span>Scholarship</span>
+											<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+										</summary>
+										<div className="mt-1 space-y-1 pl-3">
+											{actionGroups.scholarshipRequests.map((item) => {
+												const disabledReason = actionDisabledReason(item);
+												const isDisabled = disabledReason !== null;
+
+												return (
+													<button
+														key={item}
+														type="button"
+														onClick={() => handleActionClick(item)}
+														disabled={isDisabled}
+														title={disabledReason ?? undefined}
+														className={
+															isDisabled
+																? "block w-full cursor-not-allowed px-3 py-2 text-left text-sm font-medium whitespace-nowrap rounded-lg text-neutral-400"
+																: "block w-full px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-neutral-600 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
+														}
+													>
+														{item}
+													</button>
+												);
+											})}
+										</div>
+									</details>
+								</div>
+
+								<div className="px-5 py-2 space-y-1">
+									{actionGroups.secondary
+										// A role that cannot raise a Member Death Record is not shown
+										// the option at all (MMT18); the backend refuses it either way.
+										.filter((item) => item !== "Record Member Death" || canRecordMemberDeath)
+										// Same for Death Donation (MMD01): hidden outright rather than
+										// shown and then refused by the server.
+										.filter((item) => item !== "Death Donation Request" || canRaiseDeathDonation)
+										.map((item) => {
+										// Member status rules and the raise-a-request rule both live in
+										// actionDisabledReason, so the two cannot drift apart.
+										const disabledReason = actionDisabledReason(item);
+										const isDisabled = disabledReason !== null;
+
+										return (
+											<button
+												key={item}
+												onClick={() => handleActionClick(item)}
+												type="button"
+												disabled={isDisabled}
+												title={disabledReason ?? undefined}
+												className={
+													isDisabled
+														? "block w-full cursor-not-allowed px-3 py-2.5 text-left text-base font-medium whitespace-nowrap rounded-lg text-neutral-400"
+														: item === "Member Termination"
+															? "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-red-600 rounded-lg transition-colors hover:bg-red-200 hover:text-red-700"
+															: "block w-full px-3 py-2.5 text-left text-base font-medium whitespace-nowrap text-neutral-700 rounded-lg transition-colors hover:bg-[rgb(250,250,250)] hover:text-[#953002]"
+												}
+											>
+												{item}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						</details>
+						<StatusBadge status={profile.status} vocabulary="member" />
+						{canTestActivate && profile.status === "INACTIVE" && (
+							<button
+								type="button"
+								onClick={handleTestActivate}
+								disabled={isActivating}
+								title="Finance Module isn't integrated yet — this manually flips the member to Active so printing/dispatch can be tested."
+								className="ml-2 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+							>
+								{isActivating ? "Activating…" : "Activate (Testing Only)"}
+							</button>
+						)}
+					</div>
+				</div>
+
+				<div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2">
+					{detailTabs.map((tab) => {
+						return (
+							<button
+								key={tab}
+								type="button"
+								onClick={() => setActiveTab(tab)}
+								className={
+									activeTab === tab
+										? "rounded-sm border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm flex items-center gap-1.5"
+										: "rounded-sm px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700 flex items-center gap-1.5"
+								}
+							>
+								<span>{tab}</span>
+								{tab === "Scholarships" && scholarships.length > 0 && (
+									<span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200 leading-none">
+										Active
+									</span>
+								)}
+							</button>
+						);
+					})}
+				</div>
+
+				<div className="p-4">
+					{activeTab === "Profile Details" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-5 p-4">
+								<div>
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
+										Member Information
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Personal and official details</p>
+								</div>
+
+								<SectionTitle title="Personal Information" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Full Name" value={profile.fullName} />
+									<Field label="Name with Initials" value={profile.nameWithInitials} />
+									<Field label="NIC" value={profile.nic || profile.nicNumber} />
+									<Field label="Date of Birth" value={profile.dateOfBirth} />
+									<Field label="Gender" value={profile.gender} />
+									<Field label="Preferred Language" value={profile.preferredLanguage} />
+									<Field label="Joined Date" value={profile.membershipStartDate} />
+								</div>
+
+								<Separator />
+								<SectionTitle title="Contact Information" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Mobile" value={profile.mobileNumber} />
+									<Field label="Email" value={profile.emailAddress} />
+									<Field label="Private Tel" value={profile.privateTelephone} />
+									<Field label="Office Tel" value={profile.officeTelephone} />
+									<div className="md:col-span-4">
+										<Field label="Permanent Address" value={profile.permanentPrivateAddress} />
+									</div>
+								</div>
+
+								<Separator />
+								<SectionTitle title="Employment Details" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Designation" value={profile.designation} />
+									<Field label="Nature of Occupation" value={profile.natureOfOccupation} />
+									<Field label="Working Location Type" value={profile.workingLocationType} />
+									<Field label="Working Location" value={profile.workingLocation} />
+									<Field label="District" value={profile.educationalDistrict} />
+									<Field label="Zone" value={profile.educationalZone} />
+									<Field label="Salary Paying Office" value={profile.salaryPayingOffice} />
+									<Field label="Name in Payroll" value={profile.nameAsInPayroll} />
+									<Field label="Computer No. in Payslip" value={profile.computerNoInPayslip} />
+									<div className="md:col-span-4">
+										<Field label="Working Location Address" value={profile.workingLocationAddress} />
+									</div>
+								</div>
+
+								<Separator />
+								<SectionTitle title="Nominee Details" />
+								<div className="grid gap-4 md:grid-cols-4">
+									<Field label="Nominee Name" value={profile.nomineeFullName} />
+									<Field label="Relationship" value={profile.nomineeRelationship} />
+									<Field label="Nominee Identification" value={`${profile.identification ?? ""} ${profile.identificationNumber ?? ""}`} />
+									<div className="md:col-span-4">
+										<Field label="Address" value={profile.nomineeAddress} />
+									</div>
+								</div>
+
+								<div className="grid gap-4 pt-2 md:grid-cols-2">
+									<ImageDropzoneCard
+										title="Profile Picture"
+										buttonLabel="Save Profile Image"
+										existingUrl={profilePhotoDoc?.storagePath ? `/api/documents/file/${profilePhotoDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "PROFILE_PHOTO"}
+										isDeleting={deletingDocType === "PROFILE_PHOTO"}
+										onFileSelected={(file) => handleDocumentUpload(file, "PROFILE_PHOTO")}
+										onDelete={() => handleDocumentDelete("PROFILE_PHOTO")}
+									/>
+									<ImageDropzoneCard
+										title="Signature"
+										buttonLabel="Save Signature Image"
+										existingUrl={signatureDoc?.storagePath ? `/api/documents/file/${signatureDoc.storagePath}` : undefined}
+										isUploading={uploadingDocType === "SIGNATURE"}
+										isDeleting={deletingDocType === "SIGNATURE"}
+										onFileSelected={(file) => handleDocumentUpload(file, "SIGNATURE")}
+										onDelete={() => handleDocumentDelete("SIGNATURE")}
+									/>
+								</div>
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab === "Documents" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-5 p-4">
+								<div>
+									<h2 className="text-3xl font-semibold leading-none text-[#953002] sm:text-2xl">
+										Uploaded Documents
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Documents submitted during registration and later updates</p>
+								</div>
+
+								{displayDocuments.length === 0 && !hasAdHocDocuments ? (
+									<div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
+										<FileText className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
+										<p>No documents found for this member.</p>
+									</div>
+								) : !selectedDocType ? (
+									<div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+										{/* MMD09 pins Ad-hoc Documents above every other type, dated by
+										    the first document ever filed under it. */}
+										{hasAdHocDocuments && (
+											<button
+												type="button"
+												onClick={() => setSelectedDocType(AD_HOC_DOCUMENT_TYPE)}
+												className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-[#953002]/30 bg-[#fff9f6] p-6 transition-all hover:border-[#953002]/50 hover:shadow-sm"
+											>
+												<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
+													<Folder className="h-6 w-6" />
+												</div>
+												<div className="text-center">
+													<p className="text-sm font-semibold text-neutral-700">
+														{AD_HOC_DISPLAY_NAME}
+													</p>
+													<p className="mt-1 text-xs text-neutral-500">
+														{adHocDocuments.length} Files
+													</p>
+													<p className="mt-0.5 text-[10px] text-neutral-400">
+														Since{" "}
+														{firstAdHocUploadDate
+															? new Date(firstAdHocUploadDate).toLocaleDateString()
+															: "—"}
+													</p>
+												</div>
+											</button>
+										)}
+										{uniqueDocTypes.map((type) => {
+											const count = displayDocuments.filter((d) => d.documentType === type).length;
+											return (
+												<button
+													key={type}
+													type="button"
+													onClick={() => setSelectedDocType(type)}
+													className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 transition-all hover:border-[#953002]/30 hover:shadow-sm"
+												>
+													<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#953002]/10 text-[#953002]">
+														<Folder className="h-6 w-6" />
+													</div>
+													<div className="text-center">
+														<p className="text-sm font-semibold text-neutral-700">
+															{type.replace(/_/g, " ")}
+														</p>
+														<p className="mt-1 text-xs text-neutral-500">{count} Files</p>
+													</div>
+												</button>
+											);
+										})}
+									</div>
+								) : (
+									<div className="space-y-4">
+										<button
+											type="button"
+											onClick={() => setSelectedDocType(null)}
+											className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-[#953002]"
+										>
+											<ArrowLeft className="h-4 w-4" />
+											Back to Document Types
+										</button>
+
+										{selectedDocType === AD_HOC_DOCUMENT_TYPE ? (
+											/* Ad-hoc files come from their own endpoint and download through
+											   the authenticated client, so they get their own grid rather
+											   than being forced into the application-document shape. */
+											<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+												{adHocDocuments.map((doc) => (
+													<div
+														key={doc.id}
+														className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm"
+													>
+														<div className="flex items-start justify-between gap-2">
+															<Badge
+																className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+																variant="outline"
+															>
+																{AD_HOC_DISPLAY_NAME}
+															</Badge>
+															<span className="shrink-0 text-xs text-neutral-400">
+																{new Date(doc.uploadedAt).toLocaleDateString()}
+															</span>
+														</div>
+														<div className="flex items-center gap-2">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
+																<FileText className="h-4 w-4" />
+															</div>
+															<div className="flex-1 overflow-hidden">
+																<p
+																	className="truncate text-sm font-medium text-neutral-800"
+																	title={doc.fileName}
+																>
+																	{doc.fileName}
+																</p>
+																<p className="text-[10px] text-neutral-500">
+																	{doc.fileType || "File"}
+																</p>
+															</div>
+														</div>
+														<button
+															type="button"
+															onClick={() => void handleAdHocDownload(doc)}
+															className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-100"
+														>
+															<Download className="h-3 w-3" />
+															Download
+														</button>
+													</div>
+												))}
+											</div>
+										) : (
+										<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+											{displayDocuments
+												.filter((d) => d.documentType === selectedDocType)
+												.map((doc) => (
+													<div key={doc.id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-all hover:border-[#953002]/30 hover:shadow-sm">
+														<div className="flex items-start justify-between gap-2">
+															<Badge className="bg-neutral-100 text-neutral-600 hover:bg-neutral-200" variant="outline">
+																{doc.documentType.replace(/_/g, ' ')}
+															</Badge>
+															<span className="shrink-0 text-xs text-neutral-400">
+																{new Date(doc.uploadedAt).toLocaleDateString()}
+															</span>
+														</div>
+														<div className="flex items-center gap-2">
+															<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#953002]/10 text-[#953002]">
+																<FileText className="h-4 w-4" />
+															</div>
+															<div className="flex-1 overflow-hidden">
+																<p className="truncate text-sm font-medium text-neutral-800" title={doc.fileName}>
+																	{doc.fileName}
+																</p>
+																<p className="text-[10px] text-neutral-500">
+																	{doc.fileSize ? `${(doc.fileSize / 1024 / 1024).toFixed(2)} MB` : "File"} • {doc.fileType}
+																</p>
+															</div>
+														</div>
+														{doc.storagePath && (
+															<a
+																href={`/api/documents/file/${doc.storagePath}`}
+																target="_blank"
+																rel="noreferrer"
+																download={doc.fileName}
+																className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-100"
+															>
+																<Download className="h-3 w-3" />
+																Download
+															</a>
+														)}
+													</div>
+												))}
+										</div>
+										)}
+									</div>
+								)}
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab === "Scholarships" && (
+						<Card className="rounded-xl border-neutral-200 py-0 shadow-none">
+							<CardContent className="space-y-6 p-4">
+								<div>
+									<h2 className="text-xl font-semibold leading-none text-[#953002]">
+										Scholarship Details
+									</h2>
+									<p className="mt-1 text-xs text-neutral-500">Member scholarship request records</p>
+								</div>
+
+								{scholarships.length > 0 ? (
+									<div className="space-y-3">
+										{scholarships.map((scholarship, i) => (
+											<div
+												key={scholarship.requestNo ?? scholarship.id ?? i}
+												className="grid grid-cols-4 gap-0 bg-neutral-50/50 rounded-xl border border-neutral-200 divide-x divide-neutral-200"
+											>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Request ID</p>
+													{scholarship.requestNo ? (
+														<button
+															type="button"
+															onClick={() => router.push(`/membership/directory/grade5-scholarship?requestId=${scholarship.requestNo}&mode=view`)}
+															className="text-sm font-medium text-[#953002] underline underline-offset-2 hover:text-[#7a2700] transition-colors cursor-pointer"
+														>
+															{scholarship.requestNo}
+														</button>
+													) : (
+														<p className="text-sm font-medium text-neutral-800">—</p>
+													)}
+												</div>
+												{/* Which child the request is for. With more than one on screen the
+												    request number alone does not identify them. */}
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Student</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.studentName || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Birth Certificate No</p>
+													<p className="text-sm font-medium text-neutral-800">{scholarship.birthCertificateNumber || "—"}</p>
+												</div>
+												<div className="space-y-1 p-4">
+													<p className="text-[11px] text-neutral-500">Status</p>
+													{/* ADDED TO SCHOLARSHIP DEVIATION APPROVAL LIST is 45 characters and
+													    was running out past the card. Smaller text, and allowed to wrap
+													    inside the column rather than forcing the row wider - Badge sets
+													    whitespace-nowrap by default, so it has to be overridden. */}
+													<Badge className={`inline-block max-w-full rounded-full px-2 py-0.5 text-[10px] leading-tight font-semibold whitespace-normal break-words ${scholarship.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-100' :
+														scholarship.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-100' :
+															'bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
+														}`}>
+														{scholarship.status?.replace(/_/g, ' ')}
+													</Badge>
+												</div>
+											</div>
+										))}
+									</div>
+								) : (
+									<div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
+										<p>No Grade 5 scholarship record found for this member.</p>
+									</div>
+								)}
+							</CardContent>
+						</Card>
+					)}
+
+					{activeTab === "Remittance & Savings" && profile.id && (
+						<RemittanceSavingsTab memberId={profile.id} />
+					)}
+
+					{activeTab === "Progress" && profile.id && (
+						<ProgressTimeline memberId={profile.id} />
+					)}
+
+					{activeTab !== "Profile Details" && activeTab !== "Documents" && activeTab !== "Scholarships" && activeTab !== "Progress" && activeTab !== "Remittance & Savings" && (
+						<div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500">
+							<p>This tab is currently under construction.</p>
+						</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}

@@ -1,0 +1,1202 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import {
+  Search,
+  RotateCcw,
+  Plus,
+  ArrowUp,
+  AlertCircle,
+  ChevronDown,
+  ArrowLeft,
+  X,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  SendHorizontal,
+  Lock,
+} from "lucide-react";
+
+import { Button } from "@/src/components/ui/button";
+import { Input } from "@/src/components/ui/input";
+import { Badge } from "@/src/components/ui/badge";
+import {
+  TablePagination,
+  DEFAULT_PAGE_SIZE,
+} from "@/src/components/ui/table-pagination";
+import { Checkbox } from "@/src/components/ui/checkbox";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/src/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/src/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/src/components/ui/select";
+import { NewMemberRegistrationForm } from "./form-new";
+import {
+  searchMemberApplications,
+  getSelectableApplicationIds,
+  deleteMemberApplication,
+  updateMemberApplicationStatus,
+  type ApplicationSearchParams,
+  type ApplicationStatus,
+  type MemberApplicationDTO,
+} from "@/lib/api/memberApplications";
+import { getBoardMeetings, type BoardMeetingDTO } from "@/lib/api/boardMeeting";
+import { BOARD_MEETING_VIEW_ROLES, hasRole } from "@/lib/permissions";
+import { getEducationalDistricts } from "@/lib/api/education";
+import {
+  createBoardApprovalList,
+  type BoardApprovalListDTO,
+} from "@/lib/api/boardApprovalLists";
+
+// ── Multi-select dropdown ─────────────────────────────────────────────────────
+interface MultiSelectProps {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+
+function MultiSelect({
+  options,
+  selected,
+  onChange,
+  placeholder = "Select...",
+}: MultiSelectProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggle = (value: string) => {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value]
+    );
+  };
+
+  const label =
+    selected.length === 0
+      ? placeholder
+      : selected.length === options.length
+        ? "All Selected"
+        : `${selected.length} Selected`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className={selected.length === 0 ? "text-muted-foreground" : ""}>
+          {label}
+        </span>
+        <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full min-w-[8rem] rounded-md border border-border bg-popover shadow-md">
+          <div className="p-1 flex flex-col gap-0.5">
+            {options.map((opt) => (
+              <label
+                key={opt.value}
+                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground select-none"
+              >
+                <Checkbox
+                  checked={selected.includes(opt.value)}
+                  onCheckedChange={() => toggle(opt.value)}
+                  className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RegistrationStatus = ApplicationStatus | "PENDING";
+
+interface Registration {
+  id?: number;
+  appId: string;
+  fullName: string;
+  nic: string;
+  appliedDate: string | null;
+  district: string;
+  zone: string;
+  status: RegistrationStatus;
+  hasWarning?: boolean;
+  selectable: boolean;
+}
+
+const statusBadgeClass: Record<RegistrationStatus, string> = {
+  PENDING: "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-100",
+  NEW: "bg-green-100 text-green-700 border border-green-300 hover:bg-green-100",
+  SUBMITTED_FOR_APPROVAL:
+    "bg-amber-700 text-white border-transparent hover:bg-amber-700",
+  ADDED_TO_BOARD_APPROVAL_LIST:
+    "bg-amber-500 text-white border-transparent hover:bg-amber-500",
+  REJECTED: "bg-red-100 text-red-700 border border-red-300 hover:bg-red-100",
+  // Converted to a Member. Excluded from this list by the backend, but the map must
+  // stay exhaustive over ApplicationStatus.
+  APPROVED: "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-100",
+  INACTIVE: "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100",
+};
+
+const statusFilterMap: Record<string, RegistrationStatus> = {
+  new: "NEW",
+  submitted: "SUBMITTED_FOR_APPROVAL",
+  board: "ADDED_TO_BOARD_APPROVAL_LIST",
+  rejected: "REJECTED",
+  inactive: "INACTIVE",
+};
+
+export default function NewRegistrationsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  const isDistrictOfficer = user?.role === "DISTRICT_OFFICE";
+  const canViewBoardMeetings = hasRole(user?.role, BOARD_MEETING_VIEW_ROLES);
+  const userDistrict = user?.assignedDistrict || "Colombo";
+
+  const applicationIdParam = searchParams.get("applicationId");
+  const isReadOnlyView = searchParams.get("mode") === "view";
+  const [currentView, setCurrentView] = useState<"list" | "form">("list");
+  const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  // Spec MR02: "By default, 'New', 'Submitted for Approval', and 'Added to Board
+  // Approval List' statuses will be selected." Starting empty sent no status filter at
+  // all, so the first Retrieve also returned Rejected and Inactive applications - the
+  // two the default is meant to leave out.
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([
+    "new",
+    "submitted",
+    "board",
+  ]);
+  const [applicationReceivedOn, setApplicationReceivedOn] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [sortBy, setSortBy] = useState("applied-date");
+  const [sortAsc, setSortAsc] = useState(true);
+  // One page of rows, not the whole result set — see loadPage().
+  const [displayData, setDisplayData] = useState<Registration[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectableCount, setSelectableCount] = useState(0);
+  // The filter the currently displayed rows were fetched with, frozen at Retrieve.
+  // Paging and post-action refreshes reuse it so that edits made to the criteria
+  // fields since — which are not meant to take effect until Retrieve is pressed —
+  // cannot silently change what page 2 contains.
+  const [activeSearch, setActiveSearch] = useState<ApplicationSearchParams | null>(null);
+  const [hasRetrieved, setHasRetrieved] = useState(false);
+  const [isRetrieving, setIsRetrieving] = useState(false);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
+  const [showBoardMeetingModal, setShowBoardMeetingModal] = useState(false);
+  const [selectedBoardMeeting, setSelectedBoardMeeting] = useState("");
+  const [boardMeetings, setBoardMeetings] = useState<BoardMeetingDTO[]>([]);
+  const [isSavingBoardApprovalList, setIsSavingBoardApprovalList] = useState(false);
+  const [createdBoardApprovalList, setCreatedBoardApprovalList] = useState<BoardApprovalListDTO | null>(null);
+  const [showCreationConfirmModal, setShowCreationConfirmModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<Registration | null>(null);
+  const [isDeletingApplication, setIsDeletingApplication] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [districtOptions, setDistrictOptions] = useState<string[]>([]);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Load the real list of District Office locations (same master used at registration time)
+  // instead of a hardcoded, out-of-sync sample list.
+  useEffect(() => {
+    let isCancelled = false;
+    getEducationalDistricts()
+      .then((districts) => {
+        if (!isCancelled) setDistrictOptions(districts);
+      })
+      .catch(() => {
+        /* leave empty on failure — filter simply shows no options */
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // Initialize district location for district officer
+  useEffect(() => {
+    if (isDistrictOfficer && userDistrict) {
+      setSelectedLocations([userDistrict.toLowerCase().replace(/\s+/g, "-")]);
+    }
+  }, [isDistrictOfficer, userDistrict]);
+
+  useEffect(() => {
+    if (!applicationIdParam) return;
+
+    const parsedId = Number(applicationIdParam);
+    if (Number.isFinite(parsedId)) {
+      setSelectedApplicationId(parsedId);
+      setCurrentView("form");
+    }
+  }, [applicationIdParam]);
+
+  // Close action menu on outside click or scroll
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    function closeOnScroll() { setOpenMenuId(null); }
+    if (openMenuId) {
+      document.addEventListener("mousedown", close);
+      document.addEventListener("scroll", closeOnScroll, true);
+    }
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("scroll", closeOnScroll, true);
+    };
+  }, [openMenuId]);
+
+  // Only the Create Board Approval List modal reads these, and that button is
+  // already hidden from District Office below. BoardMeetingController refuses the
+  // role outright, so fetching regardless just bought a 403 on every district page
+  // load. isAuthLoading guards the gap where AuthProvider has not yet hydrated
+  // `user` from localStorage — without it the role check runs against null and
+  // nobody gets the meetings.
+  useEffect(() => {
+    if (isAuthLoading || !canViewBoardMeetings) return;
+
+    let isCancelled = false;
+
+    const loadBoardMeetings = async () => {
+      try {
+        const meetings = await getBoardMeetings();
+        if (!isCancelled) {
+          setBoardMeetings(meetings);
+        }
+      } catch (error) {
+        console.error("Failed to load board meetings", error);
+      }
+    };
+
+    void loadBoardMeetings();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthLoading, canViewBoardMeetings]);
+
+  const mapToRegistration = (
+    item: MemberApplicationDTO,
+    index: number
+  ): Registration => {
+    const status = item.status ?? "PENDING";
+    const rawAppId = item.applicationID ?? `APP-${item.id ?? index + 1}`;
+    // Use the actual Application Date field rather than decoding a timestamp out of the
+    // ID — the ID is now a sequential "APP-<year>-<seq>" value, not an epoch millis stamp.
+    const appliedDate = item.applicationDate ?? null;
+
+    return {
+      id: item.id,
+      appId: rawAppId,
+      fullName: item.fullName ?? "-",
+      nic: item.nicNumber ?? "-",
+      appliedDate,
+      // "District" here means the District Office branch the application was submitted
+      // at (spec's "Location" filter) — not the applicant's working district.
+      district: item.submissionLocation ?? "-",
+      zone: "-",
+      status,
+      selectable:
+        status === "SUBMITTED_FOR_APPROVAL" || status === "REJECTED",
+      hasWarning: false,
+    };
+  };
+
+  // Select-all stays scoped to the whole filtered result rather than the visible
+  // page: the count beside "Add to Board Approval List" already reports how many
+  // are held, so a selection spanning pages is visible rather than silent, and an
+  // operator adding 23 applications to a list does not have to walk three pages to
+  // do it.
+  //
+  // displayData now holds one page, so neither the total nor the IDs can be derived
+  // from it. selectableCount rides along with each page as a database COUNT, and the
+  // IDs themselves are fetched only if the operator actually ticks the header box.
+  // Every ID in selectedRows is selectable by construction — the per-row checkbox is
+  // rendered for no other status — so comparing lengths is enough to tell "all" from
+  // "some".
+  const selectedNewRowsCount = selectedRows.length;
+
+  const isAllNewRowsSelected =
+    selectableCount > 0 && selectedNewRowsCount === selectableCount;
+
+  const isSomeNewRowsSelected =
+    selectedNewRowsCount > 0 && selectedNewRowsCount < selectableCount;
+
+  // The Location dropdown carries slug values ("nuwara-eliya"); the backend filters on
+  // the stored district label ("Nuwara Eliya"), so translate before querying.
+  const locationValueToLabel = (value: string) =>
+    districtOptions.find(
+      (d) => d.toLowerCase().replace(/\s+/g, "-") === value
+    ) ?? value;
+
+  const locationOptions = districtOptions.map((district) => ({
+    value: district.toLowerCase().replace(/\s+/g, "-"),
+    label: district,
+  }));
+
+  const statusOptions = [
+    { value: "new", label: "New" },
+    { value: "submitted", label: "Submitted for Approval" },
+    { value: "board", label: "Added to Board Approval List" },
+    { value: "rejected", label: "Rejected" },
+    { value: "inactive", label: "Inactive" },
+  ];
+
+  const boardMeetingOptions = boardMeetings.map((meeting) => ({
+    value: String(meeting.id ?? ""),
+    label: `${meeting.scheduledDate ?? "Unknown date"} (${meeting.boardMeetingId ?? meeting.id ?? ""})`,
+  }));
+
+  const toggleRow = (appId: string) => {
+    setSelectedRows((prev) =>
+      prev.includes(appId)
+        ? prev.filter((id) => id !== appId)
+        : [...prev, appId]
+    );
+  };
+
+  const toggleAllNewRows = async (checked: boolean) => {
+    if (!checked) {
+      setSelectedRows([]);
+      return;
+    }
+    if (!activeSearch) return;
+
+    // The IDs live behind the same filter as the rows, but on every page. Asking the
+    // server for them costs one single-column query; the alternative is downloading
+    // every matching application, which is exactly what this screen stopped doing.
+    setIsSelectingAll(true);
+    try {
+      const ids = await getSelectableApplicationIds({
+        query: activeSearch.query,
+        statuses: activeSearch.statuses,
+        locations: activeSearch.locations,
+        receivedFrom: activeSearch.receivedFrom,
+        receivedTo: activeSearch.receivedTo,
+      });
+      setSelectedRows(ids);
+    } catch (error) {
+      alert(
+        error instanceof Error ? error.message : "Failed to select all registrations"
+      );
+    } finally {
+      setIsSelectingAll(false);
+    }
+  };
+
+  /** Translates the "Application Received On" preset into a concrete date range. */
+  const resolveReceivedRange = (): { receivedFrom?: string; receivedTo?: string } => {
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+    if (applicationReceivedOn === "thisMonth") {
+      return { receivedFrom: iso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+    }
+    if (applicationReceivedOn === "thisAndLastMonth") {
+      return { receivedFrom: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)) };
+    }
+    if (applicationReceivedOn === "DatePeriod") {
+      return {
+        ...(fromDate ? { receivedFrom: fromDate } : {}),
+        ...(toDate ? { receivedTo: toDate } : {}),
+      };
+    }
+    return {};
+  };
+
+  /** The criteria fields as the backend wants them, read at the moment Retrieve runs. */
+  const buildSearchParams = (): ApplicationSearchParams => ({
+    ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
+    ...(selectedStatuses.length > 0
+      ? {
+          statuses: selectedStatuses
+            .map((s) => statusFilterMap[s])
+            .filter((s): s is ApplicationStatus => Boolean(s) && s !== "PENDING"),
+        }
+      : {}),
+    ...(selectedLocations.length > 0
+      ? { locations: selectedLocations.map(locationValueToLabel) }
+      : {}),
+    ...resolveReceivedRange(),
+    sortBy: sortBy as "applied-date" | "status" | "district" | "zone",
+    sortDirection: sortAsc ? "asc" : "desc",
+  });
+
+  /**
+   * Fetches one page. Filtering, sorting, paging and both counts are the database's
+   * work — the browser receives ten rows and the totals to describe them, instead of
+   * the entire application table to slice ten rows out of.
+   */
+  const loadPage = async (search: ApplicationSearchParams, requestedPage: number) => {
+    setIsRetrieving(true);
+    try {
+      const result = await searchMemberApplications({
+        ...search,
+        page: requestedPage - 1,
+        size: DEFAULT_PAGE_SIZE,
+      });
+
+      setDisplayData(result.content.map(mapToRegistration));
+      setTotalCount(result.totalElements);
+      setSelectableCount(result.selectableCount);
+      // Trust the server's page number over the requested one: deleting the last row
+      // of the last page leaves the request pointing past the end, and the backend
+      // answers with the page that now exists rather than an empty one.
+      setPage(result.page + 1);
+    } catch (error) {
+      alert(
+        error instanceof Error ? error.message : "Failed to retrieve applications"
+      );
+      setDisplayData([]);
+      setTotalCount(0);
+      setSelectableCount(0);
+      setPage(1);
+    } finally {
+      setHasRetrieved(true);
+      setIsRetrieving(false);
+    }
+  };
+
+  const handleRetrieve = async () => {
+    const search = buildSearchParams();
+    setActiveSearch(search);
+    setSelectedRows([]);
+    await loadPage(search, 1);
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    if (!activeSearch || nextPage === page) return;
+    void loadPage(activeSearch, nextPage);
+  };
+
+  /**
+   * Re-reads the page the operator is on after a row was changed underneath them.
+   *
+   * The list used to be patched in place, which was the only option when the browser
+   * held every row. A page is ten rows, so re-reading it is cheap, and it keeps the
+   * footer total and the select-all count honest — a deleted row leaves a gap and a
+   * submitted one changes how many rows are tickable.
+   */
+  const refreshCurrentPage = async () => {
+    if (!activeSearch) return;
+    await loadPage(activeSearch, page);
+  };
+
+  const handleOpenBoardMeetingModal = () => {
+    if (selectedNewRowsCount === 0) return;
+    setShowBoardMeetingModal(true);
+  };
+
+  const handleCloseBoardMeetingModal = () => {
+    setShowBoardMeetingModal(false);
+    setSelectedBoardMeeting("");
+  };
+
+  const handleSaveBoardMeeting = async () => {
+    if (!selectedBoardMeeting) return;
+
+    const meetingId = Number(selectedBoardMeeting);
+    const meeting = boardMeetings.find((item) => item.id === meetingId);
+    if (!meeting || !meeting.id || !meeting.scheduledDate) {
+      alert("Selected board meeting is not available.");
+      return;
+    }
+
+    try {
+      setIsSavingBoardApprovalList(true);
+      const createdList = await createBoardApprovalList({
+        boardMeetingId: meeting.id,
+        boardMeetingDate: meeting.scheduledDate,
+        applicationIds: selectedRows,
+      });
+
+      setCreatedBoardApprovalList(createdList);
+      // Every selected row has just left the tickable statuses, so the selection and
+      // the counts behind it are both stale. Re-reading the page settles both.
+      setSelectedRows([]);
+      await refreshCurrentPage();
+
+      setShowBoardMeetingModal(false);
+      setSelectedBoardMeeting("");
+      setShowCreationConfirmModal(true);
+    } catch (error) {
+      console.error("Failed to create board approval list", error);
+      alert(error instanceof Error ? error.message : "Failed to create board approval list");
+    } finally {
+      setIsSavingBoardApprovalList(false);
+    }
+  };
+
+  const handleCloseCreationConfirmModal = () => {
+    setShowCreationConfirmModal(false);
+  };
+
+  const handleViewCreatedList = () => {
+    setShowCreationConfirmModal(false);
+    router.push("/membership/board-approvals");
+  };
+
+  const handleOpenApplication = (row: Registration) => {
+    if (!row.id) {
+      alert("Application ID is not available for this record.");
+      return;
+    }
+    setSelectedApplicationId(row.id);
+    setCurrentView("form");
+  };
+
+  const handleDeleteApplication = (row: Registration) => {
+    if (!row.id) return;
+    setPendingDeleteRow(row);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteRow?.id) return;
+    setIsDeletingApplication(true);
+    try {
+      await deleteMemberApplication(pendingDeleteRow.id);
+      setSelectedRows((prev) => prev.filter((id) => id !== pendingDeleteRow.appId));
+      // The row is gone from the middle of a page, so the rows after it shift up a
+      // slot and the totals move. Refetch rather than patch the local copy.
+      await refreshCurrentPage();
+      setShowDeleteModal(false);
+      setPendingDeleteRow(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete application");
+    } finally {
+      setIsDeletingApplication(false);
+    }
+  };
+
+  const handleSubmitApplication = async (row: Registration) => {
+    if (!row.id) return;
+    try {
+      await updateMemberApplicationStatus(row.id, "SUBMITTED_FOR_APPROVAL");
+      // Submitting makes the row tickable, which changes the select-all total the
+      // server owns. Refetching the page is what keeps that count in step.
+      await refreshCurrentPage();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to submit application");
+    }
+  };
+
+  if (currentView === "form") {
+    return (
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
+          }}
+          className="w-fit text-[#953002] hover:text-[#7a2700] hover:bg-transparent mb-2"
+        >
+          <ArrowLeft size={16} />
+          Back to List
+        </Button>
+        <NewMemberRegistrationForm
+          applicationId={selectedApplicationId}
+          readOnly={isReadOnlyView}
+          onDone={() => {
+            setCurrentView("list");
+            setSelectedApplicationId(null);
+            if (isReadOnlyView) {
+              router.replace("/membership/new-registrations");
+            }
+            void handleRetrieve();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-[#953002]">
+          New Member Registration Search
+        </h1>
+        <div className="flex items-center gap-2">
+          {!isDistrictOfficer && (
+            <Button
+              className="bg-[#ffb401] hover:bg-[#c99500] text-white"
+              disabled={selectedNewRowsCount === 0}
+              onClick={handleOpenBoardMeetingModal}
+            >
+              Create Board Approval List
+              {selectedNewRowsCount > 0 ? ` (${selectedNewRowsCount})` : ""}
+            </Button>
+          )}
+          <Button
+            className="bg-[#7a2700] hover:bg-[#953002] text-white"
+            onClick={() => {
+              setSelectedApplicationId(null);
+              setCurrentView("form");
+            }}
+          >
+            <Plus />
+            Create New Registration
+          </Button>
+        </div>
+      </div>
+
+      {/* Search Criteria Card */}
+      <Card className="rounded-xl shadow-sm py-0">
+        <CardHeader className="px-5 pt-5 pb-3">
+          <CardTitle className="text-base text-[#953002]">
+            Search Criteria
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5 flex flex-col gap-4">
+          {/* Row 1 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Location (District) */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600 flex items-center justify-between">
+                <span>Location (District)</span>
+                {isDistrictOfficer && (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-medium">
+                    <Lock size={10} /> Locked to Branch
+                  </span>
+                )}
+              </label>
+              {isDistrictOfficer ? (
+                <div className="border-input flex h-9 w-full items-center justify-between rounded-md border bg-neutral-100 px-3 py-2 text-sm text-neutral-800 shadow-xs cursor-not-allowed">
+                  <span className="font-semibold text-neutral-800">{userDistrict}</span>
+                  <Lock size={13} className="text-neutral-400" />
+                </div>
+              ) : (
+                <MultiSelect
+                  options={locationOptions}
+                  selected={selectedLocations}
+                  onChange={setSelectedLocations}
+                  placeholder="Select Locations"
+                />
+              )}
+            </div>
+
+            {/* Application Received On */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">
+                Application Received On
+              </label>
+              <Select value={applicationReceivedOn} onValueChange={setApplicationReceivedOn}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All Days" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Days</SelectItem>
+                  <SelectItem value="thisMonth">This Month</SelectItem>
+                  <SelectItem value="thisAndLastMonth">This and Last Month</SelectItem>
+                  <SelectItem value="DatePeriod">Date Period</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* The "Date Period" option previously had no inputs, so selecting it
+                  had no effect. From/To are required by the spec. */}
+              {applicationReceivedOn === "DatePeriod" && (
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] text-gray-500">From</label>
+                    <Input
+                      type="date"
+                      value={fromDate}
+                      max={toDate || undefined}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] text-gray-500">To</label>
+                    <Input
+                      type="date"
+                      value={toDate}
+                      min={fromDate || undefined}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Status */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">
+                Status
+              </label>
+              <MultiSelect
+                options={statusOptions}
+                selected={selectedStatuses}
+                onChange={setSelectedStatuses}
+                placeholder="Select Status"
+              />
+            </div>
+          </div>
+
+          {/* Row 2 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            {/* Search Name / NIC */}
+            <div className="flex flex-col gap-1 md:col-span-2">
+              <label className="text-xs font-medium text-gray-600">
+                Search (Name / NIC)
+              </label>
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by Applicant Name, Initials or NIC..."
+                  className="pl-8"
+                />
+              </div>
+            </div>
+
+            {/* Sort By + Retrieve */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">
+                Sort By
+              </label>
+              <div className="flex items-center gap-2">
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Applied Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="applied-date">Applied Date</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="district">District</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" onClick={() => setSortAsc((v) => !v)}>
+                  <ArrowUp size={16} className={sortAsc ? "" : "rotate-180"} />
+                </Button>
+                <Button
+                  className="bg-[#7a2700] hover:bg-[#953002] text-white whitespace-nowrap"
+                  onClick={handleRetrieve}
+                  disabled={isRetrieving}
+                >
+                  <RotateCcw size={14} />
+                  {isRetrieving ? "Retrieving..." : "Retrieve"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results Table */}
+      <Card className="rounded-xl shadow-sm overflow-hidden py-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead className="w-10 px-4">
+                <Checkbox
+                  checked={
+                    isAllNewRowsSelected
+                      ? true
+                      : isSomeNewRowsSelected
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) => void toggleAllNewRows(checked === true)}
+                  aria-label="Select all submitted or rejected status rows"
+                  disabled={selectableCount === 0 || isSelectingAll || isRetrieving}
+                  className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                />
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                App ID
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Full Name
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                NIC
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Applied Date
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                District
+              </TableHead>
+              <TableHead className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Status
+              </TableHead>
+              <TableHead className="px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Actions
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {displayData.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="px-4 py-8 text-center text-gray-400 text-sm"
+                >
+                  {/* Before the first Retrieve the table is empty because nothing has
+                      been asked for yet, not because nothing matched. Gating this row
+                      on hasRetrieved left the body completely blank on arrival, with no
+                      hint that Retrieve had to be pressed. Mirrors the Member Directory. */}
+                  {hasRetrieved
+                    ? "No records found. Adjust your filters and click Retrieve."
+                    : "Click Retrieve to load registrations."}
+                </TableCell>
+              </TableRow>
+            )}
+            {displayData.map((row) => (
+              <TableRow key={row.appId}>
+                {/* Checkbox */}
+                <TableCell className="px-4">
+                  {row.selectable ? (
+                    <Checkbox
+                      checked={selectedRows.includes(row.appId)}
+                      onCheckedChange={() => toggleRow(row.appId)}
+                      className="data-[state=checked]:bg-[#953002] data-[state=checked]:border-[#953002]"
+                    />
+                  ) : (
+                    <span className="size-4 block" />
+                  )}
+                </TableCell>
+
+                {/* App ID */}
+                <TableCell className="px-4">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenApplication(row)}
+                      className="text-[#953002] font-medium hover:underline cursor-pointer"
+                    >
+                      {row.appId}
+                    </button>
+                    {row.hasWarning && (
+                      <AlertCircle size={14} className="text-amber-500" />
+                    )}
+                  </div>
+                </TableCell>
+
+                <TableCell className="px-4 text-gray-700">
+                  {row.fullName}
+                </TableCell>
+                <TableCell className="px-4 text-gray-700">{row.nic}</TableCell>
+                <TableCell className="px-4 text-gray-500">
+                  {row.appliedDate ?? "-"}
+                </TableCell>
+                <TableCell className="px-4 text-gray-700">
+                  {row.district}
+                </TableCell>
+
+                {/* Status Badge */}
+                <TableCell className="px-4">
+                  <Badge className={statusBadgeClass[row.status]}>
+                    {row.status.replaceAll("_", " ")}
+                  </Badge>
+                </TableCell>
+
+                {/* Actions */}
+                <TableCell className="px-4 text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-gray-400 hover:text-[#953002] hover:bg-[#fff6f2]"
+                    aria-label="Row actions"
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      if (openMenuId === row.appId) {
+                        setOpenMenuId(null);
+                      } else {
+                        setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                        setOpenMenuId(row.appId);
+                      }
+                    }}
+                  >
+                    <MoreHorizontal size={16} />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <TablePagination
+          page={page}
+          total={totalCount}
+          onPageChange={handlePageChange}
+          itemLabel="registration"
+        />
+      </Card>
+
+      {/* Fixed-position action dropdown — renders outside Card overflow */}
+      {openMenuId && menuPos && (() => {
+        const row = displayData.find((r) => r.appId === openMenuId);
+        if (!row) return null;
+        return (
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+            className="w-44 rounded-lg border border-gray-200 bg-white shadow-xl py-1"
+          >
+            {/* Edit */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); handleOpenApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-[#fff6f2] hover:text-[#953002] transition-colors"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+
+            {/* Submit */}
+            {row.status !== "SUBMITTED_FOR_APPROVAL" &&
+              row.status !== "ADDED_TO_BOARD_APPROVAL_LIST" && (
+                <button
+                  type="button"
+                  onClick={() => { setOpenMenuId(null); void handleSubmitApplication(row); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors"
+                >
+                  <SendHorizontal size={14} />
+                  Submit
+                </button>
+              )}
+
+            <div className="my-1 border-t border-gray-100" />
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={() => { setOpenMenuId(null); void handleDeleteApplication(row); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        );
+      })()}
+
+
+      {showDeleteModal && pendingDeleteRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-red-600">
+                  Delete Application
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {pendingDeleteRow.appId} &mdash; {pendingDeleteRow.fullName}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                aria-label="Close delete modal"
+                disabled={isDeletingApplication}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-gray-600">
+                Are you sure you want to permanently delete this application?
+              </p>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={() => { setShowDeleteModal(false); setPendingDeleteRow(null); }}
+                  disabled={isDeletingApplication}
+                >
+                  No, Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={isDeletingApplication}
+                  onClick={handleConfirmDelete}
+                >
+                  {isDeletingApplication ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBoardMeetingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[520px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <div>
+                <h2 className="text-[29px] font-semibold text-[#953002]">
+                  Select Board Meeting
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Select the Board Meeting date for these {selectedNewRowsCount} applications.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseBoardMeetingModal}
+                aria-label="Close board meeting modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-6">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">Meeting Date</label>
+                <Select
+                  value={selectedBoardMeeting}
+                  onValueChange={setSelectedBoardMeeting}
+                >
+                  <SelectTrigger className="h-11 w-full text-base">
+                    <SelectValue placeholder="Select Meeting" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {boardMeetingOptions.length === 0 ? (
+                      <SelectItem value="no-meetings" disabled>
+                        No board meetings available
+                      </SelectItem>
+                    ) : boardMeetingOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-gray-700"
+                  onClick={handleCloseBoardMeetingModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  disabled={!selectedBoardMeeting || isSavingBoardApprovalList}
+                  onClick={handleSaveBoardMeeting}
+                >
+                  {isSavingBoardApprovalList ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreationConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-[460px] rounded-lg border bg-white shadow-xl">
+            <div className="flex items-start justify-between px-5 pt-5">
+              <h2 className="text-3xl font-semibold text-[#953002]">Confirmation</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-500"
+                onClick={handleCloseCreationConfirmModal}
+                aria-label="Close confirmation modal"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="px-5 pb-5 pt-1">
+              <p className="text-lg leading-relaxed text-gray-600">
+                {createdBoardApprovalList?.listId
+                  ? `The Board Approval List ${createdBoardApprovalList.listId} for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`
+                  : `The Board Approval List for ${selectedNewRowsCount} applications has been created. Do you want to view the list?`}
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  className="bg-[#ffb401] text-white hover:bg-[#c99500]"
+                  onClick={handleCloseCreationConfirmModal}
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#953002] text-white hover:bg-[#7a2700]"
+                  onClick={handleViewCreatedList}
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
