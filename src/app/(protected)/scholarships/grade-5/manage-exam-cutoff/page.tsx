@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/src/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/src/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { useToast } from "@/lib/toast-context";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { hasPermission } from "@/lib/permissions";
 import AccessRestricted from "@/src/components/AccessRestricted";
@@ -163,6 +163,23 @@ export default function Grade5ExamCutoffManagementPage() {
   const [examDate, setExamDate] = useState<string>("");
   const [cutoffs, setCutoffs] = useState<CutoffDetail[]>([]);
 
+  // The last values known to be stored. Two jobs: deciding whether anything is
+  // actually unsaved, and putting a mark back when its edit is cancelled.
+  const [savedExamYear, setSavedExamYear] = useState<number>(currentYear);
+  const [savedExamDate, setSavedExamDate] = useState<string>("");
+  const [savedCutoffs, setSavedCutoffs] = useState<CutoffDetail[]>([]);
+
+  // A cut-off decides every Grade 5 eligibility check, so each mark is read-only
+  // until its own pencil is clicked. In a 25-row table a stray keystroke must not
+  // be able to quietly change a district's threshold.
+  const [unlockedDistricts, setUnlockedDistricts] = useState<Set<string>>(new Set());
+  const cutoffInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // The exam date is locked behind its own pencil for the same reason: it is what
+  // every "was the member active during the exam" check is measured against.
+  const [isExamDateUnlocked, setIsExamDateUnlocked] = useState(false);
+  const examDateInputRef = useRef<HTMLInputElement | null>(null);
+
   // UI/API States
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -212,9 +229,17 @@ export default function Grade5ExamCutoffManagementPage() {
         };
 
         if (data) {
-          setExamYear(data.examYear || currentYear);
-          setExamDate(data.examDate || "");
-          setCutoffs(buildCutoffs(data.cutoffs ?? []));
+          const loadedYear = data.examYear || currentYear;
+          const loadedDate = data.examDate || "";
+          const loadedCutoffs = buildCutoffs(data.cutoffs ?? []);
+
+          setExamYear(loadedYear);
+          setExamDate(loadedDate);
+          setCutoffs(loadedCutoffs);
+
+          setSavedExamYear(loadedYear);
+          setSavedExamDate(loadedDate);
+          setSavedCutoffs(loadedCutoffs);
         }
       } catch (err: unknown) {
         console.error(err);
@@ -222,7 +247,9 @@ export default function Grade5ExamCutoffManagementPage() {
           err instanceof Error ? err.message : "Error loading configuration";
         addToast(errorMsg, "destructive");
         // Even on error, show all districts with empty cutoff marks
-        setCutoffs(buildCutoffs([]));
+        const emptyCutoffs = buildCutoffs([]);
+        setCutoffs(emptyCutoffs);
+        setSavedCutoffs(emptyCutoffs);
       } finally {
         setLoading(false);
       }
@@ -249,6 +276,43 @@ export default function Grade5ExamCutoffManagementPage() {
       });
     }
   };
+
+  // The pencil unlocks a mark for editing and locks it again once the change is
+  // made. Locking keeps whatever was typed — Save is still the only thing that
+  // stores it, and the row stays part of the unsaved-changes check either way.
+  const toggleCutoffEdit = (districtName: string) => {
+    const isUnlocked = unlockedDistricts.has(districtName);
+
+    setUnlockedDistricts((prev) => {
+      const next = new Set(prev);
+      if (isUnlocked) {
+        next.delete(districtName);
+      } else {
+        next.add(districtName);
+      }
+      return next;
+    });
+
+    if (!isUnlocked) {
+      cutoffInputRefs.current[districtName]?.focus();
+    }
+  };
+
+  const toggleExamDateEdit = () => {
+    setIsExamDateUnlocked((prev) => !prev);
+    if (!isExamDateUnlocked) {
+      examDateInputRef.current?.focus();
+    }
+  };
+
+  // Save stays disabled until something genuinely differs from what is stored, so
+  // the page cannot re-post an untouched form over every district's marks.
+  const isDirty = useMemo(() => {
+    if (examYear !== savedExamYear || examDate !== savedExamDate) return true;
+
+    const savedMap = new Map(savedCutoffs.map((item) => [item.district, item.cutoffMarks]));
+    return cutoffs.some((item) => item.cutoffMarks !== (savedMap.get(item.district) ?? ""));
+  }, [examYear, examDate, cutoffs, savedExamYear, savedExamDate, savedCutoffs]);
 
   // Perform client-side validations
   const validateForm = (): boolean => {
@@ -323,6 +387,14 @@ export default function Grade5ExamCutoffManagementPage() {
       }
 
       addToast("Grade 5 Exam configurations and district cutoffs saved successfully!", "default");
+
+      // What is on screen is now what is stored: re-lock every mark and let Save go
+      // quiet again until the next real edit.
+      setSavedExamYear(examYear);
+      setSavedExamDate(examDate);
+      setSavedCutoffs(cutoffs.map((item) => ({ ...item })));
+      setUnlockedDistricts(new Set());
+      setIsExamDateUnlocked(false);
     } catch (err: unknown) {
       console.error(err);
       const errorMsg = err instanceof Error ? err.message : "An error occurred while saving.";
@@ -373,7 +445,7 @@ export default function Grade5ExamCutoffManagementPage() {
       ) : (
         <form onSubmit={handleSaveClick} className="space-y-6">
           <Card className="shadow-sm border-gray-200 bg-white">
-            <CardHeader className="border-b bg-gray-50/50 py-4">
+            <CardHeader className="border-b py-4">
               <CardTitle className="text-base font-semibold text-[#953002]">
                 Exam Master Details
               </CardTitle>
@@ -408,18 +480,48 @@ export default function Grade5ExamCutoffManagementPage() {
                   <label className="block text-sm font-medium text-gray-700">
                     Exam Date <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="date"
-                    value={examDate}
-                    min={`${examYear}-01-01`}
-                    max={new Date().toISOString().split("T")[0]}
-                    onChange={(e) => {
-                      setExamDate(e.target.value);
-                      setErrors((prev) => ({ ...prev, examDate: undefined }));
-                    }}
-                    className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#953002] focus:border-[#953002] ${errors.examDate ? "border-red-500" : "border-gray-300"
-                      }`}
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={examDateInputRef}
+                      type="date"
+                      value={examDate}
+                      min={`${examYear}-01-01`}
+                      max={new Date().toISOString().split("T")[0]}
+                      readOnly={!isExamDateUnlocked}
+                      aria-readonly={!isExamDateUnlocked}
+                      onChange={(e) => {
+                        // Browsers are inconsistent about honouring readOnly on a date
+                        // input's own picker, so the lock is enforced here as well.
+                        if (!isExamDateUnlocked) return;
+                        setExamDate(e.target.value);
+                        setErrors((prev) => ({ ...prev, examDate: undefined }));
+                      }}
+                      className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none ${isExamDateUnlocked
+                          ? "focus:ring-1 focus:ring-[#953002] focus:border-[#953002]"
+                          : "cursor-not-allowed text-gray-600"
+                        } ${errors.examDate
+                          ? "border-red-500"
+                          : isExamDateUnlocked
+                            ? "border-gray-300 bg-white"
+                            : "border-gray-200 bg-gray-100"
+                        }`}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={saving}
+                      onClick={toggleExamDateEdit}
+                      title={
+                        isExamDateUnlocked ? "Done editing exam date" : "Edit exam date"
+                      }
+                      aria-label={
+                        isExamDateUnlocked ? "Done editing exam date" : "Edit exam date"
+                      }
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
                   {errors.examDate && (
                     <p className="text-xs text-red-500 font-medium">{errors.examDate}</p>
                   )}
@@ -429,7 +531,7 @@ export default function Grade5ExamCutoffManagementPage() {
           </Card>
 
           <Card className="shadow-sm border-gray-200 bg-white">
-            <CardHeader className="border-b bg-gray-50/50 py-4">
+            <CardHeader className="border-b py-4">
               <CardTitle className="text-base font-semibold text-[#953002]">
                 District Cutoff Marks
               </CardTitle>
@@ -438,7 +540,7 @@ export default function Grade5ExamCutoffManagementPage() {
               <div className="overflow-x-auto">
                 <Table className="border-collapse">
                   <TableHeader>
-                    <TableRow className="bg-[#fafafa] hover:bg-[#fafafa]">
+                    <TableRow className="hover:bg-transparent">
                       <TableHead className="px-4 py-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
                         District Name
                       </TableHead>
@@ -451,6 +553,7 @@ export default function Grade5ExamCutoffManagementPage() {
                     {cutoffs.map((item) => {
                       const hasError = !!(errors.cutoffs && errors.cutoffs[item.district]);
                       const errorMsg = errors.cutoffs?.[item.district];
+                      const isUnlocked = unlockedDistricts.has(item.district);
 
                       return (
                         <TableRow key={item.district} className="hover:bg-neutral-50">
@@ -459,14 +562,47 @@ export default function Grade5ExamCutoffManagementPage() {
                           </TableCell>
                           <TableCell className="px-4 py-4">
                             <div className="space-y-1">
-                              <input
-                                type="text"
-                                value={item.cutoffMarks}
-                                onChange={(e) => handleCutoffChange(item.district, e.target.value)}
-                                placeholder="Enter cutoff mark"
-                                className={`w-full max-w-[180px] rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#953002] focus:border-[#953002] ${hasError ? "border-red-500 bg-red-50/10" : "border-gray-300 bg-white"
-                                  }`}
-                              />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  ref={(el) => {
+                                    cutoffInputRefs.current[item.district] = el;
+                                  }}
+                                  type="text"
+                                  value={item.cutoffMarks}
+                                  readOnly={!isUnlocked}
+                                  aria-readonly={!isUnlocked}
+                                  onChange={(e) => handleCutoffChange(item.district, e.target.value)}
+                                  placeholder={isUnlocked ? "Enter cutoff mark" : ""}
+                                  className={`w-full max-w-[180px] rounded-md border px-3 py-1.5 text-sm focus:outline-none ${isUnlocked
+                                      ? "focus:ring-1 focus:ring-[#953002] focus:border-[#953002]"
+                                      : "cursor-not-allowed text-gray-600"
+                                    } ${hasError
+                                      ? "border-red-500 bg-red-50/10"
+                                      : isUnlocked
+                                        ? "border-gray-300 bg-white"
+                                        : "border-gray-200 bg-gray-100"
+                                    }`}
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={saving}
+                                  onClick={() => toggleCutoffEdit(item.district)}
+                                  title={
+                                    isUnlocked
+                                      ? `Done editing ${item.district}`
+                                      : `Edit ${item.district} cutoff mark`
+                                  }
+                                  aria-label={
+                                    isUnlocked
+                                      ? `Done editing ${item.district}`
+                                      : `Edit ${item.district} cutoff mark`
+                                  }
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </div>
                               {hasError && (
                                 <p className="text-xs text-red-500 font-medium">{errorMsg}</p>
                               )}
@@ -491,20 +627,14 @@ export default function Grade5ExamCutoffManagementPage() {
           {/* Form Actions */}
           <div className="flex justify-end gap-3 pt-2">
             <Button
-              type="button"
-              variant="outline"
-              className="border-gray-300 text-gray-700 hover:bg-gray-100"
-              onClick={() => {
-                window.location.href = "/scholarships/grade-5";
-              }}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
               type="submit"
               className="bg-[#953002] text-white hover:bg-[#7d2802] gap-2 flex items-center px-6"
-              disabled={saving}
+              disabled={saving || !isDirty}
+              title={
+                isDirty
+                  ? undefined
+                  : "Nothing to save. Click the pencil beside a mark to edit it first."
+              }
             >
               {saving ? (
                 <>
