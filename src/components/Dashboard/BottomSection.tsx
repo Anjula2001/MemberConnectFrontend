@@ -46,7 +46,7 @@ async function countOf(path: string, locations: string[] | null): Promise<number
 }
 
 const cardClass =
-  "flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950"
+  "flex min-w-0 flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-950"
 
 type Data = {
   activity: AuditDTO[] | null
@@ -115,7 +115,7 @@ export default function BottomSection() {
   return (
     <div
       className={
-        "mt-6 grid gap-4 " +
+        "mt-4 grid gap-3 sm:mt-6 sm:gap-4 " +
         (canSeeActivity && canSeeMemberData ? "lg:grid-cols-2" : "grid-cols-1")
       }
     >
@@ -173,7 +173,7 @@ export default function BottomSection() {
           </p>
 
           <dl className="space-y-3">
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 p-3 sm:gap-4 dark:border-neutral-800">
               <div className="min-w-0">
                 <dt className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   Members
@@ -188,7 +188,7 @@ export default function BottomSection() {
               </Link>
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 p-3 sm:gap-4 dark:border-neutral-800">
               <div className="min-w-0">
                 <dt className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   Registrations

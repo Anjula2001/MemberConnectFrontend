@@ -29,8 +29,16 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function TopHeader() {
   const { user, logout } = useAuth();
-  const { toggleSidebar, state } = useSidebar();
+  const { toggleSidebar, state, isMobile, openMobile } = useSidebar();
   const router = useRouter();
+
+  /*
+   * Below 768px the sidebar renders as a Sheet drawer and toggleSidebar flips
+   * `openMobile`, not `state` — `state` stays whatever the desktop expand/collapse was
+   * left at. Reading `state` alone therefore showed a "Collapse sidebar" icon on a phone
+   * whose drawer was shut. This asks the right question for whichever mode is active.
+   */
+  const sidebarShown = isMobile ? openMobile : state === "expanded";
 
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -62,24 +70,24 @@ export default function TopHeader() {
     : "U";
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-3.5 border-b border-neutral-200 bg-white px-5 shadow-xs">
+    <header className="flex h-16 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 shadow-xs sm:gap-3.5 sm:px-5">
 
       {/* ── Sidebar Toggle Button ─────────────────────────────────────── */}
       <button
         id="sidebar-toggle"
         onClick={toggleSidebar}
-        title={state === "expanded" ? "Collapse sidebar" : "Expand sidebar"}
+        title={sidebarShown ? "Collapse sidebar" : "Expand sidebar"}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-transparent text-neutral-500 transition-all duration-200 hover:border-neutral-200 hover:bg-[#fdf5f2] hover:text-[#953002]"
       >
-        {state === "expanded" ? (
+        {sidebarShown ? (
           <PanelLeftClose className="h-5 w-5" />
         ) : (
           <PanelLeftOpen className="h-5 w-5" />
         )}
       </button>
 
-      {/* Divider */}
-      <div className="h-6 w-px bg-neutral-200 shrink-0" />
+      {/* Divider — the header is tight on a phone, so this decorative rule goes first. */}
+      <div className="hidden h-6 w-px shrink-0 bg-neutral-200 sm:block" />
 
       {/* ── Institute Title ───────────────────────────────────────────
            Matches the name printed on the Membership Card, Signature Card and
@@ -93,10 +101,13 @@ export default function TopHeader() {
       {/* ── Spacer ────────────────────────────────────────────────────── */}
       <div className="flex-1" />
 
-      {/* ── Role Badge Card (h-10, matching the profile card) ── */}
-      <div className="flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-3.5 shrink-0">
-        <Shield className="h-4 w-4 text-[#953002]" />
-        <span className="text-xs font-medium text-neutral-500">Role :</span>
+      {/* ── Role Badge Card (h-10, matching the profile card) ──
+           The "Role :" caption is dropped on a phone: the value alone still reads as a
+           role, and the ~43px it frees is what stops the institute title being
+           truncated to nothing between the toggle and the profile card. */}
+      <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 bg-[#f4f4f5] px-2.5 sm:gap-2 sm:px-3.5">
+        <Shield className="h-4 w-4 shrink-0 text-[#953002]" />
+        <span className="hidden text-xs font-medium text-neutral-500 sm:inline">Role :</span>
         <span className="text-xs font-semibold text-[#953002]">{roleLabel}</span>
       </div>
 

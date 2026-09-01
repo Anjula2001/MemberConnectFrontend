@@ -80,7 +80,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
+    /*
+     * min-h-svh rather than min-h-screen: on a phone `vh` is measured against the
+     * viewport with the browser chrome retracted, so 100vh is taller than what is
+     * actually visible and the panel is pushed under the URL bar. svh is the visible
+     * height, and matches the h-svh the protected layout already uses.
+     */
+    <div className="flex min-h-svh flex-col lg:flex-row">
       {/*
        * Entrance only — the panel settles once and stops. A looping animation on a
        * screen people hit several times a day reads as a consumer product and becomes
@@ -181,7 +187,7 @@ export default function LoginPage() {
       </aside>
 
       {/* ── Sign-in panel ─────────────────────────────────────────────── */}
-      <main className="relative flex w-full flex-1 items-center justify-center overflow-hidden px-6 py-12">
+      <main className="relative flex w-full flex-1 items-center justify-center overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
@@ -193,7 +199,7 @@ export default function LoginPage() {
 
         <div className="login-rise relative w-full max-w-[400px]">
           {/* Compact identity for narrow screens, where the brand panel is hidden. */}
-          <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
+          <div className="mb-6 flex items-center justify-center gap-3 sm:mb-8 lg:hidden">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ffb401]">
               <Shield className="h-5 w-5 text-[#4a2c00]" strokeWidth={2.2} />
             </div>
@@ -205,8 +211,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-[#faf9f7] p-8 shadow-2xl shadow-black/25">
-            <h2 className="text-[24px] leading-none font-bold text-[#141414]">
+          <div className="rounded-2xl bg-[#faf9f7] p-6 shadow-2xl shadow-black/25 sm:p-8">
+            <h2 className="text-[22px] leading-none font-bold text-[#141414] sm:text-[24px]">
               Sign In
             </h2>
             <p className="mt-2 text-[13px] text-neutral-500">

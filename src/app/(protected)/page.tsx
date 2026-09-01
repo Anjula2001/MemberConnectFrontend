@@ -25,11 +25,11 @@ export default function Home() {
       : roleLabel(user?.role)
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="min-h-screen flex-1 rounded-xl bg-muted/50 p-4">
-        <div className="w-full p-6">
-          <header className="mb-6">
-            <h1 className="text-2xl font-bold text-[#953002]">
+    <div className="flex flex-1 flex-col gap-4 p-0 sm:p-4 sm:pt-0">
+      <div className="min-h-screen flex-1 rounded-xl bg-muted/50 p-3 sm:p-4">
+        <div className="w-full min-w-0 p-1 sm:p-6">
+          <header className="mb-4 sm:mb-6">
+            <h1 className="text-xl font-bold text-[#953002] sm:text-2xl">
               {user?.fullName ? `Welcome back, ${user.fullName}` : "Dashboard"}
             </h1>
             <p className="mt-1 text-sm text-neutral-500">
