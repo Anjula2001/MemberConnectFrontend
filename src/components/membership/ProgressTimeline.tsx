@@ -21,6 +21,7 @@ const MODULE_TAGS: Record<string, string> = {
   // appearing once getMemberHistory stopped filtering them out.
   PROFILE_CHANGE_TRANSFER: 'member transfer',
   MEMBER_TERMINATION: 'termination',
+  MEMBER_RETIREMENT: 'retirement',
   MEMBER_DEATH: 'member death',
   DEATH_DONATION: 'death donation',
   DORMANT_MEMBERSHIP: 'dormant membership',

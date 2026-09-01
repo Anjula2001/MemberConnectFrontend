@@ -54,10 +54,20 @@ function QueueCard({
   return (
     <Link
       href={queue.href}
-      className="group flex min-w-[220px] flex-1 flex-col gap-1 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm transition-colors hover:border-[#953002]/40 hover:bg-[#fff9f6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#953002] dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-900"
+      /*
+       * Below sm each card takes a full row (basis-full), so the 220px minimum can no
+       * longer force the row wider than a phone screen. `grow` is used instead of
+       * `flex-1` because the flex shorthand would reset flex-basis and undo basis-full.
+       *
+       * The minimum is 160px through the tablet band and 220px from lg up. At 768px the
+       * sidebar is still pinned open and leaves this row 352px (measured), which fits two
+       * 160px cards but only one at 220px. From lg the 220px floor is restored, so 1024px
+       * and the desktop row (four across at 1440px) are exactly what they were.
+       */
+      className="group flex min-w-0 grow basis-full flex-col gap-1 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm transition-colors hover:border-[#953002]/40 hover:bg-[#fff9f6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#953002] sm:min-w-[160px] sm:basis-0 sm:p-5 lg:min-w-[220px] dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-900"
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] font-medium text-[#953002]">{queue.label}</p>
+        <p className="min-w-0 text-[13px] font-medium text-[#953002]">{queue.label}</p>
         <ArrowRight
           size={14}
           className="shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#953002]"
@@ -66,7 +76,7 @@ function QueueCard({
 
       <p
         className={
-          "text-[32px] font-bold leading-none " +
+          "text-[28px] font-bold leading-none sm:text-[32px] " +
           (loading
             ? "text-neutral-300"
             : isClear
@@ -144,7 +154,7 @@ export default function StatsCards() {
   }
 
   return (
-    <div className="flex flex-wrap gap-4">
+    <div className="flex flex-wrap gap-3 sm:gap-4">
       {queues.map((queue) => (
         <QueueCard
           key={queue.id}
