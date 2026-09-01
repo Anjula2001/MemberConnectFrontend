@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/src/components/ui/table";
 import { TablePagination, clampPage, pageSlice } from "@/src/components/ui/table-pagination";
-import { Loader2, Pencil } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Pencil } from "lucide-react";
 import { authFetch } from "@/lib/api/authFetch";
 import { useAuth } from "@/lib/auth-context";
 import AccessRestricted from "@/src/components/AccessRestricted";
@@ -853,16 +853,18 @@ export default function Grade5ScholarshipRequestsListPage() {
                               row.hasDeviation || row.status?.includes("DEVIATION") ? (
                                 <span
                                   title="Deviation Scholarship"
-                                  className="inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-bold text-amber-700"
+                                  className="inline-flex cursor-help items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                                 >
-                                  D
+                                  <AlertCircle size={12} />
+                                  Deviation
                                 </span>
                               ) : (
                                 <span
                                   title="Normal Scholarship"
-                                  className="inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs font-bold text-blue-600"
+                                  className="inline-flex cursor-help items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
                                 >
-                                  N
+                                  <CheckCircle2 size={12} />
+                                  Normal
                                 </span>
                               )
                             )}
@@ -902,20 +904,6 @@ export default function Grade5ScholarshipRequestsListPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Manage Exam Year & Cutoff Button */}
-      {canManageExamMaster && (
-        <div className="flex justify-end mt-4 mb-8 pb-4">
-          <Button
-            className="bg-[#953002] text-white hover:bg-[#7d2802] px-5"
-            onClick={() => {
-              window.location.href = "/scholarships/grade-5/manage-exam-cutoff";
-            }}
-          >
-            Manage Exam Year & Cutoff
-          </Button>
-        </div>
-      )}
 
       {/* Board Meeting Selection Modal */}
       {isBoardModalOpen && (
